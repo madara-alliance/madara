@@ -1,7 +1,7 @@
 //! Durable root-keyed datasets with bounded memory and bounded cold proof reads.
 use super::*;
 use blockifier::execution::syscalls::committed_data::{
-    CommittedDataError, CommittedDataProvider, CommittedDataSet, CommittedDataWitness, MAX_COMMITTED_DATA_VALUES,
+    CommittedDataError, CommittedDataProvider, CommittedDataSet, CommittedDataWitness,
 };
 use std::{collections::VecDeque, sync::Mutex};
 use tokio::sync::Semaphore;
@@ -46,20 +46,19 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
         self.config.use_committed_data
     }
 
-    /// Returns an authenticated proof for an imported root and occupied index.
+    /// Returns an authenticated proof for an imported root and present key.
     ///
-    /// Missing roots/unused leaves return `None`; out-of-range indices, corrupt records and
+    /// Missing roots/keys return `None`; corrupt records and
     /// mismatched proofs return an error. Cold reads have depth-bounded I/O and never rebuild
     /// a tree. This is synchronous storage work; async callers must use a blocking worker.
-    pub fn committed_data_witness(&self, root: Felt, index: u32) -> Result<Option<CommittedDataWitness>> {
-        anyhow::ensure!((index as usize) < MAX_COMMITTED_DATA_VALUES, "Committed-data index out of range");
+    pub fn committed_data_witness(&self, root: Felt, index: Felt) -> Result<Option<CommittedDataWitness>> {
         if let Some(tree) = self.committed_data_cache.get(root)? {
             return Ok(tree.witness(index));
         }
         let witness = self.db.get_committed_data_witness(root, index)?;
         if let Some(witness) = &witness {
             anyhow::ensure!(
-                (witness.root, witness.index) == (root, index) && witness.verify(),
+                (witness.root, witness.key) == (root, index) && witness.verify(),
                 "Stored committed-data witness mismatch"
             );
         }
@@ -82,7 +81,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
     /// repairs its pages. This never publishes a root on-chain.
     ///
     /// Returns an error for busy admission, invalid data/root or storage failure.
-    pub async fn import_committed_data_snapshot(self: &Arc<Self>, root: Felt, values: Vec<Felt>) -> Result<()> {
+    pub async fn import_committed_data_snapshot(self: &Arc<Self>, root: Felt, values: Vec<(Felt, Felt)>) -> Result<()> {
         let permit = Arc::clone(&self.committed_data_cache.import)
             .try_acquire_owned()
             .map_err(|_| anyhow::anyhow!("Committed-data import busy; retry import later"))?;
@@ -106,10 +105,10 @@ impl<D> std::fmt::Debug for BackendCommittedData<D> {
     }
 }
 impl<D: MadaraStorageRead> CommittedDataProvider for BackendCommittedData<D> {
-    fn value(&self, root: Felt, index: u32) -> std::result::Result<Option<(Felt, usize)>, CommittedDataError> {
+    fn value(&self, root: Felt, index: Felt) -> std::result::Result<Option<(Felt, usize)>, CommittedDataError> {
         let read = || -> Result<Option<(Felt, usize)>> {
             let value = if let Some(tree) = self.0.committed_data_cache.get(root)? {
-                tree.value(index).map(|value| (value, tree.height()))
+                tree.value_and_depth(index)
             } else {
                 self.0.committed_data_witness(root, index)?.map(|witness| (witness.value, witness.siblings.len()))
             };
@@ -129,7 +128,7 @@ mod tests {
         let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
         let mut roots = Vec::new();
         for value in 0..65_u32 {
-            let values = vec![Felt::from(value)];
+            let values: Vec<_> = vec![(Felt::ZERO, Felt::from(value))];
             let root = CommittedDataSet::new(values.clone()).unwrap().root();
             backend.import_committed_data_snapshot(root, values).await.unwrap();
             roots.push(root);
@@ -138,7 +137,11 @@ mod tests {
         assert_eq!(backend.db.list_committed_data_roots(None).unwrap(), roots[..64]);
         assert_eq!(backend.db.list_committed_data_roots(Some(roots[63])).unwrap(), roots[64..]);
         assert!(backend.db.list_committed_data_roots(Some(roots[64])).unwrap().is_empty());
-        let values: Vec<_> = (0..4097_u32).map(Felt::from).collect();
+        let values: Vec<_> = ((0..4097_u32).map(Felt::from).collect::<Vec<_>>())
+            .into_iter()
+            .enumerate()
+            .map(|(i, value)| (Felt::from(i), value))
+            .collect();
         let root = CommittedDataSet::new(values.clone()).unwrap().root();
         backend.import_committed_data_snapshot(root, values.clone()).await.unwrap();
         assert_eq!(backend.db.get_committed_data_page(root, 0).unwrap(), Some((4097, values[..4096].to_vec())));
@@ -150,7 +153,8 @@ mod tests {
     #[tokio::test]
     async fn committed_data_snapshot_persists_and_authenticates_after_reopen() {
         let directory = tempfile::TempDir::new().unwrap();
-        let values = vec![Felt::from(123_u32), Felt::from(456_u32), Felt::MAX];
+        let values: Vec<_> =
+            vec![(Felt::ZERO, Felt::from(123_u32)), (Felt::ONE, Felt::from(456_u32)), (Felt::from(2_u32), Felt::MAX)];
         let root = CommittedDataSet::new(values.clone()).unwrap().root();
         let open = || {
             MadaraBackend::open_rocksdb(
@@ -165,7 +169,7 @@ mod tests {
         {
             let backend = open();
             backend.import_committed_data_snapshot(root, values.clone()).await.unwrap();
-            let witness = backend.committed_data_witness(root, 1).unwrap().unwrap();
+            let witness = backend.committed_data_witness(root, Felt::ONE).unwrap().unwrap();
             assert!(witness.verify());
             assert_eq!(witness.value, Felt::from(456_u32));
         }
@@ -173,54 +177,54 @@ mod tests {
             let backend = open();
             // Cold reads must not need the import gate or reconstruct a whole tree.
             let importing = backend.committed_data_cache.import.try_acquire().unwrap();
-            assert!(backend.committed_data_witness(root, 2).unwrap().unwrap().verify());
+            assert!(backend.committed_data_witness(root, Felt::from(2_u32)).unwrap().unwrap().verify());
             drop(importing);
-            assert!(backend.committed_data_witness(root, 3).unwrap().is_none());
-            assert!(backend.committed_data_witness(root + Felt::ONE, 1).unwrap().is_none());
+            assert!(backend.committed_data_witness(root, Felt::from(3_u32)).unwrap().is_none());
+            assert!(backend.committed_data_witness(root + Felt::ONE, Felt::ONE).unwrap().is_none());
         }
     }
     #[tokio::test]
     async fn committed_data_cold_read_rejects_a_canonical_but_unauthenticated_value() {
         let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
-        let values = vec![Felt::TWO];
+        let values: Vec<_> = vec![(Felt::ZERO, Felt::TWO)];
         let root = CommittedDataSet::new(values.clone()).unwrap().root();
         backend.import_committed_data_snapshot(root, values).await.unwrap();
         backend.committed_data_cache.entries.lock().unwrap().clear();
         let cf = backend.db.inner_db().cf_handle("meta").unwrap();
-        let mut key = b"committed_data_pages/".to_vec();
+        let mut key = b"committed_data_mpt/".to_vec();
         key.extend_from_slice(&root.to_bytes_be());
         key.extend_from_slice(&[0, 0, 0, 0, 0]);
         // Correct encoding and length must not be confused with authentication.
-        backend.db.inner_db().put_cf(&cf, key, Felt::ONE.to_bytes_be()).unwrap();
-        let error = backend.committed_data_witness(root, 0).unwrap_err();
+        backend.db.inner_db().put_cf(&cf, key, [Felt::ZERO.to_bytes_be(), Felt::ONE.to_bytes_be()].concat()).unwrap();
+        let error = backend.committed_data_witness(root, Felt::ZERO).unwrap_err();
         assert!(error.to_string().contains("Stored committed-data witness mismatch"));
     }
 
     #[tokio::test]
     async fn committed_data_import_rejects_root_mismatch_without_writing() {
         let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
-        let values = vec![Felt::TWO];
+        let values: Vec<_> = vec![(Felt::ZERO, Felt::TWO)];
         let wrong_root = CommittedDataSet::new(values.clone()).unwrap().root() + Felt::ONE;
         assert!(backend.import_committed_data_snapshot(wrong_root, values).await.is_err());
-        assert!(backend.committed_data_witness(wrong_root, 0).unwrap().is_none());
+        assert!(backend.committed_data_witness(wrong_root, Felt::ZERO).unwrap().is_none());
     }
 
     #[tokio::test]
     async fn committed_data_reimport_repairs_malformed_pages() {
         let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
-        let values = vec![Felt::TWO];
+        let values: Vec<_> = vec![(Felt::ZERO, Felt::TWO)];
         let root = CommittedDataSet::new(values.clone()).unwrap().root();
         backend.import_committed_data_snapshot(root, values.clone()).await.unwrap();
         backend.committed_data_cache.entries.lock().unwrap().clear();
         let cf = backend.db.inner_db().cf_handle("meta").unwrap();
-        let mut key = b"committed_data_pages/".to_vec();
+        let mut key = b"committed_data_mpt/".to_vec();
         key.extend_from_slice(&root.to_bytes_be());
         key.extend_from_slice(&[0, 0, 0, 0, 0]);
         backend.db.inner_db().put_cf(&cf, key, [0xff]).unwrap();
-        assert!(backend.committed_data_witness(root, 0).is_err());
+        assert!(backend.committed_data_witness(root, Felt::ZERO).is_err());
         backend.import_committed_data_snapshot(root, values).await.unwrap();
         backend.committed_data_cache.entries.lock().unwrap().clear();
-        assert!(backend.committed_data_witness(root, 0).unwrap().unwrap().verify());
+        assert!(backend.committed_data_witness(root, Felt::ZERO).unwrap().unwrap().verify());
     }
 
     #[test]
@@ -228,7 +232,7 @@ mod tests {
         tokio::runtime::Builder::new_current_thread().enable_all().max_blocking_threads(1).build().unwrap().block_on(
             async {
                 let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
-                let dataset = CommittedDataSet::new(vec![Felt::TWO]).unwrap();
+                let dataset = CommittedDataSet::new(vec![(Felt::ZERO, Felt::TWO)]).unwrap();
                 let (release, wait) = std::sync::mpsc::channel();
                 let (started, ready) = tokio::sync::oneshot::channel();
                 let blocker = tokio::task::spawn_blocking(move || {
@@ -236,13 +240,13 @@ mod tests {
                     wait.recv_timeout(std::time::Duration::from_secs(10)).unwrap();
                 });
                 ready.await.unwrap();
-                let first = backend.import_committed_data_snapshot(dataset.root(), dataset.values().to_vec());
+                let first = backend.import_committed_data_snapshot(dataset.root(), dataset.entries().to_vec());
                 tokio::pin!(first);
                 assert!(futures::poll!(&mut first).is_pending());
                 // The first import is queued, not running. The second must fail without joining it.
                 let second = tokio::time::timeout(
                     std::time::Duration::from_secs(1),
-                    backend.import_committed_data_snapshot(dataset.root(), dataset.values().to_vec()),
+                    backend.import_committed_data_snapshot(dataset.root(), dataset.entries().to_vec()),
                 )
                 .await;
                 release.send(()).unwrap();
@@ -260,8 +264,8 @@ mod tests {
     #[tokio::test]
     async fn committed_data_imports_accumulate_and_survive_reopen() {
         let directory = tempfile::TempDir::new().unwrap();
-        let first = CommittedDataSet::new(vec![Felt::TWO]).unwrap();
-        let second = CommittedDataSet::new(vec![Felt::from(3_u32)]).unwrap();
+        let first = CommittedDataSet::new(vec![(Felt::ZERO, Felt::TWO)]).unwrap();
+        let second = CommittedDataSet::new(vec![(Felt::ZERO, Felt::from(3_u32))]).unwrap();
         let open = || {
             MadaraBackend::open_rocksdb(
                 directory.path(),
@@ -274,13 +278,13 @@ mod tests {
         };
         {
             let backend = open();
-            backend.import_committed_data_snapshot(first.root(), first.values().to_vec()).await.unwrap();
-            backend.import_committed_data_snapshot(first.root(), first.values().to_vec()).await.unwrap();
-            backend.import_committed_data_snapshot(second.root(), second.values().to_vec()).await.unwrap();
+            backend.import_committed_data_snapshot(first.root(), first.entries().to_vec()).await.unwrap();
+            backend.import_committed_data_snapshot(first.root(), first.entries().to_vec()).await.unwrap();
+            backend.import_committed_data_snapshot(second.root(), second.entries().to_vec()).await.unwrap();
         }
         let backend = open();
-        assert!(backend.committed_data_witness(first.root(), 0).unwrap().unwrap().verify());
-        assert!(backend.committed_data_witness(second.root(), 0).unwrap().unwrap().verify());
+        assert!(backend.committed_data_witness(first.root(), Felt::ZERO).unwrap().unwrap().verify());
+        assert!(backend.committed_data_witness(second.root(), Felt::ZERO).unwrap().unwrap().verify());
         let cf = backend.db.inner_db().cf_handle("meta").unwrap();
         assert!(backend.db.inner_db().get_cf(&cf, b"committed_data_pages_usage").unwrap().is_none());
     }
@@ -297,22 +301,23 @@ mod tests {
         )
         .unwrap();
         let cf = backend.db.inner_db().cf_handle("meta").unwrap();
-        let dataset = CommittedDataSet::new(vec![Felt::TWO]).unwrap();
+        let dataset = CommittedDataSet::new(vec![(Felt::ZERO, Felt::TWO)]).unwrap();
         backend.db.write_committed_data_dataset(&dataset, Some(42)).unwrap();
         backend.db.write_committed_data_dataset(&dataset, Some(100)).unwrap();
-        let mut key = b"committed_data_pages/".to_vec();
+        let mut key = b"committed_data_mpt/".to_vec();
         key.extend_from_slice(&dataset.root().to_bytes_be());
         key.extend_from_slice(&[u8::MAX, 0, 0, 0, 0]);
         let metadata = backend.db.inner_db().get_cf(&cf, key).unwrap().unwrap();
-        assert_eq!(metadata.len(), 14);
-        assert_eq!(metadata[5], 1);
-        assert_eq!(u64::from_be_bytes(metadata[6..14].try_into().unwrap()), 42);
+        assert_eq!(metadata.len(), 13);
+        assert_eq!(metadata[4], 1);
+        assert_eq!(u64::from_be_bytes(metadata[5..13].try_into().unwrap()), 42);
     }
 
     #[test]
     fn committed_data_cache_is_bounded_and_hot_reads_do_not_take_import_lock() {
         let cache = SnapshotCache::default();
-        let trees: Vec<_> = (0..3_u32).map(|i| Arc::new(CommittedDataSet::new(vec![Felt::from(i)]).unwrap())).collect();
+        let trees: Vec<_> =
+            (0..3_u32).map(|i| Arc::new(CommittedDataSet::new(vec![(Felt::ZERO, Felt::from(i))]).unwrap())).collect();
         for tree in &trees {
             cache.insert(tree.clone()).unwrap();
         }
@@ -332,8 +337,10 @@ mod tests {
             Arc::new(NativeConfig::default()),
         )
         .unwrap();
-        let datasets =
-            [CommittedDataSet::new(vec![Felt::TWO]).unwrap(), CommittedDataSet::new(vec![Felt::from(3_u32)]).unwrap()];
+        let datasets = [
+            CommittedDataSet::new(vec![(Felt::ZERO, Felt::TWO)]).unwrap(),
+            CommittedDataSet::new(vec![(Felt::ZERO, Felt::from(3_u32))]).unwrap(),
+        ];
         let barrier = std::sync::Barrier::new(2);
         let successes = std::thread::scope(|scope| {
             let handles: Vec<_> = datasets
@@ -351,7 +358,7 @@ mod tests {
         });
         assert_eq!(successes, 2);
         for dataset in &datasets {
-            assert!(backend.committed_data_witness(dataset.root(), 0).unwrap().unwrap().verify());
+            assert!(backend.committed_data_witness(dataset.root(), Felt::ZERO).unwrap().unwrap().verify());
         }
     }
 }

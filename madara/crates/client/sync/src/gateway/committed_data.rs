@@ -8,16 +8,21 @@ use mp_gateway::committed_data::{CommittedDataPage, ROOTS_PER_PAGE, VALUES_PER_P
 use std::{sync::Arc, time::Duration};
 
 /// Checks metadata/order before extending the bounded assembly buffer.
-fn append_page(root: Felt, count: Option<u32>, values: &mut Vec<Felt>, page: CommittedDataPage) -> anyhow::Result<u32> {
+fn append_page(
+    root: Felt,
+    count: Option<u32>,
+    values: &mut Vec<(Felt, Felt)>,
+    page: CommittedDataPage,
+) -> anyhow::Result<u32> {
     anyhow::ensure!(page.root == root && page.start as usize == values.len(), "Committed-data page identity mismatch");
     anyhow::ensure!((1..=MAX_COMMITTED_DATA_VALUES).contains(&(page.count as usize)), "Invalid committed-data count");
     anyhow::ensure!(count.is_none_or(|count| count == page.count), "Committed-data count changed during transfer");
     let remaining = (page.count as usize).checked_sub(values.len()).context("Committed-data offset exceeds count")?;
     anyhow::ensure!(
-        remaining > 0 && page.values.len() == remaining.min(VALUES_PER_PAGE),
+        remaining > 0 && page.entries.len() == remaining.min(VALUES_PER_PAGE),
         "Invalid committed-data page length"
     );
-    values.extend(page.values);
+    values.extend(page.entries);
     Ok(page.count)
 }
 
@@ -56,7 +61,7 @@ pub(crate) async fn sync_available(backend: &Arc<MadaraBackend>, client: &Gatewa
                     break;
                 }
             }
-            // Authenticate the dataset's minimum-height tree and persist with WAL+fsync.
+            // Authenticate the dataset's Patricia commitment and persist with WAL+fsync.
             backend.import_committed_data_snapshot(root, values).await?;
             tracing::info!(root = %root, "Replicated committed-data dataset");
         }
@@ -75,10 +80,15 @@ mod tests {
         use blockifier::execution::syscalls::committed_data::CommittedDataSet;
         use mc_db::{rocksdb::RocksDBConfig, MadaraBackendConfig};
         use mp_chain_config::ChainConfig;
-        let mut values: Vec<_> = (0..4097_u32).map(Felt::from).collect();
+        let mut values: Vec<_> = ((0..4097_u32).map(Felt::from).collect::<Vec<_>>())
+            .into_iter()
+            .enumerate()
+            .map(|(i, value)| (Felt::from(i), value))
+            .collect();
         // Opaque felts, including encoded symbols and high-bit values, survive replication.
-        values[0] = Felt::from_hex_unchecked("0x4254432d5553442d505542"); // BTC-USD-PUB
-        values[4096] = Felt::from_hex_unchecked("0x700000000000000000000000000000000000000000000000000000000000001");
+        values[0].0 = Felt::from_hex_unchecked("0x4254432d5553442d505542"); // BTC-USD-PUB
+        values[4096].0 = Felt::from_hex_unchecked("0x700000000000000000000000000000000000000000000000000000000000001");
+        values.sort_unstable_by_key(|entry| entry.0);
         let root = CommittedDataSet::new(values.clone()).unwrap().root();
         let source = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
         source.import_committed_data_snapshot(root, values.clone()).await.unwrap();
@@ -99,7 +109,7 @@ mod tests {
                             .path("/feeder_gateway/get_committed_data")
                             .query_param("root", format!("{root:#x}"))
                             .query_param("start", start.to_string());
-                        then.json_body_obj(&Some(CommittedDataPage { root, count, start, values }));
+                        then.json_body_obj(&Some(CommittedDataPage { root, count, start, entries: values }));
                     })
                     .await,
             );
@@ -126,23 +136,23 @@ mod tests {
             for page in &pages {
                 page.assert_hits_async(1).await;
             }
-            assert_eq!(replica.committed_data_witness(root, 0).unwrap().unwrap().value, values[0]);
-            assert_eq!(replica.committed_data_witness(root, 4096).unwrap().unwrap().value, values[4096]);
+            assert_eq!(replica.committed_data_witness(root, values[0].0).unwrap().unwrap().value, values[0].1);
+            assert_eq!(replica.committed_data_witness(root, values[4096].0).unwrap().unwrap().value, values[4096].1);
         }
         for page in &pages {
             page.delete_async().await;
         } // Source no longer serves datasets.
         drop(source);
         let replica = open();
-        assert_eq!(replica.committed_data_witness(root, 0).unwrap().unwrap().value, values[0]);
-        assert!(replica.committed_data_witness(root, 4096).unwrap().unwrap().verify());
+        assert_eq!(replica.committed_data_witness(root, values[0].0).unwrap().unwrap().value, values[0].1);
+        assert!(replica.committed_data_witness(root, values[4096].0).unwrap().unwrap().verify());
         assert_eq!(replica.db.list_committed_data_roots(None).unwrap(), vec![root]);
     }
 
     #[tokio::test]
     async fn committed_data_http_corruption_is_never_persisted() {
         use blockifier::execution::syscalls::committed_data::CommittedDataSet;
-        let root = CommittedDataSet::new(vec![Felt::ONE]).unwrap().root();
+        let root = CommittedDataSet::new(vec![(Felt::ZERO, Felt::ONE)]).unwrap().root();
         let server = httpmock::MockServer::start_async().await;
         server
             .mock_async(|when, then| {
@@ -153,7 +163,12 @@ mod tests {
         server
             .mock_async(|when, then| {
                 when.path("/feeder_gateway/get_committed_data");
-                then.json_body_obj(&Some(CommittedDataPage { root, start: 0, count: 1, values: vec![Felt::TWO] }));
+                then.json_body_obj(&Some(CommittedDataPage {
+                    root,
+                    start: 0,
+                    count: 1,
+                    entries: vec![(Felt::ZERO, Felt::TWO)],
+                }));
             })
             .await;
         let client = GatewayProvider::new(
@@ -168,14 +183,14 @@ mod tests {
     #[test]
     fn committed_data_transfer_rejects_wrong_order_count_and_short_pages() {
         let root = Felt::ONE;
-        let page = CommittedDataPage { root, start: 0, count: 4097, values: vec![Felt::TWO; 4096] };
+        let page = CommittedDataPage { root, start: 0, count: 4097, entries: vec![(Felt::ZERO, Felt::TWO); 4096] };
         let mut values = Vec::new();
         assert_eq!(append_page(root, None, &mut values, page.clone()).unwrap(), 4097);
         assert!(append_page(root, Some(4097), &mut values, page).is_err());
         for bad in [
-            CommittedDataPage { root: Felt::TWO, start: 4096, count: 4097, values: vec![Felt::ONE] },
-            CommittedDataPage { root, start: 4096, count: 4098, values: vec![Felt::ONE; 2] },
-            CommittedDataPage { root, start: 4096, count: 4097, values: vec![] },
+            CommittedDataPage { root: Felt::TWO, start: 4096, count: 4097, entries: vec![(Felt::ZERO, Felt::ONE)] },
+            CommittedDataPage { root, start: 4096, count: 4098, entries: vec![(Felt::ZERO, Felt::ONE); 2] },
+            CommittedDataPage { root, start: 4096, count: 4097, entries: vec![] },
         ] {
             assert!(append_page(root, Some(4097), &mut values, bad).is_err());
         }
@@ -183,7 +198,7 @@ mod tests {
             root,
             Some(4097),
             &mut values,
-            CommittedDataPage { root, start: 4096, count: 4097, values: vec![Felt::ONE] },
+            CommittedDataPage { root, start: 4096, count: 4097, entries: vec![(Felt::ZERO, Felt::ONE)] },
         )
         .unwrap();
         assert_eq!(values.len(), 4097);

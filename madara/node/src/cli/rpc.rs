@@ -15,7 +15,7 @@ const fn default_committed_data_port() -> u16 {
     RPC_DEFAULT_PORT_COMMITTED_DATA
 }
 const fn default_committed_data_request_size() -> u32 {
-    64
+    128
 }
 const fn default_committed_data_connections() -> u32 {
     4
@@ -124,7 +124,7 @@ pub struct RpcParams {
     pub rpc_committed_data_port: u16,
 
     /// Dataset request limit in MiB, independent of the public/admin RPC limits.
-    #[arg(env = "MADARA_RPC_COMMITTED_DATA_MAX_REQUEST_SIZE", long, default_value_t = 64)]
+    #[arg(env = "MADARA_RPC_COMMITTED_DATA_MAX_REQUEST_SIZE", long, default_value_t = 128)]
     #[serde(default = "default_committed_data_request_size")]
     pub rpc_committed_data_max_request_size: u32,
 
@@ -353,7 +353,7 @@ mod committed_data_tests {
         let rpc: RpcParams = serde_json::from_value(encoded).unwrap();
         assert!(!rpc.rpc_committed_data && !rpc.rpc_committed_data_external);
         assert_eq!(rpc.rpc_committed_data_port, 9945);
-        assert_eq!(rpc.rpc_committed_data_max_request_size, 64);
+        assert_eq!(rpc.rpc_committed_data_max_request_size, 128);
         assert_eq!(rpc.rpc_committed_data_max_connections, 4);
     }
 }
