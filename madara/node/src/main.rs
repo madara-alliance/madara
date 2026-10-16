@@ -357,6 +357,10 @@ async fn main() -> anyhow::Result<()> {
             deferred_service_start.push(MadaraServiceId::RpcAdmin);
         }
 
+        if run_cmd.rpc_params.rpc_committed_data {
+            deferred_service_start.push(MadaraServiceId::RpcCommittedData);
+        }
+
         if run_cmd.gateway_params.any_enabled() {
             deferred_service_start.push(MadaraServiceId::Gateway);
         }
@@ -449,7 +453,7 @@ async fn main() -> anyhow::Result<()> {
         (Arc::clone(&gateway_client) as _, Arc::clone(&gateway_client) as _)
     };
 
-    let tx_submit = MakeSubmitTransactionSwitch::new(Arc::clone(&gateway_submit_tx), mempool_submit_tx);
+    let tx_submit = MakeSubmitTransactionSwitch::new(Arc::clone(&gateway_submit_tx), Arc::clone(&mempool_submit_tx));
     let tx_lookup = MakeTransactionLookupSwitch::new(gateway_transaction_lookup, mempool_transaction_lookup);
     let validated_tx_submit =
         MakeSubmitValidatedTransactionSwitch::new(Arc::clone(&gateway_client) as _, service_mempool.mempool() as _);
@@ -474,6 +478,15 @@ async fn main() -> anyhow::Result<()> {
         Some(service_mempool.mempool()),
         service_block_production.handle(),
         service_mempool.mempool(),
+    );
+
+    let service_rpc_committed_data = RpcService::committed_data(
+        run_cmd.rpc_params.clone(),
+        backend.clone(),
+        tx_submit.clone(),
+        tx_lookup.clone(),
+        mempool_submit_tx,
+        run_cmd.is_sequencer(),
     );
 
     // Feeder gateway
@@ -504,6 +517,7 @@ async fn main() -> anyhow::Result<()> {
         .with(service_block_production)?
         .with(service_rpc_user)?
         .with(service_rpc_admin)?
+        .with(service_rpc_committed_data)?
         .with(service_gateway)?;
 
     if let Some(service_external_db) = service_external_db {
@@ -542,6 +556,10 @@ async fn main() -> anyhow::Result<()> {
 
     if run_cmd.rpc_params.rpc_admin && !warp_update_receiver {
         app.activate(MadaraServiceId::RpcAdmin);
+    }
+
+    if run_cmd.rpc_params.rpc_committed_data && !warp_update_receiver {
+        app.activate(MadaraServiceId::RpcCommittedData);
     }
 
     if run_cmd.gateway_params.any_enabled() && !warp_update_receiver {

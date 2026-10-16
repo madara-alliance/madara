@@ -86,6 +86,12 @@ pub fn get_migrations() -> &'static [Migration] {
             name: "v14→v15: block-keyed preconfirmed persistence migration",
             migrate: super::revisions::revision_0015::migrate,
         },
+        Migration {
+            from_version: 15,
+            to_version: 16,
+            name: "v15→v16: additive committed-data storage (no-op)",
+            migrate: super::revisions::revision_0016::migrate,
+        },
     ]
 }
 

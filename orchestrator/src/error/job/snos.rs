@@ -174,7 +174,14 @@ fn is_retryable_transaction_executor_error(error: &TransactionExecutorError) -> 
 }
 
 fn is_retryable_transaction_execution_error(error: &TransactionExecutionError) -> bool {
+    use blockifier::execution::syscalls::committed_data::CommittedDataError;
+
     match error {
+        // A witness service can recover or receive missing historical data. Invalid proofs
+        // and permanent input bounds still fail fast; neither becomes an accepted revert.
+        TransactionExecutionError::CommittedDataAvailability(
+            CommittedDataError::Unavailable | CommittedDataError::Provider(_),
+        ) => true,
         TransactionExecutionError::StateError(source) => is_retryable_state_error(source),
         TransactionExecutionError::TransactionFeeError(source) => is_retryable_transaction_fee_error(source),
         TransactionExecutionError::TransactionPreValidationError(source) => {
@@ -277,6 +284,24 @@ fn is_retryable_remote_message(message: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn committed_data_retries_availability_but_not_invalid_witnesses_or_limits() {
+        use blockifier::execution::syscalls::committed_data::CommittedDataError;
+
+        for cause in [CommittedDataError::Unavailable, CommittedDataError::Provider("unreachable".into())] {
+            assert!(is_retryable_transaction_execution_error(&TransactionExecutionError::CommittedDataAvailability(
+                cause,
+            )));
+        }
+        for cause in
+            [CommittedDataError::Disabled, CommittedDataError::InvalidWitness, CommittedDataError::TooManyWitnesses]
+        {
+            assert!(!is_retryable_transaction_execution_error(&TransactionExecutionError::CommittedDataAvailability(
+                cause,
+            )));
+        }
+    }
     use starknet::core::types::StarknetError;
     use starknet::providers::ProviderError;
 

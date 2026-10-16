@@ -106,6 +106,30 @@ pub struct StoredChainInfo {
 
 /// Trait abstracting over the storage interface.
 pub trait MadaraStorageRead: Send + Sync + 'static {
+    /// Immutable private data; reads must be bounded by the proof path, not dataset size.
+    fn get_committed_data_witness(
+        &self,
+        _root: Felt,
+        _index: Felt,
+    ) -> Result<Option<blockifier::execution::syscalls::committed_data::CommittedDataWitness>> {
+        anyhow::bail!("Committed-data storage is unsupported by this backend")
+    }
+
+    /// Lists at most 64 complete root-keyed datasets strictly after the cursor.
+    fn list_committed_data_roots(&self, _after: Option<Felt>) -> Result<Vec<Felt>> {
+        anyhow::bail!("Committed-data storage is unsupported by this backend")
+    }
+
+    /// Returns the durable occupied count without reading value pages.
+    fn get_committed_data_count(&self, _root: Felt) -> Result<Option<u32>> {
+        anyhow::bail!("Committed-data storage is unsupported by this backend")
+    }
+
+    /// Returns the occupied count and up to 4096 values at an aligned offset.
+    fn get_committed_data_page(&self, _root: Felt, _start: u32) -> Result<Option<(u32, Vec<(Felt, Felt)>)>> {
+        anyhow::bail!("Committed-data storage is unsupported by this backend")
+    }
+
     // Blocks
 
     fn find_block_hash(&self, block_hash: &Felt) -> Result<Option<u64>>;
@@ -192,6 +216,17 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
 
 /// Trait abstracting over the storage interface.
 pub trait MadaraStorageWrite: Send + Sync + 'static {
+    /// Durably persists an authenticated immutable dataset, including the local confirmed-head
+    /// checkpoint observed at import admission. This does not establish on-chain publication.
+    /// Re-importing the same dataset must be idempotent; unsupported backends return an error.
+    fn write_committed_data_dataset(
+        &self,
+        _dataset: &blockifier::execution::syscalls::committed_data::CommittedDataSet,
+        _imported_after_block: Option<u64>,
+    ) -> Result<()> {
+        anyhow::bail!("Committed-data storage is unsupported by this backend")
+    }
+
     fn write_header(&self, header: BlockHeaderWithSignatures) -> Result<()>;
     fn write_transactions(&self, block_n: u64, txs: &[TransactionWithReceipt]) -> Result<()>;
     /// Mark L1 handler transactions in a fully confirmed block as consumed.
