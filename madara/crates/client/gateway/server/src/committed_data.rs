@@ -60,24 +60,20 @@ pub(crate) async fn get_page(
             root,
             start,
             count,
-            values,
+            entries: values,
         });
         Ok(create_json_response(StatusCode::OK, &page))
     })
     .await
 }
 
-/// Return an indexed Merkle witness used by the proving pipeline.
+/// Return a keyed Patricia witness used by the proving pipeline.
 pub(crate) async fn get_witness(
     req: Request<Incoming>,
     backend: Arc<MadaraBackend>,
 ) -> Result<Response<String>, GatewayError> {
     let params = get_params_from_request(&req);
     let root = params.get("root").ok_or_else(invalid).and_then(|value| Felt::from_hex(value).map_err(|_| invalid()))?;
-    let index =
-        params.get("index").ok_or_else(invalid).and_then(|value| value.parse::<u32>().map_err(|_| invalid()))?;
-    if (index as usize) >= MAX_COMMITTED_DATA_VALUES {
-        return Err(invalid());
-    }
+    let index = params.get("key").ok_or_else(invalid).and_then(|value| Felt::from_hex(value).map_err(|_| invalid()))?;
     bounded_read(move || Ok(create_json_response(StatusCode::OK, &backend.committed_data_witness(root, index)?))).await
 }

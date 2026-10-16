@@ -46,21 +46,21 @@ impl From<CommittedDataRpcError> for ErrorObjectOwned {
     }
 }
 
-/// Wire-compatible felt array, bounded while decoding rather than after allocation.
+/// Felt key/value pairs, bounded while decoding rather than after allocation.
 #[derive(Debug, Serialize)]
 #[serde(transparent)]
-pub struct CommittedDataValues(Vec<Felt>);
+pub struct CommittedDataEntries(Vec<(Felt, Felt)>);
 
-impl CommittedDataValues {
+impl CommittedDataEntries {
     /// Consumes the bounded wire value without copying its dataset.
-    pub fn into_inner(self) -> Vec<Felt> {
+    pub fn into_inner(self) -> Vec<(Felt, Felt)> {
         self.0
     }
 }
 
-impl TryFrom<Vec<Felt>> for CommittedDataValues {
+impl TryFrom<Vec<(Felt, Felt)>> for CommittedDataEntries {
     type Error = blockifier::execution::syscalls::committed_data::CommittedDataError;
-    fn try_from(values: Vec<Felt>) -> Result<Self, Self::Error> {
+    fn try_from(values: Vec<(Felt, Felt)>) -> Result<Self, Self::Error> {
         if values.is_empty() || values.len() > MAX_COMMITTED_DATA_VALUES {
             return Err(Self::Error::InvalidLength);
         }
@@ -68,26 +68,26 @@ impl TryFrom<Vec<Felt>> for CommittedDataValues {
     }
 }
 
-impl<'de> Deserialize<'de> for CommittedDataValues {
+impl<'de> Deserialize<'de> for CommittedDataEntries {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct ValuesVisitor;
         impl<'de> serde::de::Visitor<'de> for ValuesVisitor {
-            type Value = CommittedDataValues;
+            type Value = CommittedDataEntries;
             fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "1..={MAX_COMMITTED_DATA_VALUES} committed-data values")
+                write!(f, "1..={MAX_COMMITTED_DATA_VALUES} committed-data entries")
             }
             fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut sequence: A) -> Result<Self::Value, A::Error> {
                 let mut values = Vec::new();
-                while let Some(value) = sequence.next_element::<Felt>()? {
+                while let Some(value) = sequence.next_element::<(Felt, Felt)>()? {
                     if values.len() == MAX_COMMITTED_DATA_VALUES {
-                        return Err(serde::de::Error::custom("Too many committed-data values"));
+                        return Err(serde::de::Error::custom("Too many committed-data entries"));
                     }
                     values.push(value);
                 }
                 if values.is_empty() {
                     return Err(serde::de::Error::custom("Empty committed-data dataset"));
                 }
-                Ok(CommittedDataValues(values))
+                Ok(CommittedDataEntries(values))
             }
         }
         deserializer.deserialize_seq(ValuesVisitor)
@@ -108,7 +108,7 @@ pub struct ImportSignature {
 #[serde(deny_unknown_fields)]
 pub struct CommittedDataImport {
     pub root: Felt,
-    pub values: CommittedDataValues,
+    pub entries: CommittedDataEntries,
     #[serde(default)]
     pub signatures: Vec<ImportSignature>,
 }
@@ -220,7 +220,7 @@ pub trait CommittedDataRpcApi {
     async fn import_committed_data_snapshot(
         &self,
         root: Felt,
-        values: CommittedDataValues,
+        entries: CommittedDataEntries,
         signatures: Option<Vec<ImportSignature>>,
     ) -> RpcResult<()>;
 
@@ -240,10 +240,10 @@ impl CommittedDataRpcApiV0_1_0Server for Starknet {
     async fn import_committed_data_snapshot(
         &self,
         root: Felt,
-        values: CommittedDataValues,
+        entries: CommittedDataEntries,
         signatures: Option<Vec<ImportSignature>>,
     ) -> RpcResult<()> {
-        let values = values.into_inner();
+        let values = entries.into_inner();
         let allowed = Arc::clone(&self.committed_data_signers);
         let chain_id = self.backend.chain_config().chain_id.clone();
         let count = values.len();
@@ -279,7 +279,7 @@ impl CommittedDataRpcApiV0_1_0Server for Starknet {
             return Err(CommittedDataRpcError::QueryTransaction.into());
         }
         for dataset in datasets.0 {
-            self.import_committed_data_snapshot(dataset.root, dataset.values, Some(dataset.signatures)).await?;
+            self.import_committed_data_snapshot(dataset.root, dataset.entries, Some(dataset.signatures)).await?;
         }
         // Catch a sequencer that entered catch-up while the (possibly large) imports were running.
         if !local_submission_ready(self) {
@@ -398,43 +398,43 @@ mod committed_data_tests {
         starknet.transaction_submitter = submitter.clone();
         let account = keys.0.first().unwrap();
         let tx = signed_two_call_tx(&backend, account);
-        let values = vec![Felt::from(42_u32)];
+        let values: Vec<_> = vec![(Felt::ZERO, Felt::from(42_u32))];
         let root = CommittedDataSet::new(values.clone()).unwrap().root();
-        let funding_values = vec![Felt::from(43_u32)];
+        let funding_values: Vec<_> = vec![(Felt::ZERO, Felt::from(43_u32))];
         let funding_root = CommittedDataSet::new(funding_values.clone()).unwrap().root();
 
         let call = |funding_root, tx: &BroadcastedTxn| {
             serde_json::json!({"jsonrpc":"2.0","id":1,
                 "method":"madara_V0_1_0_importCommittedDataAndSubmitTransaction",
-                "params":[[{"root":root,"values":values},
-                           {"root":funding_root,"values":funding_values}],tx]})
+                "params":[[{"root":root,"entries":values},
+                           {"root":funding_root,"entries":funding_values}],tx]})
             .to_string()
         };
         let module = crate::rpc_api_committed_data(&starknet).unwrap();
         let (response, _) = module.raw_json_request(&call(funding_root, &tx), 1).await.unwrap();
         let response: serde_json::Value = serde_json::from_str(&response).unwrap();
         assert_eq!(response["error"]["code"], -32003);
-        assert!(backend.committed_data_witness(root, 0).unwrap().is_none());
+        assert!(backend.committed_data_witness(root, Felt::ZERO).unwrap().is_none());
         starknet.committed_data_transaction_submission = true;
         let module = crate::rpc_api_committed_data(&starknet).unwrap();
         let (response, _) = module.raw_json_request(&call(funding_root, &tx), 1).await.unwrap();
         let response: serde_json::Value = serde_json::from_str(&response).unwrap();
         assert_eq!(response["error"]["code"], -32003);
-        assert!(backend.committed_data_witness(root, 0).unwrap().is_none());
+        assert!(backend.committed_data_witness(root, Felt::ZERO).unwrap().is_none());
         starknet.ctx.service_remove(MadaraServiceId::L2Sync);
         let (response, _) = module.raw_json_request(&call(Felt::ONE, &tx), 1).await.unwrap();
         let response: serde_json::Value = serde_json::from_str(&response).unwrap();
         assert!(response.get("error").is_some(), "invalid second root must fail: {response}");
-        assert!(backend.committed_data_witness(root, 0).unwrap().unwrap().verify());
-        assert!(backend.committed_data_witness(funding_root, 0).unwrap().is_none());
+        assert!(backend.committed_data_witness(root, Felt::ZERO).unwrap().unwrap().verify());
+        assert!(backend.committed_data_witness(funding_root, Felt::ZERO).unwrap().is_none());
         assert_eq!(submitter.attempts.load(Ordering::SeqCst), 0);
 
         let (response, _) = module.raw_json_request(&call(funding_root, &tx), 1).await.unwrap();
         let response: serde_json::Value = serde_json::from_str(&response).unwrap();
         assert_eq!(response["result"]["transaction_hash"], serde_json::json!(Felt::THREE));
         assert_eq!(submitter.attempts.load(Ordering::SeqCst), 1);
-        assert!(backend.committed_data_witness(root, 0).unwrap().unwrap().verify());
-        assert!(backend.committed_data_witness(funding_root, 0).unwrap().unwrap().verify());
+        assert!(backend.committed_data_witness(root, Felt::ZERO).unwrap().unwrap().verify());
+        assert!(backend.committed_data_witness(funding_root, Felt::ZERO).unwrap().unwrap().verify());
     }
 
     #[tokio::test]
@@ -446,18 +446,18 @@ mod committed_data_tests {
         let submitter = Arc::new(RecordingSubmitter { attempts: AtomicUsize::new(0), reject: true });
         starknet.transaction_submitter = submitter.clone();
         let tx = signed_two_call_tx(&backend, keys.0.first().unwrap());
-        let values = vec![Felt::from(99_u32)];
+        let values: Vec<_> = vec![(Felt::ZERO, Felt::from(99_u32))];
         let root = CommittedDataSet::new(values.clone()).unwrap().root();
         let module = crate::rpc_api_committed_data(&starknet).unwrap();
         let request = serde_json::json!({"jsonrpc":"2.0","id":1,
             "method":"madara_V0_1_0_importCommittedDataAndSubmitTransaction",
-            "params":[[{"root":root,"values":values}],tx]})
+            "params":[[{"root":root,"entries":values}],tx]})
         .to_string();
         let (response, _) = module.raw_json_request(&request, 1).await.unwrap();
         let response: serde_json::Value = serde_json::from_str(&response).unwrap();
         assert!(response.get("error").is_some(), "submission must fail: {response}");
         assert_eq!(submitter.attempts.load(Ordering::SeqCst), 1);
-        assert!(backend.committed_data_witness(root, 0).unwrap().unwrap().verify());
+        assert!(backend.committed_data_witness(root, Felt::ZERO).unwrap().unwrap().verify());
     }
 
     #[tokio::test]
@@ -481,7 +481,7 @@ mod committed_data_tests {
                 assert_eq!(response["error"]["code"], -32601);
             }
         }
-        let values = vec![Felt::from(2000_u32), Felt::from(3000_u32)];
+        let values: Vec<_> = vec![(Felt::ZERO, Felt::from(2000_u32)), (Felt::ONE, Felt::from(3000_u32))];
         let root = CommittedDataSet::new(values.clone()).unwrap().root();
         let req = serde_json::json!({"jsonrpc":"2.0","id":1,"method":"madara_V0_1_0_importCommittedDataSet","params":[root,values]}).to_string();
         let (response, _) = module.raw_json_request(&req, 1).await.unwrap();
@@ -504,7 +504,7 @@ mod committed_data_tests {
         let public_key = starknet_types_core::curve::AffinePoint::generator().x();
         starknet.set_committed_data_signers(vec![public_key]).unwrap();
         let module = crate::rpc_api_committed_data(&starknet).unwrap();
-        let values = vec![Felt::ONE];
+        let values: Vec<_> = vec![(Felt::ZERO, Felt::ONE)];
         let root =
             blockifier::execution::syscalls::committed_data::CommittedDataSet::new(values.clone()).unwrap().root();
         let call = |params| {
@@ -515,7 +515,7 @@ mod committed_data_tests {
         let (response, _) = module.raw_json_request(&call(serde_json::json!([root, values])), 1).await.unwrap();
         let response: serde_json::Value = serde_json::from_str(&response).unwrap();
         assert_eq!(response["error"]["code"], -32001);
-        assert!(starknet.backend.committed_data_witness(root, 0).unwrap().is_none());
+        assert!(starknet.backend.committed_data_witness(root, Felt::ZERO).unwrap().is_none());
         let message = import_message_hash(Felt::try_from(&starknet.backend.chain_config().chain_id).unwrap(), root, 1);
         let signature = starknet_core::crypto::ecdsa_sign(&Felt::ONE, &message).unwrap();
         let (response, _) = module
@@ -532,7 +532,7 @@ mod committed_data_tests {
         let response: serde_json::Value = serde_json::from_str(&response).unwrap();
         assert_eq!(response.get("result"), Some(&serde_json::Value::Null));
         assert!(response.get("error").is_none());
-        assert!(starknet.backend.committed_data_witness(root, 0).unwrap().unwrap().verify());
+        assert!(starknet.backend.committed_data_witness(root, Felt::ZERO).unwrap().unwrap().verify());
     }
 
     #[test]
@@ -568,14 +568,14 @@ mod committed_data_tests {
 
     #[test]
     fn committed_data_import_array_is_bounded_during_decoding() {
-        assert!(serde_json::from_str::<CommittedDataValues>("[]").is_err());
-        let encoded = serde_json::to_string(&vec![Felt::MAX, Felt::ZERO]).unwrap();
-        let values: CommittedDataValues = serde_json::from_str(&encoded).unwrap();
-        assert_eq!(values.0, vec![Felt::MAX, Felt::ZERO]);
+        assert!(serde_json::from_str::<CommittedDataEntries>("[]").is_err());
+        let encoded = serde_json::to_string(&vec![(Felt::MAX, Felt::ZERO)]).unwrap();
+        let entries: CommittedDataEntries = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(entries.0, vec![(Felt::MAX, Felt::ZERO)]);
         let count = blockifier::execution::syscalls::committed_data::MAX_COMMITTED_DATA_VALUES + 1;
-        let encoded = format!("[{}]", std::iter::repeat_n("\"0x0\"", count).collect::<Vec<_>>().join(","));
-        assert!(serde_json::from_str::<CommittedDataValues>(&encoded).is_err());
-        let item = serde_json::json!({"root":Felt::ONE,"values":[Felt::ONE]});
+        let encoded = format!("[{}]", std::iter::repeat_n("[\"0x0\",\"0x0\"]", count).collect::<Vec<_>>().join(","));
+        assert!(serde_json::from_str::<CommittedDataEntries>(&encoded).is_err());
+        let item = serde_json::json!({"root":Felt::ONE,"entries":[[Felt::ZERO,Felt::ONE]]});
         assert!(serde_json::from_value::<CommittedDataImports>(serde_json::json!([])).is_err());
         assert!(serde_json::from_value::<CommittedDataImports>(serde_json::json!(vec![item.clone(); 4])).is_ok());
         assert!(serde_json::from_value::<CommittedDataImports>(serde_json::json!(vec![item; 5])).is_err());

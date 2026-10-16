@@ -110,7 +110,7 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
     fn get_committed_data_witness(
         &self,
         _root: Felt,
-        _index: u32,
+        _index: Felt,
     ) -> Result<Option<blockifier::execution::syscalls::committed_data::CommittedDataWitness>> {
         anyhow::bail!("Committed-data storage is unsupported by this backend")
     }
@@ -126,7 +126,7 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
     }
 
     /// Returns the occupied count and up to 4096 values at an aligned offset.
-    fn get_committed_data_page(&self, _root: Felt, _start: u32) -> Result<Option<(u32, Vec<Felt>)>> {
+    fn get_committed_data_page(&self, _root: Felt, _start: u32) -> Result<Option<(u32, Vec<(Felt, Felt)>)>> {
         anyhow::bail!("Committed-data storage is unsupported by this backend")
     }
 

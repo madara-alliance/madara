@@ -326,8 +326,8 @@ mod tests {
             mc_db::MadaraBackendConfig { use_committed_data, ..Default::default() },
         );
         backend.set_l1_gas_quote_for_testing();
-        let tree = CommittedDataSet::new(vec![Felt::TWO]).unwrap();
-        backend.import_committed_data_snapshot(tree.root(), tree.values().to_vec()).await.unwrap();
+        let tree = CommittedDataSet::new(vec![(Felt::ZERO, Felt::TWO)]).unwrap();
+        backend.import_committed_data_snapshot(tree.root(), tree.entries().to_vec()).await.unwrap();
         let ctx = create_execution_context(&backend, 0, 0, 0, UNIX_EPOCH).unwrap();
         for saved in [None, Some(&config)] {
             let executor = create_executor_with_block_n_min_10(
@@ -341,7 +341,7 @@ mod tests {
             let value = executor.block_context.committed_data_witnesses.value(tree.root(), Felt::ZERO).unwrap();
             assert_eq!(
                 (executor.block_context.use_committed_data, value),
-                (use_committed_data, Some((Felt::TWO, tree.height()))),
+                (use_committed_data, Some((Felt::TWO, 0))),
                 "saved configuration: {}",
                 saved.is_some()
             );

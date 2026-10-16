@@ -1,147 +1,159 @@
-//! Paged immutable datasets. A cold read touches at most 21 small records.
-//!
-//! Every record lives in the existing metadata column family. Keys are
-//! `PREFIX | root:32 | level:1 | page:4`; level 0 contains raw values, higher
-//! levels contain tree nodes, and level 255/page 0 contains metadata. Values
-//! and nodes are packed in 256-felt pages. Metadata is
-//! `count:u32 | height:u8 | checkpoint_present:u8 | checkpoint:u64`, all big endian.
-//! The checkpoint is the confirmed head at first import, not the publishing block.
-//! A single synchronous-WAL write batch makes metadata and all pages durable together.
+//! Immutable Patricia datasets: sorted key/value pages and compact postorder branch pages.
 use super::*;
 use blockifier::execution::syscalls::committed_data::{
-    leaf, CommittedDataSet, CommittedDataWitness, COMMITTED_DATA_TREE_HEIGHT, MAX_COMMITTED_DATA_VALUES,
+    key_bit, leaf, CommittedDataBranch, CommittedDataSet, CommittedDataSibling, CommittedDataWitness,
+    COMMITTED_DATA_TREE_HEIGHT, MAX_COMMITTED_DATA_VALUES,
 };
 use mp_gateway::committed_data::{ROOTS_PER_PAGE, VALUES_PER_PAGE};
 use rocksdb::WriteBatch;
-use starknet_types_core::hash::{Poseidon, StarkHash};
 
-// Caller-independent indexed leaves. The prefix isolates this schema from other records.
-const PREFIX: &[u8] = b"committed_data_pages/";
+const PREFIX: &[u8] = b"committed_data_mpt/";
 const PAGE_VALUES: usize = 256;
 const FELT_BYTES: usize = 32;
-const PAGE_BYTES: usize = PAGE_VALUES * FELT_BYTES;
-const METADATA_BYTES: usize = 14;
 const KEY_BYTES: usize = PREFIX.len() + FELT_BYTES + 1 + 4;
+const ENTRY_BYTES: usize = 2 * FELT_BYTES;
+const BRANCH_BYTES: usize = FELT_BYTES + 1 + 2 * 4;
+const PAGE_BYTES: usize = PAGE_VALUES * ENTRY_BYTES;
 const METADATA_LEVEL: u8 = u8::MAX;
+const METADATA_BYTES: usize = 13;
 
-/// Encodes a root/level/page key; metadata uses the reserved final level.
-fn key(root: Felt, level: u8, page: u32) -> Vec<u8> {
+/// Root, record kind (entries=0, branches=1, metadata=255), then page number.
+fn key(root: Felt, kind: u8, page: u32) -> Vec<u8> {
     let mut key = PREFIX.to_vec();
     key.extend_from_slice(&root.to_bytes_be());
-    key.push(level);
+    key.push(kind);
     key.extend_from_slice(&page.to_be_bytes());
     key
 }
-
-/// Decodes exactly one canonical field element without silently reducing corrupt bytes.
 fn canonical_felt(bytes: &[u8]) -> Result<Felt> {
     let raw: [u8; FELT_BYTES] = bytes.try_into()?;
     let value = Felt::from_bytes_be(&raw);
     anyhow::ensure!(value.to_bytes_be() == raw, "Noncanonical committed-data value");
     Ok(value)
 }
-
-/// Metadata stores count, minimum tree height and the local confirmed head at first import admission.
-/// That head is an ingestion checkpoint, not the block that published or last used this root.
-fn decode_metadata(bytes: &[u8]) -> Result<(usize, usize, Option<u64>)> {
+/// Count plus first-import checkpoint. The checkpoint is not a publication or last-use block.
+fn decode_metadata(bytes: &[u8]) -> Result<(usize, Option<u64>)> {
     anyhow::ensure!(bytes.len() == METADATA_BYTES, "Invalid committed-data metadata length");
     let count = u32::from_be_bytes(bytes[..4].try_into()?) as usize;
     anyhow::ensure!((1..=MAX_COMMITTED_DATA_VALUES).contains(&count), "Invalid committed-data size");
-    let height = usize::from(bytes[4]);
-    anyhow::ensure!(
-        height <= COMMITTED_DATA_TREE_HEIGHT && height == (count - 1).checked_ilog2().map_or(0, |log| log as usize + 1),
-        "Invalid committed-data height"
-    );
-    let block = u64::from_be_bytes(bytes[6..14].try_into()?);
-    let imported_after_block = match bytes[5] {
+    let block = u64::from_be_bytes(bytes[5..13].try_into()?);
+    let checkpoint = match bytes[4] {
         0 if block == 0 => None,
         1 => Some(block),
         _ => anyhow::bail!("Invalid committed-data import checkpoint"),
     };
-    Ok((count, height, imported_after_block))
+    Ok((count, checkpoint))
 }
-
 fn count(bytes: &[u8]) -> Result<usize> {
     Ok(decode_metadata(bytes)?.0)
 }
-
-fn encode_metadata(dataset: &CommittedDataSet, imported_after_block: Option<u64>) -> Result<[u8; METADATA_BYTES]> {
-    let mut bytes = [0_u8; METADATA_BYTES];
-    bytes[..4].copy_from_slice(&u32::try_from(dataset.values().len())?.to_be_bytes());
-    bytes[4] = dataset.height().try_into()?;
-    if let Some(block) = imported_after_block {
-        bytes[5] = 1;
-        bytes[6..14].copy_from_slice(&block.to_be_bytes());
+fn encode_metadata(dataset: &CommittedDataSet, checkpoint: Option<u64>) -> Result<[u8; METADATA_BYTES]> {
+    let mut bytes = [0; METADATA_BYTES];
+    bytes[..4].copy_from_slice(&u32::try_from(dataset.entries().len())?.to_be_bytes());
+    if let Some(block) = checkpoint {
+        bytes[4] = 1;
+        bytes[5..].copy_from_slice(&block.to_be_bytes());
     }
     Ok(bytes)
 }
 
-/// Reconstructs a minimum-height path from occupied-prefix pages and deterministic padding.
-/// Missing metadata/unused indices return `None`; missing or malformed pages return an error.
-/// The callback bounds record bytes. The caller must authenticate the returned path against root.
+/// Read one fixed-size node record from a bounded page. Leaves occupy IDs 0..count;
+/// branches occupy count..2*count-1 in postorder, so every child precedes its parent.
+fn read_record(
+    root: Felt,
+    count: usize,
+    id: u32,
+    read: &mut impl FnMut(&[u8]) -> Result<Option<Vec<u8>>>,
+) -> Result<Vec<u8>> {
+    let id = id as usize;
+    anyhow::ensure!(id < 2 * count - 1, "Invalid committed-data node ID");
+    let (kind, offset, nodes, width) =
+        if id < count { (0, id, count, ENTRY_BYTES) } else { (1, id - count, count - 1, BRANCH_BYTES) };
+    let page = offset / PAGE_VALUES;
+    let bytes =
+        read(&key(root, kind, page as u32))?.ok_or_else(|| anyhow::anyhow!("Committed-data page unavailable"))?;
+    anyhow::ensure!(
+        bytes.len() == (nodes - page * PAGE_VALUES).min(PAGE_VALUES) * width,
+        "Invalid committed-data page length"
+    );
+    let start = offset % PAGE_VALUES * width;
+    Ok(bytes[start..start + width].to_vec())
+}
+fn decode_branch(bytes: &[u8], id: u32) -> Result<CommittedDataBranch> {
+    anyhow::ensure!(bytes.len() == BRANCH_BYTES, "Invalid committed-data branch length");
+    let node = CommittedDataBranch {
+        hash: canonical_felt(&bytes[..32])?,
+        bit: bytes[32],
+        left: u32::from_be_bytes(bytes[33..37].try_into()?),
+        right: u32::from_be_bytes(bytes[37..41].try_into()?),
+    };
+    anyhow::ensure!(
+        usize::from(node.bit) < COMMITTED_DATA_TREE_HEIGHT
+            && node.left < id
+            && node.right < id
+            && node.left != node.right,
+        "Invalid committed-data branch"
+    );
+    Ok(node)
+}
+/// Walk only the requested path. Missing metadata/key returns None; malformed records fail.
+/// The backend authenticates the assembled path before returning it to execution.
 fn read_witness(
     root: Felt,
-    index: u32,
+    requested: Felt,
     mut read: impl FnMut(&[u8]) -> Result<Option<Vec<u8>>>,
 ) -> Result<Option<CommittedDataWitness>> {
-    anyhow::ensure!((index as usize) < MAX_COMMITTED_DATA_VALUES, "Committed-data index out of range");
     let Some(metadata) = read(&key(root, METADATA_LEVEL, 0))? else { return Ok(None) };
-    let (count, height, _) = decode_metadata(&metadata)?;
-    if index as usize >= count {
+    let count = count(&metadata)?;
+    let mut id = (2 * count - 2) as u32;
+    let mut previous = COMMITTED_DATA_TREE_HEIGHT;
+    let mut siblings = Vec::new();
+    while id as usize >= count {
+        let node = decode_branch(&read_record(root, count, id, &mut read)?, id)?;
+        anyhow::ensure!(usize::from(node.bit) < previous, "Unordered committed-data branches");
+        previous = usize::from(node.bit);
+        let (child, sibling) =
+            if key_bit(requested, node.bit) { (node.right, node.left) } else { (node.left, node.right) };
+        let bytes = read_record(root, count, sibling, &mut read)?;
+        let hash = if (sibling as usize) < count {
+            leaf(canonical_felt(&bytes[..32])?, canonical_felt(&bytes[32..])?)
+        } else {
+            decode_branch(&bytes, sibling)?.hash
+        };
+        siblings.push(CommittedDataSibling { bit: node.bit, hash });
+        id = child;
+    }
+    let bytes = read_record(root, count, id, &mut read)?;
+    let stored_key = canonical_felt(&bytes[..32])?;
+    if stored_key != requested {
         return Ok(None);
     }
-    // Each tree level is stored in contiguous, fixed-size pages. Validate the
-    // complete page length before selecting a node so corruption cannot be
-    // mistaken for deterministic padding outside the occupied prefix.
-    let mut read_node = |level: usize, node_index: usize| -> Result<Felt> {
-        let node_count = count.div_ceil(1 << level);
-        let page = node_index / PAGE_VALUES;
-        let bytes = read(&key(root, level.try_into()?, page.try_into()?))?
-            .ok_or_else(|| anyhow::anyhow!("Committed-data page unavailable"))?;
-        let expected_bytes = (node_count - page * PAGE_VALUES).min(PAGE_VALUES) * FELT_BYTES;
-        anyhow::ensure!(bytes.len() == expected_bytes, "Invalid committed-data page length");
-        let offset = (node_index % PAGE_VALUES) * FELT_BYTES;
-        canonical_felt(&bytes[offset..offset + FELT_BYTES])
-    };
-    let value = read_node(0, index as usize)?;
-    let mut siblings = Vec::with_capacity(height);
-    // Only the occupied prefix is persisted. Missing right siblings use the
-    // same recursively hashed zero subtree as the dataset constructor.
-    static EMPTY: std::sync::LazyLock<[Felt; COMMITTED_DATA_TREE_HEIGHT]> = std::sync::LazyLock::new(|| {
-        let mut hashes = [Felt::ZERO; COMMITTED_DATA_TREE_HEIGHT];
-        for height in 1..COMMITTED_DATA_TREE_HEIGHT {
-            hashes[height] = Poseidon::hash(&hashes[height - 1], &hashes[height - 1]);
-        }
-        hashes
-    });
-    for level in 0..height {
-        let sibling_index = ((index as usize) >> level) ^ 1;
-        let sibling = if sibling_index < count.div_ceil(1 << level) {
-            let node = read_node(level, sibling_index)?;
-            if level == 0 {
-                leaf(sibling_index.try_into()?, node)
-            } else {
-                node
-            }
-        } else {
-            EMPTY[level]
-        };
-        siblings.push(sibling);
-    }
-    Ok(Some(CommittedDataWitness { root, index, value, siblings }))
+    siblings.reverse();
+    Ok(Some(CommittedDataWitness { root, key: requested, value: canonical_felt(&bytes[32..])?, siblings }))
 }
-
-/// Streams bounded value/hash pages; the root is encoded in each key rather than in a page.
+/// Fixed-size encoding keeps storage independent of Rust/serde layouts.
 fn records(dataset: &CommittedDataSet) -> impl Iterator<Item = (Vec<u8>, Vec<u8>)> + '_ {
-    let levels = std::iter::once(dataset.values()).chain(dataset.internal_levels());
-    levels.enumerate().flat_map(move |(level, nodes)| {
-        nodes.chunks(PAGE_VALUES).enumerate().map(move |(page, values)| {
-            let key = key(dataset.root(), level as u8, page as u32);
-            (key, values.iter().flat_map(Felt::to_bytes_be).collect())
-        })
-    })
+    let entries = dataset.entries().chunks(PAGE_VALUES).enumerate().map(|(page, entries)| {
+        (
+            key(dataset.root(), 0, page as u32),
+            entries
+                .iter()
+                .flat_map(|(key, value)| [key.to_bytes_be(), value.to_bytes_be()].into_iter().flatten())
+                .collect(),
+        )
+    });
+    let branches = dataset.branches().chunks(PAGE_VALUES).enumerate().map(|(page, nodes)| {
+        let mut bytes = Vec::with_capacity(nodes.len() * BRANCH_BYTES);
+        for node in nodes {
+            bytes.extend_from_slice(&node.hash.to_bytes_be());
+            bytes.push(node.bit);
+            bytes.extend_from_slice(&node.left.to_be_bytes());
+            bytes.extend_from_slice(&node.right.to_be_bytes());
+        }
+        (key(dataset.root(), 1, page as u32), bytes)
+    });
+    entries.chain(branches)
 }
-
 impl RocksDBStorage {
     /// Seek over complete roots without scanning their value/hash pages. Each response is bounded.
     /// Cursors are lexical, not a durable high watermark: readers must rescan from the start.
@@ -189,7 +201,7 @@ impl RocksDBStorage {
     }
 
     /// Reads a bounded slice of raw values. Replicas authenticate the assembled dataset before import.
-    pub(super) fn read_committed_data_page(&self, root: Felt, start: u32) -> Result<Option<(u32, Vec<Felt>)>> {
+    pub(super) fn read_committed_data_page(&self, root: Felt, start: u32) -> Result<Option<(u32, Vec<(Felt, Felt)>)>> {
         anyhow::ensure!(
             (start as usize) % VALUES_PER_PAGE == 0 && (start as usize) < MAX_COMMITTED_DATA_VALUES,
             "Invalid committed-data page offset"
@@ -208,18 +220,18 @@ impl RocksDBStorage {
                 .get_pinned_cf(&cf, key(root, 0, (offset / PAGE_VALUES) as u32))?
                 .ok_or_else(|| anyhow::anyhow!("Committed-data page unavailable"))?;
             anyhow::ensure!(
-                bytes.len() == (count - offset).min(PAGE_VALUES) * FELT_BYTES,
+                bytes.len() == (count - offset).min(PAGE_VALUES) * ENTRY_BYTES,
                 "Invalid committed-data page length"
             );
-            for raw in bytes.chunks_exact(FELT_BYTES) {
-                values.push(canonical_felt(raw)?);
+            for raw in bytes.chunks_exact(ENTRY_BYTES) {
+                values.push((canonical_felt(&raw[..FELT_BYTES])?, canonical_felt(&raw[FELT_BYTES..])?));
             }
         }
         Ok(Some((count as u32, values)))
     }
 
-    /// Reads at most one metadata record and 20 bounded page records, without rebuilding a tree.
-    pub(super) fn read_committed_data_witness(&self, root: Felt, index: u32) -> Result<Option<CommittedDataWitness>> {
+    /// Reads metadata and at most two pages per Patricia branch, plus the leaf page.
+    pub(super) fn read_committed_data_witness(&self, root: Felt, index: Felt) -> Result<Option<CommittedDataWitness>> {
         let cf = self.inner.get_column(meta::META_COLUMN);
         let snapshot = rocksdb_snapshot::SnapshotWithDBArc::new(Arc::clone(&self.inner));
         read_witness(root, index, |key| {
@@ -249,11 +261,8 @@ impl RocksDBStorage {
         let metadata_key = key(dataset.root(), METADATA_LEVEL, 0);
         let existing = self.inner.db.get_pinned_cf(&cf, &metadata_key)?;
         if let Some(existing) = &existing {
-            let (count, height, _) = decode_metadata(existing)?;
-            anyhow::ensure!(
-                (count, height) == (dataset.values().len(), dataset.height()),
-                "Conflicting committed-data metadata"
-            );
+            let (count, _) = decode_metadata(existing)?;
+            anyhow::ensure!(count == dataset.entries().len(), "Conflicting committed-data metadata");
         }
         let mut batch = WriteBatch::default();
         let metadata = match existing {
@@ -280,14 +289,14 @@ mod tests {
     #[test]
     fn committed_data_pages_match_the_tree_and_bound_read_work() {
         for size in [1_usize, 2, 255, 256, 257, 513] {
-            let values: Vec<_> = (0..size).map(Felt::from).collect();
+            let values: Vec<_> = (0..size).map(|i| (Felt::from(i), Felt::from(i))).collect();
             let dataset = CommittedDataSet::new(values).unwrap();
             let mut pages: HashMap<_, _> = records(&dataset).collect();
             pages.insert(key(dataset.root(), METADATA_LEVEL, 0), encode_metadata(&dataset, None).unwrap().to_vec());
             for index in [0, size / 2, size - 1] {
                 let mut reads = 0;
                 let mut bytes = 0;
-                let witness = read_witness(dataset.root(), index as u32, |key| {
+                let witness = read_witness(dataset.root(), Felt::from(index), |key| {
                     reads += 1;
                     let value = pages.get(key).cloned();
                     bytes += value.as_ref().map_or(0, Vec::len);
@@ -295,19 +304,19 @@ mod tests {
                 })
                 .unwrap()
                 .unwrap();
-                assert_eq!(witness, dataset.witness(index as u32).unwrap());
+                assert_eq!(witness, dataset.witness(Felt::from(index)).unwrap());
                 assert!(witness.verify());
-                assert!(reads <= dataset.height() + 2);
-                assert!(bytes <= (dataset.height() + 1) * PAGE_BYTES + METADATA_BYTES);
+                assert!(reads <= 2 * witness.siblings.len() + 2);
+                assert!(bytes <= (2 * witness.siblings.len() + 1) * PAGE_BYTES + METADATA_BYTES);
             }
         }
     }
 
     #[test]
     fn committed_data_missing_page_is_an_error_not_an_absent_dataset() {
-        let dataset = CommittedDataSet::new(vec![Felt::TWO]).unwrap();
+        let dataset = CommittedDataSet::new(vec![(Felt::ZERO, Felt::TWO)]).unwrap();
         let metadata = key(dataset.root(), METADATA_LEVEL, 0);
-        let error = read_witness(dataset.root(), 0, |key| {
+        let error = read_witness(dataset.root(), Felt::ZERO, |key| {
             Ok((key == metadata.as_slice()).then(|| encode_metadata(&dataset, None).unwrap().to_vec()))
         })
         .unwrap_err();
@@ -323,10 +332,10 @@ mod tests {
         assert!(count(&0_u32.to_be_bytes()).is_err());
         assert!(count(&u32::MAX.to_be_bytes()).is_err());
         assert!(decode_metadata(&[0, 0, 0, 1, 19]).is_err());
-        let dataset = CommittedDataSet::new(vec![Felt::TWO]).unwrap();
+        let dataset = CommittedDataSet::new(vec![(Felt::ZERO, Felt::TWO)]).unwrap();
         let mut metadata = encode_metadata(&dataset, Some(42)).unwrap();
-        assert_eq!(decode_metadata(&metadata).unwrap(), (1, 0, Some(42)));
-        metadata[5] = 2;
+        assert_eq!(decode_metadata(&metadata).unwrap(), (1, Some(42)));
+        metadata[4] = 2;
         assert!(decode_metadata(&metadata).is_err());
     }
 }

@@ -147,7 +147,7 @@ mod committed_data_tests {
     async fn committed_data_feeder_serves_gets_and_rejects_post_and_invalid_offsets() {
         use std::io::{Read, Write};
         let backend = MadaraBackend::open_for_testing(Arc::new(mp_chain_config::ChainConfig::madara_test()));
-        let values = vec![Felt::ONE, Felt::TWO];
+        let values = vec![(Felt::ZERO, Felt::ONE), (Felt::MAX, Felt::TWO)];
         let root = CommittedDataSet::new(values.clone()).unwrap().root();
         backend.import_committed_data_snapshot(root, values.clone()).await.unwrap();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -187,8 +187,8 @@ mod committed_data_tests {
         assert_eq!(serde_json::from_str::<Vec<Felt>>(&body).unwrap(), vec![root]);
         let (_, body) = query("GET", format!("get_committed_data?root={root:#x}&start=0")).await;
         let page: mp_gateway::committed_data::CommittedDataPage = serde_json::from_str(&body).unwrap();
-        assert_eq!(page.values, values);
-        let (_, body) = query("GET", format!("get_committed_data_witness?root={root:#x}&index=1")).await;
+        assert_eq!(page.entries, values);
+        let (_, body) = query("GET", format!("get_committed_data_witness?root={root:#x}&key={:#x}", Felt::MAX)).await;
         let witness: blockifier::execution::syscalls::committed_data::CommittedDataWitness =
             serde_json::from_str(&body).unwrap();
         assert!(witness.verify());

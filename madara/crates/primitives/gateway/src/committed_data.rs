@@ -12,5 +12,5 @@ pub struct CommittedDataPage {
     pub root: Felt,
     pub start: u32,
     pub count: u32,
-    pub values: Vec<Felt>,
+    pub entries: Vec<(Felt, Felt)>,
 }

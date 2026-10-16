@@ -30,7 +30,7 @@ const MAX_RETRIES: usize = 5;
 const BASE_DELAY_MS: u64 = 100;
 const BACKOFF_BASE: u32 = 2;
 const COMMITTED_DATA_ROOTS_RESPONSE_BYTES: usize = 8 * 1024;
-const COMMITTED_DATA_PAGE_RESPONSE_BYTES: usize = 512 * 1024;
+const COMMITTED_DATA_PAGE_RESPONSE_BYTES: usize = 1024 * 1024;
 
 impl GatewayProvider {
     /// Generic retry mechanism for GET requests
