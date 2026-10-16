@@ -1,6 +1,7 @@
 //! Dataset ingestion and signed transaction submission on the private Committed Data listener.
 //! Imports are durable before transaction admission. Rejected transactions can leave unused datasets.
 use crate::{Starknet, StarknetRpcApiError};
+use blockifier::execution::syscalls::committed_data::MAX_COMMITTED_DATA_VALUES;
 use jsonrpsee::core::{async_trait, RpcResult};
 use jsonrpsee::types::ErrorObjectOwned;
 use m_proc_macros::versioned_rpc;
@@ -60,9 +61,7 @@ impl CommittedDataValues {
 impl TryFrom<Vec<Felt>> for CommittedDataValues {
     type Error = blockifier::execution::syscalls::committed_data::CommittedDataError;
     fn try_from(values: Vec<Felt>) -> Result<Self, Self::Error> {
-        if values.is_empty()
-            || values.len() > blockifier::execution::syscalls::committed_data::MAX_COMMITTED_DATA_VALUES
-        {
+        if values.is_empty() || values.len() > MAX_COMMITTED_DATA_VALUES {
             return Err(Self::Error::InvalidLength);
         }
         Ok(Self(values))
@@ -75,12 +74,12 @@ impl<'de> Deserialize<'de> for CommittedDataValues {
         impl<'de> serde::de::Visitor<'de> for ValuesVisitor {
             type Value = CommittedDataValues;
             fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.write_str("1..=524288 committed-data values")
+                write!(f, "1..={MAX_COMMITTED_DATA_VALUES} committed-data values")
             }
             fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut sequence: A) -> Result<Self::Value, A::Error> {
                 let mut values = Vec::new();
                 while let Some(value) = sequence.next_element::<Felt>()? {
-                    if values.len() == blockifier::execution::syscalls::committed_data::MAX_COMMITTED_DATA_VALUES {
+                    if values.len() == MAX_COMMITTED_DATA_VALUES {
                         return Err(serde::de::Error::custom("Too many committed-data values"));
                     }
                     values.push(value);

@@ -5,7 +5,6 @@ use clap::Args;
 use generate_pie::utils::load_versioned_constants;
 use url::Url;
 
-/// Loads an explicit constants override, rejecting unreadable or empty configuration files.
 pub(crate) fn parse_constants(path: &str) -> Result<VersionedConstants, String> {
     load_versioned_constants(Some(path))?
         .ok_or_else(|| format!("Failed to load versioned constants from file: {}", PathBuf::from(path).display()))

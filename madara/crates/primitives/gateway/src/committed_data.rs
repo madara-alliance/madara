@@ -4,7 +4,6 @@ use starknet_types_core::felt::Felt;
 
 pub const ROOTS_PER_PAGE: usize = 64;
 pub const VALUES_PER_PAGE: usize = 4096;
-pub const MAX_DATASET_VALUES: usize = 1 << 19;
 
 /// A page is transport data, not authenticated until the receiver verifies the complete root.
 #[derive(Debug, Clone, Serialize, Deserialize)]

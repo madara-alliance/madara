@@ -3,10 +3,11 @@ use crate::{
     error::GatewayError,
     helpers::{create_json_response, get_params_from_request},
 };
+use blockifier::execution::syscalls::committed_data::MAX_COMMITTED_DATA_VALUES;
 use hyper::{body::Incoming, Request, Response, StatusCode};
 use mc_db::{MadaraBackend, MadaraStorageRead};
 use mp_gateway::{
-    committed_data::{CommittedDataPage, MAX_DATASET_VALUES, VALUES_PER_PAGE},
+    committed_data::{CommittedDataPage, VALUES_PER_PAGE},
     error::{StarknetError, StarknetErrorCode},
 };
 use starknet_types_core::felt::Felt;
@@ -51,7 +52,7 @@ pub(crate) async fn get_page(
     let params = get_params_from_request(&req);
     let root = params.get("root").ok_or_else(invalid).and_then(|value| Felt::from_hex(value).map_err(|_| invalid()))?;
     let start = params.get("start").map(|value| value.parse::<u32>().map_err(|_| invalid())).transpose()?.unwrap_or(0);
-    if (start as usize) % VALUES_PER_PAGE != 0 || (start as usize) >= MAX_DATASET_VALUES {
+    if (start as usize) % VALUES_PER_PAGE != 0 || (start as usize) >= MAX_COMMITTED_DATA_VALUES {
         return Err(invalid());
     }
     bounded_read(move || {
@@ -75,7 +76,7 @@ pub(crate) async fn get_witness(
     let root = params.get("root").ok_or_else(invalid).and_then(|value| Felt::from_hex(value).map_err(|_| invalid()))?;
     let index =
         params.get("index").ok_or_else(invalid).and_then(|value| value.parse::<u32>().map_err(|_| invalid()))?;
-    if (index as usize) >= MAX_DATASET_VALUES {
+    if (index as usize) >= MAX_COMMITTED_DATA_VALUES {
         return Err(invalid());
     }
     bounded_read(move || Ok(create_json_response(StatusCode::OK, &backend.committed_data_witness(root, index)?))).await

@@ -1,15 +1,16 @@
 //! Resumable-by-presence replication of immutable datasets. No partial dataset is advertised.
 use anyhow::Context;
+use blockifier::execution::syscalls::committed_data::MAX_COMMITTED_DATA_VALUES;
 use mc_db::{MadaraBackend, MadaraStorageRead};
 use mc_gateway_client::GatewayProvider;
 use mp_convert::Felt;
-use mp_gateway::committed_data::{CommittedDataPage, MAX_DATASET_VALUES, ROOTS_PER_PAGE, VALUES_PER_PAGE};
+use mp_gateway::committed_data::{CommittedDataPage, ROOTS_PER_PAGE, VALUES_PER_PAGE};
 use std::{sync::Arc, time::Duration};
 
 /// Checks metadata/order before extending the bounded assembly buffer.
 fn append_page(root: Felt, count: Option<u32>, values: &mut Vec<Felt>, page: CommittedDataPage) -> anyhow::Result<u32> {
     anyhow::ensure!(page.root == root && page.start as usize == values.len(), "Committed-data page identity mismatch");
-    anyhow::ensure!((1..=MAX_DATASET_VALUES).contains(&(page.count as usize)), "Invalid committed-data count");
+    anyhow::ensure!((1..=MAX_COMMITTED_DATA_VALUES).contains(&(page.count as usize)), "Invalid committed-data count");
     anyhow::ensure!(count.is_none_or(|count| count == page.count), "Committed-data count changed during transfer");
     let remaining = (page.count as usize).checked_sub(values.len()).context("Committed-data offset exceeds count")?;
     anyhow::ensure!(
