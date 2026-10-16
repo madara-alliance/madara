@@ -15,7 +15,6 @@
   },
   "backend_params": {
     "use_committed_data": false,
-    "committed_data_oracle_addresses": [],
     "base_path": "../madara-db",
     "backup_dir": null,
     "restore_from_latest_backup": false,
