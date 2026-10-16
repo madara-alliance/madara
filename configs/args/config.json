@@ -24,6 +24,8 @@
     "db_enable_statistics": false,
     "db_statistics_period_sec": 60,
     "db_statistics_level": null,
+    "db_compaction_workers": null,
+    "db_background_write_rate_limit_mib_per_sec": null,
     "db_memtable_blocks_budget_mib": 1024,
     "db_memtable_contracts_budget_mib": 128,
     "db_memtable_other_budget_mib": 128,

@@ -12,6 +12,7 @@ const MiB: usize = 1024 * KiB;
 const GiB: usize = 1024 * MiB;
 
 const DEFAULT_EXEC_READ_CACHE_MAX_MEMORY_MIB: usize = 64;
+const MAX_DB_COMPACTION_WORKERS: usize = 1024;
 
 /// Returns the default RocksDB obsolete-file scan interval for config deserialization.
 /// Keeping it aligned with `RocksDBConfig` preserves compatibility with existing configs.
@@ -181,6 +182,26 @@ pub struct BackendParams {
     #[serde(default = "default_max_open_files")]
     pub db_max_open_files: i32,
 
+    /// Limit the low-priority RocksDB worker pool used for compaction.
+    /// Unset preserves the legacy behavior of using all detected CPU cores.
+    #[clap(
+        env = "MADARA_DB_COMPACTION_WORKERS",
+        long,
+        value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..=MAX_DB_COMPACTION_WORKERS as u64)
+    )]
+    #[serde(default)]
+    pub db_compaction_workers: Option<usize>,
+
+    /// Limit aggregate RocksDB flush and compaction write throughput in MiB/s.
+    /// Flush work has higher priority than compaction. Unset leaves throughput unlimited.
+    #[clap(
+        env = "MADARA_DB_BACKGROUND_WRITE_RATE_LIMIT_MIB_PER_SEC",
+        long,
+        value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..)
+    )]
+    #[serde(default)]
+    pub db_background_write_rate_limit_mib_per_sec: Option<usize>,
+
     /// Set the memtable budget for a set of columns.
     #[clap(env = "MADARA_DB_MEMTABLE_BLOCKS_BUDGET_MIB", long, default_value_t = 1024)]
     pub db_memtable_blocks_budget_mib: usize,
@@ -321,8 +342,31 @@ pub struct BackendParams {
 
 impl BackendParams {
     pub fn validate(&self) -> anyhow::Result<()> {
+        self.validate_rocksdb_background_work()?;
         self.validate_exec_read_cache()?;
         self.validate_exec_hash_cache()
+    }
+
+    fn validate_rocksdb_background_work(&self) -> anyhow::Result<()> {
+        if let Some(workers) = self.db_compaction_workers {
+            anyhow::ensure!(
+                (1..=MAX_DB_COMPACTION_WORKERS).contains(&workers),
+                "`db_compaction_workers` must be between 1 and {MAX_DB_COMPACTION_WORKERS}."
+            );
+        }
+
+        if let Some(rate_mib_per_sec) = self.db_background_write_rate_limit_mib_per_sec {
+            anyhow::ensure!(rate_mib_per_sec > 0, "`db_background_write_rate_limit_mib_per_sec` must be positive.");
+            let rate_bytes_per_sec = rate_mib_per_sec
+                .checked_mul(MiB)
+                .ok_or_else(|| anyhow::anyhow!("`db_background_write_rate_limit_mib_per_sec` overflows bytes."))?;
+            anyhow::ensure!(
+                i64::try_from(rate_bytes_per_sec).is_ok(),
+                "`db_background_write_rate_limit_mib_per_sec` exceeds RocksDB's supported range."
+            );
+        }
+
+        Ok(())
     }
 
     fn validate_exec_read_cache(&self) -> anyhow::Result<()> {
@@ -423,6 +467,10 @@ impl BackendParams {
             write_mode: DbWriteMode { wal: self.db_wal, fsync: self.db_fsync },
             delete_obsolete_files_period_micros: self.db_delete_obsolete_files_period_micros,
             max_open_files: self.db_max_open_files,
+            compaction_workers: self.db_compaction_workers,
+            background_write_rate_limit_bytes_per_sec: self
+                .db_background_write_rate_limit_mib_per_sec
+                .map(|rate| rate.saturating_mul(MiB) as u64),
             // Write stall prevention settings
             max_write_buffer_number: self.db_max_write_buffer_number,
             level_zero_slowdown_writes_trigger: self.db_l0_slowdown_trigger,
