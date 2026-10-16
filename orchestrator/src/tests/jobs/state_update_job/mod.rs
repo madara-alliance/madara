@@ -1,7 +1,7 @@
 use std::fs::read_to_string;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex};
 
 use crate::core::client::database::{AggregatorBatchDbQuery, MockDatabaseClient};
 use crate::core::client::storage::MockStorageClient;
@@ -23,11 +23,14 @@ use crate::worker::event_handler::jobs::state_update::StateUpdateJobHandler;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::event_handler::service::JobHandlerService;
 use assert_matches::assert_matches;
+use async_trait::async_trait;
 use bytes::Bytes;
 use httpmock::prelude::*;
 use lazy_static::lazy_static;
 use mockall::predicate::eq;
-use orchestrator_settlement_client_interface::{MockSettlementClient, StateUpdateTxResult};
+use orchestrator_settlement_client_interface::{
+    MockSettlementClient, SettlementClient, SettlementVerificationStatus, StateUpdateTxResult,
+};
 use rstest::*;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
@@ -40,6 +43,65 @@ lazy_static! {
 }
 
 pub const X_0_FILE_NAME: &str = "x_0.txt";
+
+struct PendingFirstStateUpdateClient {
+    broadcast_tx: Mutex<Option<oneshot::Sender<()>>>,
+    submissions: Arc<AtomicUsize>,
+    submitted_nonces: Arc<Mutex<Vec<u64>>>,
+    last_settled_block: u64,
+    nonce: u64,
+}
+
+#[async_trait]
+impl SettlementClient for PendingFirstStateUpdateClient {
+    async fn register_proof(&self, _proof: [u8; 32]) -> color_eyre::Result<String> {
+        unreachable!("register_proof is not used by this test")
+    }
+
+    async fn update_state_calldata(
+        &self,
+        _snos_output: Vec<[u8; 32]>,
+        _program_output: Vec<[u8; 32]>,
+        _onchain_data_hash: [u8; 32],
+        _onchain_data_size: [u8; 32],
+    ) -> color_eyre::Result<String> {
+        unreachable!("update_state_calldata is not used by this test")
+    }
+
+    async fn update_state_with_blobs(
+        &self,
+        _program_output: Vec<[u8; 32]>,
+        _state_diff: Vec<Vec<u8>>,
+        nonce: u64,
+    ) -> color_eyre::Result<StateUpdateTxResult> {
+        self.submitted_nonces.lock().unwrap().push(nonce);
+
+        if self.submissions.fetch_add(1, Ordering::SeqCst) == 0 {
+            if let Some(broadcast_tx) = self.broadcast_tx.lock().unwrap().take() {
+                let _ = broadcast_tx.send(());
+            }
+            std::future::pending().await
+        } else {
+            Ok(StateUpdateTxResult { tx_hash: "0xreplacement".to_string(), attempts: Vec::new() })
+        }
+    }
+
+    async fn verify_tx_inclusion(&self, _tx_hash: &str) -> color_eyre::Result<SettlementVerificationStatus> {
+        unreachable!("verify_tx_inclusion is not used by this test")
+    }
+
+    async fn wait_for_tx_finality(&self, _tx_hash: &str) -> color_eyre::Result<Option<u64>> {
+        unreachable!("wait_for_tx_finality is not used by this test")
+    }
+
+    async fn get_last_settled_block(&self) -> color_eyre::Result<Option<u64>> {
+        Ok(Some(self.last_settled_block))
+    }
+
+    async fn get_nonce(&self) -> color_eyre::Result<u64> {
+        Ok(self.nonce)
+    }
+}
 
 // ==================== Mock Tests (Unit tests) ===========================
 
@@ -244,33 +306,16 @@ async fn shutdown_after_state_update_broadcast_retries_with_the_same_nonce() {
     let da_segment_path = format!("batch/{batch_index}/da_segment.json");
 
     let (broadcast_tx, broadcast_rx) = oneshot::channel();
-    let broadcast_tx = Arc::new(Mutex::new(Some(broadcast_tx)));
-    let (release_tx, release_rx) = mpsc::channel();
-    let release_rx = Arc::new(Mutex::new(release_rx));
     let submissions = Arc::new(AtomicUsize::new(0));
     let submitted_nonces = Arc::new(Mutex::new(Vec::new()));
 
-    let mut settlement_client = MockSettlementClient::new();
-    settlement_client.expect_get_last_settled_block().returning(|| Ok(Some(902785)));
-    settlement_client.expect_get_nonce().times(2).returning(move || Ok(nonce));
-    settlement_client.expect_update_state_with_blobs().times(2).returning({
-        let broadcast_tx = Arc::clone(&broadcast_tx);
-        let release_rx = Arc::clone(&release_rx);
-        let submissions = Arc::clone(&submissions);
-        let submitted_nonces = Arc::clone(&submitted_nonces);
-        move |_, _, submitted_nonce| {
-            submitted_nonces.lock().unwrap().push(submitted_nonce);
-            if submissions.fetch_add(1, Ordering::SeqCst) == 0 {
-                if let Some(broadcast_tx) = broadcast_tx.lock().unwrap().take() {
-                    let _ = broadcast_tx.send(());
-                }
-                release_rx.lock().unwrap().recv().expect("test should release the pending transaction");
-                Ok(StateUpdateTxResult { tx_hash: "0xoriginal".to_string(), attempts: Vec::new() })
-            } else {
-                Ok(StateUpdateTxResult { tx_hash: "0xreplacement".to_string(), attempts: Vec::new() })
-            }
-        }
-    });
+    let settlement_client = PendingFirstStateUpdateClient {
+        broadcast_tx: Mutex::new(Some(broadcast_tx)),
+        submissions: Arc::clone(&submissions),
+        submitted_nonces: Arc::clone(&submitted_nonces),
+        last_settled_block: 902785,
+        nonce,
+    };
 
     let serialized_program_output = bincode::serialize(&vec![[0_u8; 32]]).unwrap();
     let mut storage_client = MockStorageClient::new();
@@ -329,15 +374,11 @@ async fn shutdown_after_state_update_broadcast_retries_with_the_same_nonce() {
     broadcast_rx.await.expect("first state update transaction should be broadcast");
     shutdown_token.cancel();
 
-    assert_matches!(
-        first_attempt.await.unwrap(),
-        Err(JobError::ShutdownHandlerStillRunning { id }) if id == job.id
-    );
+    assert_matches!(first_attempt.await.unwrap(), Err(JobError::ShutdownInterrupted { id }) if id == job.id);
     let restored_job = services.config.database().get_job_by_id(job.id).await.unwrap().unwrap();
     assert_eq!(restored_job.status, JobStatus::Created);
     assert_eq!(restored_job.metadata, job.metadata);
 
-    release_tx.send(()).expect("first state update attempt should still be waiting");
     JobHandlerService::process_job(job.id, services.config.clone()).await.unwrap();
 
     let retried_job = services.config.database().get_job_by_id(job.id).await.unwrap().unwrap();

@@ -148,6 +148,8 @@ pub struct TestConfigBuilder {
     max_blocks_per_snos_batch: Option<Option<u64>>,
     /// State transition verification queue delay
     state_transition_verification_delay_seconds: Option<u64>,
+    /// SNOS processing lease timeout
+    snos_job_timeout_seconds: Option<u64>,
 }
 
 impl Default for TestConfigBuilder {
@@ -217,6 +219,7 @@ impl TestConfigBuilder {
             madara_feeder_gateway_url: None,
             max_blocks_per_snos_batch: None,
             state_transition_verification_delay_seconds: None,
+            snos_job_timeout_seconds: None,
         }
     }
 
@@ -310,6 +313,11 @@ impl TestConfigBuilder {
         self
     }
 
+    pub fn configure_snos_job_timeout_seconds(mut self, timeout: u64) -> TestConfigBuilder {
+        self.snos_job_timeout_seconds = Some(timeout);
+        self
+    }
+
     pub async fn build(self) -> TestConfigBuilderReturns {
         dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env.test file");
 
@@ -338,6 +346,7 @@ impl TestConfigBuilder {
             madara_feeder_gateway_url,
             max_blocks_per_snos_batch,
             state_transition_verification_delay_seconds,
+            snos_job_timeout_seconds,
         } = self;
 
         let (_starknet_rpc_url, starknet_client, starknet_server) =
@@ -393,6 +402,9 @@ impl TestConfigBuilder {
         }
         if let Some(delay) = state_transition_verification_delay_seconds {
             params.orchestrator_params.service_config.state_transition_verification_delay_seconds = delay;
+        }
+        if let Some(timeout) = snos_job_timeout_seconds {
+            params.orchestrator_params.service_config.snos_job_timeout_seconds = timeout;
         }
 
         let madara_feeder_gateway_client =

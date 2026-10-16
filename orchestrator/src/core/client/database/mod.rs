@@ -12,6 +12,7 @@ use crate::types::jobs::types::{JobStatus, JobType};
 use ::mongodb::bson::Document;
 use ::mongodb::options::FindOneAndUpdateOptions;
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 pub use error::DatabaseError;
 use std::time::Instant;
 
@@ -111,6 +112,15 @@ pub trait DatabaseClient: Send + Sync {
     /// * `current_job` - The current state of the job
     /// * `update` - The updates to apply
     async fn update_job(&self, current_job: &JobItem, update: JobItemUpdates) -> Result<JobItem, DatabaseError>;
+
+    /// Refresh the lease timestamp for a specific in-flight processing attempt without changing
+    /// its optimistic-lock version. Returns an error if that attempt no longer owns the job.
+    async fn refresh_job_processing_lease(
+        &self,
+        id: uuid::Uuid,
+        version: i32,
+        process_started_at: DateTime<Utc>,
+    ) -> Result<(), DatabaseError>;
 
     /// Get the latest job of a specific type
     ///

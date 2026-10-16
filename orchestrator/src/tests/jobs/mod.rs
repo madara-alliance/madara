@@ -29,6 +29,7 @@
 // interference between tests when they set expectations for the same JobType. The lock is held for
 // the entire test duration, which is safe because it's test-scoped and won't block production code.
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex as StdMutex};
 use std::time::Duration;
 
@@ -90,6 +91,7 @@ struct ShutdownBlockingJobHandler {
 struct NonYieldingShutdownBlockingJobHandler {
     started: StdMutex<Option<oneshot::Sender<()>>>,
     release: StdMutex<mpsc::Receiver<()>>,
+    invocations: Arc<AtomicUsize>,
 }
 
 #[async_trait]
@@ -103,12 +105,13 @@ impl JobHandlerTrait for NonYieldingShutdownBlockingJobHandler {
         _config: Arc<crate::core::config::Config>,
         _job: &mut JobItem,
     ) -> Result<String, JobError> {
+        self.invocations.fetch_add(1, Ordering::SeqCst);
         if let Some(started) = self.started.lock().unwrap().take() {
             let _ = started.send(());
         }
 
         self.release.lock().unwrap().recv().expect("test should release synchronous handler");
-        Ok("0xbeef".to_string())
+        std::future::pending().await
     }
 
     async fn verify_job(
@@ -531,16 +534,18 @@ async fn process_job_shutdown_restores_locked_job_for_sqs_retry() {
     assert!(restored_job.metadata.common.process_completed_at.is_none());
 }
 
-/// Tests that shutdown stays observable while a handler is executing synchronous, non-yielding work.
+/// Tests that synchronous work does not consume Tokio's only async worker and that the processing
+/// lock remains owned until the handler future can actually stop.
 #[rstest]
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[allow(clippy::await_holding_lock)]
-async fn process_job_shutdown_restores_job_during_non_yielding_processing() {
+async fn process_job_shutdown_retains_lock_until_non_yielding_processing_stops() {
     let _test_lock = acquire_test_lock();
 
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
         .configure_queue_client(ConfigType::Actual)
+        .configure_snos_job_timeout_seconds(1)
         .build()
         .await;
     let db_client = services.config.database();
@@ -550,32 +555,56 @@ async fn process_job_shutdown_restores_job_during_non_yielding_processing() {
 
     let (started_tx, started_rx) = oneshot::channel();
     let (release_tx, release_rx) = mpsc::channel();
+    let invocations = Arc::new(AtomicUsize::new(0));
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(NonYieldingShutdownBlockingJobHandler {
         started: StdMutex::new(Some(started_tx)),
         release: StdMutex::new(release_rx),
+        invocations: Arc::clone(&invocations),
     }));
 
     let ctx = get_job_handler_context_safe();
     ctx.expect().times(1).with(eq(JobType::SnosRun)).return_once(move |_| Arc::clone(&job_handler));
 
     let shutdown_token = CancellationToken::new();
-    let process_handle = tokio::spawn(JobHandlerService::process_job_with_shutdown(
+    let mut process_handle = tokio::spawn(JobHandlerService::process_job_with_shutdown(
         job_item.id,
         services.config.clone(),
         shutdown_token.clone(),
     ));
 
     started_rx.await.expect("handler should start after job is locked");
+    let initially_locked_job = db_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
+    let initial_lease = initially_locked_job.metadata.common.process_started_at.unwrap();
     shutdown_token.cancel();
 
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), &mut process_handle).await.is_err(),
+        "shutdown must not restore a lock while synchronous handler code is still executing"
+    );
+
+    sleep(Duration::from_millis(1500)).await;
+
+    let locked_job = db_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
+    assert_eq!(locked_job.status, JobStatus::LockedForProcessing);
+    assert!(
+        locked_job.metadata.common.process_started_at.unwrap() > initial_lease,
+        "the active attempt must refresh its lease past the original stale deadline"
+    );
+
+    assert_matches!(
+        JobHandlerService::process_job(job_item.id, services.config.clone()).await,
+        Err(JobError::ProcessingLeaseActive { id }) if id == job_item.id
+    );
+    assert_eq!(invocations.load(Ordering::SeqCst), 1, "redelivery must not start an overlapping handler");
+
+    release_tx.send(()).expect("test should release synchronous handler");
+
     let result = process_handle.await.unwrap();
-    assert_matches!(result, Err(JobError::ShutdownHandlerStillRunning { id }) if id == job_item.id);
+    assert_matches!(result, Err(JobError::ShutdownInterrupted { id }) if id == job_item.id);
 
     let restored_job = db_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
     assert_eq!(restored_job.status, JobStatus::Created);
     assert_eq!(restored_job.metadata, job_item.metadata);
-
-    release_tx.send(()).expect("synchronous handler should still be running");
 }
 
 /// Tests that successful processing is not restored by a later shutdown signal.

@@ -316,7 +316,7 @@ impl EventWorker {
             if error.should_nack_delivery() {
                 nack_delivery_with_retry(message).await?;
             } else {
-                warn!("Leaving delivery pending because the shutdown job restore was not durable");
+                warn!("Leaving delivery pending to preserve processing ownership and safe retry");
             }
 
             // TODO: Since we are using SNS, we need to send the error message to the DLQ in future
@@ -418,7 +418,7 @@ impl EventWorker {
                                         error!("Failed to NACK priority message: {:?}", e);
                                     }
                                 } else {
-                                    warn!("Leaving priority delivery pending because the shutdown job restore was not durable");
+                                    warn!("Leaving priority delivery pending to preserve processing ownership and safe retry");
                                 }
                             }
                         }

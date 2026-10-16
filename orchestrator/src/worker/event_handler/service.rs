@@ -5,7 +5,7 @@ use opentelemetry::KeyValue;
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::time::{sleep, timeout};
+use tokio::time::{interval, sleep, MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -41,7 +41,6 @@ pub struct JobHandlerService;
 
 const SHUTDOWN_RESTORE_MAX_ATTEMPTS: u8 = 3;
 const SHUTDOWN_RESTORE_RETRY_DELAY: Duration = Duration::from_millis(250);
-const SHUTDOWN_HANDLER_ABORT_TIMEOUT: Duration = Duration::from_secs(1);
 
 impl JobHandlerService {
     /// Creates the job in the DB in the created state and adds it to the process queue
@@ -160,7 +159,8 @@ impl JobHandlerService {
     /// * Adds processing completion timestamp to metadata
     /// * Automatically adds the job to verification queue upon successful processing
     /// * For jobs stuck in LockedForProcessing, heals them if they're older than the configured
-    ///   timeout (stale), otherwise acks the message assuming it's a duplicate
+    ///   timeout (stale); otherwise leaves the duplicate delivery pending while the active attempt
+    ///   refreshes its processing lease
     ///
     /// # Failure handling
     /// Retryable SNOS processing errors restore the job to its pre-processing status and return an
@@ -169,24 +169,19 @@ impl JobHandlerService {
     /// errors still fail fast by moving the job to `Failed` and ACKing the message so alerting can
     /// stop the sequencer quickly. Failed jobs can be retried via the `retry_job` endpoint.
     ///
-    /// # Important
-    /// The queue visibility timeout MUST be greater than the job healing timeout configured via
-    /// environment variables (e.g., MADARA_ORCHESTRATOR_SNOS_JOB_TIMEOUT_SECONDS). If visibility
-    /// timeout is shorter, messages may become visible again before the healing timeout expires,
-    /// leading to duplicate processing attempts that get incorrectly treated as stale jobs.
     pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
         Self::process_job_with_shutdown(id, config, CancellationToken::new()).await
     }
 
     /// Processes a job while observing the worker's shutdown token.
     ///
-    /// The handler runs in its own task so cancellation remains observable while a handler is inside
-    /// synchronous SNOS or aggregation work. Cancellation aborts that task and restores the job to
-    /// its exact pre-processing status and metadata. A handler that stops promptly returns
-    /// [`JobError::ShutdownInterrupted`] so the queue delivery is released. If the handler is still
-    /// executing synchronous code, [`JobError::ShutdownHandlerStillRunning`] leaves the delivery
-    /// pending until its visibility timeout to prevent concurrent redelivery. A failed durable
-    /// restore similarly returns [`JobError::ShutdownRestoreFailed`] and leaves the delivery pending.
+    /// The handler future is polled on Tokio's blocking pool so synchronous SNOS or aggregation work
+    /// cannot occupy every async worker and prevent the shutdown coordinator from running. On
+    /// cancellation, the database lock is restored only after the handler future has yielded and
+    /// been dropped. Until then a heartbeat keeps the `LockedForProcessing` lease fresh, and a
+    /// redelivery is left pending rather than ACKed or allowed to overlap. If the process-wide
+    /// graceful-shutdown deadline expires first, the heartbeat stops with the process; the existing
+    /// visibility-timeout and stale-job recovery path then owns recovery.
     pub(crate) async fn process_job_with_shutdown(
         id: Uuid,
         config: Arc<Config>,
@@ -218,12 +213,8 @@ impl JobHandlerService {
             JobStatus::LockedForProcessing => {
                 // Self-healing for orphaned jobs: Check if the job is stale (older than timeout).
                 // If stale, we assume the previous processor crashed/timed out and heal the job
-                // to process it normally. If not stale, we assume this is a duplicate message
-                // and ack it safely.
-                //
-                // WARNING: For this to work correctly, the queue visibility timeout MUST be
-                // greater than the healing timeout. Otherwise, messages may become visible
-                // before the healing timeout expires, causing false positive stale detection.
+                // to process it normally. A live processor refreshes this timestamp, so a
+                // redelivery cannot heal and overlap an active attempt.
                 let timeout_seconds = config.service_config().get_job_timeout(&job.job_type);
                 let cutoff_time = Utc::now() - chrono::Duration::seconds(timeout_seconds as i64);
 
@@ -276,13 +267,15 @@ impl JobHandlerService {
                     );
                     // Continue with normal processing below
                 } else {
-                    // Job is not stale - this is likely a duplicate message, ack it safely
+                    // Job is not stale - another live attempt still owns it. Keep this delivery
+                    // pending rather than ACKing it: if the owner dies, this message is still the
+                    // recovery path once the processing lease becomes stale.
                     debug!(
                         job_id = ?id,
                         status = ?job.status,
-                        "Job is {} but not stale, assuming duplicate message. ACKing safely.", JobStatus::LockedForProcessing
+                        "Job is {} with an active processing lease; leaving duplicate delivery pending.", JobStatus::LockedForProcessing
                     );
-                    return Ok(());
+                    return Err(JobError::ProcessingLeaseActive { id });
                 }
             }
             JobStatus::PendingVerification | JobStatus::Completed => {
@@ -365,54 +358,76 @@ impl JobHandlerService {
             Shutdown,
         }
 
-        // Keep cancellation observable even when a handler polls synchronous CPU work without
-        // yielding (notably SNOS execution and local aggregation).
+        // Keep the database lease fresh for the entire lifetime of this attempt. This is the
+        // exclusion mechanism after SQS visibility expires: another delivery sees a non-stale lock
+        // and is left pending instead of starting overlapping work.
+        let lease_stop = CancellationToken::new();
+        let lease_guard = lease_stop.clone().drop_guard();
+        let lease_heartbeat = tokio::spawn(Self::maintain_processing_lease(
+            job.id,
+            job.version,
+            job.job_type.clone(),
+            config.clone(),
+            lease_stop.clone(),
+        ));
+
+        // Poll the handler on the blocking pool. Some handlers perform synchronous CPU work before
+        // their next await; keeping that work off the async worker pool ensures the shutdown
+        // coordinator itself always has capacity to run.
         let processing_handler = Arc::clone(&job_handler);
         let processing_config = config.clone();
         let mut processing_job = job.clone();
-        let mut processing = tokio::spawn(
-            async move {
-                let result = AssertUnwindSafe(processing_handler.process_job(processing_config, &mut processing_job))
-                    .catch_unwind()
-                    .await;
-                (result, processing_job)
-            }
-            .in_current_span(),
-        );
+        let runtime = tokio::runtime::Handle::current();
+        let span = Span::current();
+        let processing = tokio::task::spawn_blocking(move || {
+            runtime.block_on(
+                async move {
+                    let outcome = {
+                        let processing =
+                            AssertUnwindSafe(processing_handler.process_job(processing_config, &mut processing_job))
+                                .catch_unwind();
+                        tokio::pin!(processing);
 
-        let processing_result = tokio::select! {
-            biased;
+                        tokio::select! {
+                            biased;
 
-            result = &mut processing => ProcessingOutcome::Completed(result),
-            _ = shutdown_token.cancelled() => ProcessingOutcome::Shutdown,
-        };
+                            result = &mut processing => ProcessingOutcome::Completed(result),
+                            _ = shutdown_token.cancelled() => ProcessingOutcome::Shutdown,
+                        }
+                    };
 
-        let processing_result = match processing_result {
-            ProcessingOutcome::Completed(Ok((result, processed_job))) => {
+                    (outcome, processing_job)
+                }
+                .instrument(span),
+            )
+        });
+
+        let processing = processing.await;
+        lease_stop.cancel();
+        if let Err(error) = lease_heartbeat.await {
+            error!(job_id = ?id, error = ?error, "Processing lease heartbeat task failed");
+        }
+        drop(lease_guard);
+
+        let processing_result = match processing {
+            Ok((ProcessingOutcome::Completed(result), processed_job)) => {
                 job = processed_job;
                 result
             }
-            ProcessingOutcome::Completed(Err(error)) => {
-                Ok(Err(JobError::Other(OtherError::from(format!("Job handler task failed: {error}")))))
-            }
-            ProcessingOutcome::Shutdown => {
-                processing.abort();
-                let handler_stopped = timeout(SHUTDOWN_HANDLER_ABORT_TIMEOUT, &mut processing).await.is_ok();
+            Err(error) => Ok(Err(JobError::Other(OtherError::from(format!("Job handler task failed: {error}"))))),
+            Ok((ProcessingOutcome::Shutdown, processed_job)) => {
+                job = processed_job;
                 warn!(
                     job_id = ?id,
                     job_type = ?job.job_type,
                     internal_id = %job.internal_id,
                     status = ?original_status,
-                    handler_stopped,
-                    "Shutdown requested while processing job, restoring job state for SQS retry"
+                    "Shutdown stopped the processing handler; restoring job state for SQS retry"
                 );
                 workload.finish_error();
-                let restore_error =
-                    Self::restore_job_after_shutdown(&mut job, config, original_status, original_metadata).await;
-                return Err(match (handler_stopped, restore_error) {
-                    (false, JobError::ShutdownInterrupted { id }) => JobError::ShutdownHandlerStillRunning { id },
-                    (_, error) => error,
-                });
+                return Err(
+                    Self::restore_job_after_shutdown(&mut job, config, original_status, original_metadata).await
+                );
             }
         };
 
@@ -610,6 +625,39 @@ impl JobHandlerService {
         }
 
         unreachable!("shutdown restore loop always returns")
+    }
+
+    async fn maintain_processing_lease(
+        id: Uuid,
+        version: i32,
+        job_type: JobType,
+        config: Arc<Config>,
+        stop: CancellationToken,
+    ) {
+        let timeout_seconds = config.service_config().get_job_timeout(&job_type);
+        let heartbeat_period = Duration::from_secs((timeout_seconds / 3).max(1));
+        let mut heartbeat = interval(heartbeat_period);
+        heartbeat.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        heartbeat.tick().await;
+
+        loop {
+            tokio::select! {
+                biased;
+
+                _ = stop.cancelled() => return,
+                _ = heartbeat.tick() => {
+                    if let Err(error) = config.database().refresh_job_processing_lease(id, version, Utc::now()).await {
+                        warn!(
+                            job_id = ?id,
+                            job_type = ?job_type,
+                            version,
+                            error = ?error,
+                            "Failed to refresh processing lease; retrying on the next heartbeat"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     async fn reset_job_for_sqs_retry(
