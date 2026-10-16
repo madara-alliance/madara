@@ -109,6 +109,8 @@ pub const DEFAULT_DELETE_OBSOLETE_FILES_PERIOD_MICROS: u64 = 60 * 60 * 1_000_000
 /// Default number of SST table readers RocksDB may retain across the database.
 /// Operators can lower this for large databases when index/filter memory is constrained.
 pub const DEFAULT_MAX_OPEN_FILES: i32 = 2048;
+const RATE_LIMITER_REFILL_PERIOD_MICROS: i64 = 100_000;
+const RATE_LIMITER_FAIRNESS: i32 = 10;
 
 pub use rocksdb::statistics::StatsLevel;
 
@@ -230,6 +232,14 @@ pub struct RocksDBConfig {
     /// Lower values reduce index/filter memory at the cost of more file-open work on reads.
     pub max_open_files: i32,
 
+    /// Number of low-priority RocksDB threads available to compaction.
+    /// When unset, RocksDB keeps the legacy CPU-core-based configuration.
+    pub compaction_workers: Option<usize>,
+
+    /// Shared write-rate ceiling for RocksDB flush and compaction work.
+    /// Flushes have higher priority than compactions. When unset, writes are unlimited.
+    pub background_write_rate_limit_bytes_per_sec: Option<u64>,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // WRITE STALL PREVENTION SETTINGS
     // ═══════════════════════════════════════════════════════════════════════════
@@ -274,6 +284,8 @@ impl Default for RocksDBConfig {
             write_mode: DbWriteMode::default(),
             delete_obsolete_files_period_micros: DEFAULT_DELETE_OBSOLETE_FILES_PERIOD_MICROS,
             max_open_files: DEFAULT_MAX_OPEN_FILES,
+            compaction_workers: None,
+            background_write_rate_limit_bytes_per_sec: None,
             // Write stall prevention defaults (tuned for ~20 GiB volumes)
             max_write_buffer_number: 5,
             level_zero_slowdown_writes_trigger: 20,
@@ -294,7 +306,7 @@ impl Default for RocksDBConfig {
 ///
 /// ```text
 /// ┌──────────────────────────────────────────────────────────────────┐
-/// │  Thread Pool (max_background_jobs = CPU cores)                   │
+/// │  Thread Pool (bounded when compaction_workers is configured)     │
 /// │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐     │
 /// │  │ Flush   │ │Compact  │ │Compact  │ │Compact  │ │Compact  │     │
 /// │  │ Thread  │ │Thread 1 │ │Thread 2 │ │Thread 3 │ │Thread 4 │     │
@@ -373,17 +385,46 @@ pub fn rocksdb_global_options(config: &RocksDBConfig) -> Result<Options> {
     // PARALLELISM CONFIGURATION
     // ═══════════════════════════════════════════════════════════════════════════
     // Controls background thread pool for flush and compaction operations.
-    // More threads = faster background work = less likely to hit write stalls.
+    // More threads = faster background work, but a larger instantaneous CPU and I/O burst.
     options.increase_parallelism(cores);
-    options.set_max_background_jobs(cores);
+
+    let compaction_workers = config
+        .compaction_workers
+        .map(i32::try_from)
+        .transpose()
+        .context("RocksDB compaction worker count exceeds i32::MAX")?
+        .unwrap_or(cores);
+    let max_background_jobs = if config.compaction_workers.is_some() {
+        compaction_workers.checked_add(1).context("RocksDB background job count overflow")?
+    } else {
+        cores
+    };
+    options.set_max_background_jobs(max_background_jobs);
 
     // Atomic flush ensures all column families are flushed together,
     // maintaining consistency across the database.
     options.set_atomic_flush(true);
 
     // Allow compaction jobs to be split across multiple threads.
-    // A single large compaction can use up to `cores` threads.
-    options.set_max_subcompactions(cores as _);
+    // A single large compaction can use up to the compaction-worker budget.
+    options.set_max_subcompactions(compaction_workers as _);
+
+    if let Some(rate_bytes_per_sec) = config.background_write_rate_limit_bytes_per_sec {
+        options.set_ratelimiter(
+            i64::try_from(rate_bytes_per_sec).context("RocksDB background write rate exceeds i64::MAX")?,
+            RATE_LIMITER_REFILL_PERIOD_MICROS,
+            RATE_LIMITER_FAIRNESS,
+        );
+    }
+
+    tracing::info!(
+        detected_cores = cores,
+        compaction_workers,
+        max_background_jobs,
+        max_subcompactions = compaction_workers,
+        background_write_rate_limit_bytes_per_sec = ?config.background_write_rate_limit_bytes_per_sec,
+        "Configured RocksDB background work budget"
+    );
 
     // ═══════════════════════════════════════════════════════════════════════════
     // WRITE STALL PREVENTION - MEMTABLE SETTINGS
@@ -467,7 +508,9 @@ pub fn rocksdb_global_options(config: &RocksDBConfig) -> Result<Options> {
     // ═══════════════════════════════════════════════════════════════════════════
     let mut env = Env::new().context("Creating rocksdb env")?;
     // Low priority threads are used for compaction (can be preempted by flush).
-    env.set_low_priority_background_threads(cores);
+    env.set_low_priority_background_threads(compaction_workers);
+    // Keep flush capacity independent from the bounded, low-priority compaction pool.
+    env.set_high_priority_background_threads(1);
 
     options.set_env(&env);
 
@@ -660,5 +703,30 @@ mod tests {
             options.contains(&format!("max_open_files={configured_max_open_files}")),
             "maximum open SST files should use the configured value"
         );
+    }
+
+    #[test]
+    fn global_options_use_bounded_background_work() {
+        let directory = tempfile::tempdir().unwrap();
+        let rate_bytes_per_sec = 64 * MiB as u64;
+        let config = RocksDBConfig {
+            compaction_workers: Some(2),
+            background_write_rate_limit_bytes_per_sec: Some(rate_bytes_per_sec),
+            ..RocksDBConfig::default()
+        };
+        let _storage = RocksDBStorage::open(directory.path(), config).unwrap();
+
+        let options_path = fs::read_dir(directory.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .find(|path| {
+                path.file_name().and_then(|name| name.to_str()).is_some_and(|name| name.starts_with("OPTIONS-"))
+            })
+            .expect("RocksDB should persist an OPTIONS file");
+        let options = fs::read_to_string(options_path).unwrap();
+
+        assert!(options.contains("max_background_jobs=3"));
+        assert!(options.contains("max_subcompactions=2"));
     }
 }
