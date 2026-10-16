@@ -1,4 +1,4 @@
-//! Versioned, paged immutable datasets. A cold read touches at most 21 small records.
+//! Paged immutable datasets. A cold read touches at most 21 small records.
 use super::*;
 use blockifier::execution::syscalls::committed_data::{
     leaf, CommittedDataSet, CommittedDataWitness, COMMITTED_DATA_TREE_HEIGHT, MAX_COMMITTED_DATA_VALUES,
@@ -6,16 +6,13 @@ use blockifier::execution::syscalls::committed_data::{
 use rocksdb::WriteBatch;
 use starknet_types_core::hash::{Poseidon, StarkHash};
 
-// Caller-independent leaves have different roots. Never interpret legacy publisher-bound pages
-// using this schema; old roots must be rebuilt and explicitly re-imported.
-const PREFIX: &[u8] = b"committed_data_pages_v2/";
-// Retain the shared quota counter so preserved legacy pages still count toward storage usage.
-const USAGE_KEY: &[u8] = b"committed_data_pages_usage_v1";
+// Caller-independent indexed leaves. The prefix isolates this schema from other records.
+const PREFIX: &[u8] = b"committed_data_pages/";
 const PAGE_VALUES: usize = 256;
 const PAGE_BYTES: usize = PAGE_VALUES * 32;
 const METADATA_LEVEL: u8 = u8::MAX;
 
-/// Encodes a versioned root/level/page key; metadata uses the reserved final level.
+/// Encodes a root/level/page key; metadata uses the reserved final level.
 fn key(root: Felt, level: u8, page: u32) -> Vec<u8> {
     let mut key = PREFIX.to_vec();
     key.extend_from_slice(&root.to_bytes_be());
@@ -32,32 +29,42 @@ fn canonical_felt(bytes: &[u8]) -> Result<Felt> {
     Ok(value)
 }
 
-/// Decodes and bounds the occupied-leaf count before any page arithmetic.
-fn count(bytes: &[u8]) -> Result<usize> {
-    let count = u32::from_be_bytes(bytes.try_into()?) as usize;
+/// Metadata stores count, minimum tree height and the local confirmed head at first import admission.
+/// That head is an ingestion checkpoint, not the block that published or last used this root.
+fn decode_metadata(bytes: &[u8]) -> Result<(usize, usize, Option<u64>)> {
+    anyhow::ensure!(bytes.len() == 14, "Invalid committed-data metadata length");
+    let count = u32::from_be_bytes(bytes[..4].try_into()?) as usize;
     anyhow::ensure!((1..=MAX_COMMITTED_DATA_VALUES).contains(&count), "Invalid committed-data size");
-    Ok(count)
+    let height = usize::from(bytes[4]);
+    anyhow::ensure!(
+        height <= COMMITTED_DATA_TREE_HEIGHT && height == (count - 1).checked_ilog2().map_or(0, |log| log as usize + 1),
+        "Invalid committed-data height"
+    );
+    let block = u64::from_be_bytes(bytes[6..14].try_into()?);
+    let imported_after_block = match bytes[5] {
+        0 if block == 0 => None,
+        1 => Some(block),
+        _ => anyhow::bail!("Invalid committed-data import checkpoint"),
+    };
+    Ok((count, height, imported_after_block))
 }
 
-/// Exact logical bytes charged by the v2 page layout, derived without reading page contents.
-fn dataset_logical_bytes(occupied: usize) -> Result<u64> {
-    let key_bytes = u64::try_from(PREFIX.len() + 37)?;
-    let mut total = key_bytes + 4; // Metadata key and occupied-count value.
-    let mut nodes = occupied;
-    for _ in 0..COMMITTED_DATA_TREE_HEIGHT {
-        let pages = nodes.div_ceil(PAGE_VALUES);
-        let page_bytes = u64::try_from(pages)?.checked_mul(key_bytes).context("Committed-data size overflow")?;
-        let node_bytes = u64::try_from(nodes)?.checked_mul(32).context("Committed-data size overflow")?;
-        total = total
-            .checked_add(page_bytes)
-            .and_then(|value| value.checked_add(node_bytes))
-            .context("Committed-data size overflow")?;
-        nodes = nodes.div_ceil(2);
+fn count(bytes: &[u8]) -> Result<usize> {
+    Ok(decode_metadata(bytes)?.0)
+}
+
+fn encode_metadata(dataset: &CommittedDataSet, imported_after_block: Option<u64>) -> Result<[u8; 14]> {
+    let mut bytes = [0_u8; 14];
+    bytes[..4].copy_from_slice(&u32::try_from(dataset.values().len())?.to_be_bytes());
+    bytes[4] = dataset.height().try_into()?;
+    if let Some(block) = imported_after_block {
+        bytes[5] = 1;
+        bytes[6..14].copy_from_slice(&block.to_be_bytes());
     }
-    Ok(total)
+    Ok(bytes)
 }
 
-/// Reconstructs a fixed-height path from occupied-prefix pages and deterministic padding.
+/// Reconstructs a minimum-height path from occupied-prefix pages and deterministic padding.
 /// Missing metadata/unused indices return `None`; missing or malformed pages return an error.
 /// The callback bounds record bytes. The caller must authenticate the returned path against root.
 fn read_witness(
@@ -67,7 +74,7 @@ fn read_witness(
 ) -> Result<Option<CommittedDataWitness>> {
     anyhow::ensure!((index as usize) < MAX_COMMITTED_DATA_VALUES, "Committed-data index out of range");
     let Some(metadata) = read(&key(root, METADATA_LEVEL, 0))? else { return Ok(None) };
-    let count = count(&metadata)?;
+    let (count, height, _) = decode_metadata(&metadata)?;
     if index as usize >= count {
         return Ok(None);
     }
@@ -82,7 +89,7 @@ fn read_witness(
         canonical_felt(&bytes[offset..offset + 32])
     };
     let value = read_node(0, index as usize)?;
-    let mut siblings = [Felt::ZERO; COMMITTED_DATA_TREE_HEIGHT];
+    let mut siblings = Vec::with_capacity(height);
     static EMPTY: std::sync::LazyLock<[Felt; COMMITTED_DATA_TREE_HEIGHT]> = std::sync::LazyLock::new(|| {
         let mut hashes = [Felt::ZERO; COMMITTED_DATA_TREE_HEIGHT];
         for height in 1..COMMITTED_DATA_TREE_HEIGHT {
@@ -90,14 +97,19 @@ fn read_witness(
         }
         hashes
     });
-    for (height, sibling) in siblings.iter_mut().enumerate() {
-        let sibling_index = ((index as usize) >> height) ^ 1;
-        if sibling_index < count.div_ceil(1 << height) {
-            let node = read_node(height, sibling_index)?;
-            *sibling = if height == 0 { leaf(sibling_index.try_into()?, node) } else { node };
+    for level in 0..height {
+        let sibling_index = ((index as usize) >> level) ^ 1;
+        let sibling = if sibling_index < count.div_ceil(1 << level) {
+            let node = read_node(level, sibling_index)?;
+            if level == 0 {
+                leaf(sibling_index.try_into()?, node)
+            } else {
+                node
+            }
         } else {
-            *sibling = EMPTY[height];
-        }
+            EMPTY[level]
+        };
+        siblings.push(sibling);
     }
     Ok(Some(CommittedDataWitness { root, index, value, siblings }))
 }
@@ -202,10 +214,13 @@ impl RocksDBStorage {
         })
     }
 
-    /// Atomically writes all pages and the shared logical-byte quota with synchronous WAL.
-    /// Existing roots are repaired in place without a second quota charge. Serialization at
-    /// the shared storage owner prevents concurrent backend wrappers from overspending quota.
-    pub(super) fn store_committed_data_dataset(&self, dataset: &CommittedDataSet, max_bytes: u64) -> Result<()> {
+    /// Atomically writes all root-keyed pages and metadata with synchronous WAL.
+    /// Re-import repairs pages while preserving the original import checkpoint.
+    pub(super) fn store_committed_data_dataset(
+        &self,
+        dataset: &CommittedDataSet,
+        imported_after_block: Option<u64>,
+    ) -> Result<()> {
         let _write = self
             .inner
             .committed_data_write
@@ -215,30 +230,21 @@ impl RocksDBStorage {
         let metadata_key = key(dataset.root(), METADATA_LEVEL, 0);
         let existing = self.inner.db.get_pinned_cf(&cf, &metadata_key)?;
         if let Some(existing) = &existing {
-            anyhow::ensure!(count(existing)? == dataset.values().len(), "Conflicting committed-data metadata");
+            let (count, height, _) = decode_metadata(existing)?;
+            anyhow::ensure!(
+                (count, height) == (dataset.values().len(), dataset.height()),
+                "Conflicting committed-data metadata"
+            );
         }
-        let used = self.inner.db.get_pinned_cf(&cf, USAGE_KEY)?;
-        let used = used.map(|raw| <[u8; 8]>::try_from(&*raw).map(u64::from_be_bytes)).transpose()?.unwrap_or(0);
-        let mut next = used;
-        let mut dataset_bytes = 0_u64;
         let mut batch = WriteBatch::default();
-        let metadata = u32::try_from(dataset.values().len())?.to_be_bytes().to_vec();
+        let metadata = match existing {
+            Some(existing) => existing.to_vec(),
+            None => encode_metadata(dataset, imported_after_block)?.to_vec(),
+        };
         for (key, bytes) in std::iter::once((metadata_key, metadata)).chain(records(dataset)) {
-            let record_bytes = u64::try_from(key.len() + bytes.len())?;
-            dataset_bytes = dataset_bytes.checked_add(record_bytes).context("Committed-data size overflow")?;
-            if existing.is_none() {
-                next =
-                    next.checked_add(record_bytes).ok_or_else(|| anyhow::anyhow!("Committed-data quota overflow"))?;
-                anyhow::ensure!(
-                    next <= max_bytes,
-                    "Committed-data storage quota exceeded; archive safely or increase the configured limit"
-                );
-            }
             // Re-import repairs corrupt pages with the same authenticated logical dataset.
             batch.put_cf(&cf, key, bytes);
         }
-        debug_assert_eq!(dataset_bytes, dataset_logical_bytes(dataset.values().len())?);
-        batch.put_cf(&cf, USAGE_KEY, next.to_be_bytes());
         let mut options = WriteOptions::default();
         options.set_sync(true);
         options.disable_wal(false);
@@ -255,9 +261,10 @@ mod tests {
     #[test]
     fn committed_data_pages_match_the_tree_and_bound_read_work() {
         for size in [1_usize, 2, 255, 256, 257, 513] {
-            let dataset = CommittedDataSet::new((0..size).map(Felt::from).collect()).unwrap();
+            let values: Vec<_> = (0..size).map(Felt::from).collect();
+            let dataset = CommittedDataSet::new(values).unwrap();
             let mut pages: HashMap<_, _> = records(&dataset).collect();
-            pages.insert(key(dataset.root(), METADATA_LEVEL, 0), (size as u32).to_be_bytes().to_vec());
+            pages.insert(key(dataset.root(), METADATA_LEVEL, 0), encode_metadata(&dataset, None).unwrap().to_vec());
             for index in [0, size / 2, size - 1] {
                 let mut reads = 0;
                 let mut bytes = 0;
@@ -271,22 +278,10 @@ mod tests {
                 .unwrap();
                 assert_eq!(witness, dataset.witness(index as u32).unwrap());
                 assert!(witness.verify());
-                assert!(reads <= COMMITTED_DATA_TREE_HEIGHT + 2);
-                assert!(bytes <= (COMMITTED_DATA_TREE_HEIGHT + 1) * PAGE_BYTES + 4);
+                assert!(reads <= dataset.height() + 2);
+                assert!(bytes <= (dataset.height() + 1) * PAGE_BYTES + 14);
             }
         }
-    }
-
-    #[test]
-    fn committed_data_pages_do_not_read_legacy_publisher_bound_records() {
-        let dataset = CommittedDataSet::new(vec![Felt::TWO]).unwrap();
-        let mut legacy_key = b"committed_data_pages_v1/".to_vec();
-        legacy_key.extend_from_slice(&Felt::ONE.to_bytes_be()); // Old publisher.
-        legacy_key.extend_from_slice(&dataset.root().to_bytes_be());
-        legacy_key.push(METADATA_LEVEL);
-        legacy_key.extend_from_slice(&0_u32.to_be_bytes());
-        let legacy = HashMap::from([(legacy_key, 1_u32.to_be_bytes().to_vec())]);
-        assert!(read_witness(dataset.root(), 0, |key| Ok(legacy.get(key).cloned())).unwrap().is_none());
     }
 
     #[test]
@@ -294,7 +289,7 @@ mod tests {
         let dataset = CommittedDataSet::new(vec![Felt::TWO]).unwrap();
         let metadata = key(dataset.root(), METADATA_LEVEL, 0);
         let error = read_witness(dataset.root(), 0, |key| {
-            Ok((key == metadata.as_slice()).then(|| 1_u32.to_be_bytes().to_vec()))
+            Ok((key == metadata.as_slice()).then(|| encode_metadata(&dataset, None).unwrap().to_vec()))
         })
         .unwrap_err();
         assert!(error.to_string().contains("page unavailable"));
@@ -308,5 +303,11 @@ mod tests {
         assert!(count(&[]).is_err());
         assert!(count(&0_u32.to_be_bytes()).is_err());
         assert!(count(&u32::MAX.to_be_bytes()).is_err());
+        assert!(decode_metadata(&[0, 0, 0, 1, 19]).is_err());
+        let dataset = CommittedDataSet::new(vec![Felt::TWO]).unwrap();
+        let mut metadata = encode_metadata(&dataset, Some(42)).unwrap();
+        assert_eq!(decode_metadata(&metadata).unwrap(), (1, 0, Some(42)));
+        metadata[5] = 2;
+        assert!(decode_metadata(&metadata).is_err());
     }
 }

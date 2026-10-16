@@ -55,7 +55,7 @@ pub(crate) async fn sync_available(backend: &Arc<MadaraBackend>, client: &Gatewa
                     break;
                 }
             }
-            // Recompute the fixed-height tree and persist with WAL+fsync before continuing.
+            // Authenticate the dataset's minimum-height tree and persist with WAL+fsync.
             backend.import_committed_data_snapshot(root, values).await?;
             tracing::info!(root = %root, "Replicated committed-data dataset");
         }

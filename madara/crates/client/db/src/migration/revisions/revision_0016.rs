@@ -1,7 +1,6 @@
 //! v15 → v16 records additive, root-keyed committed-data storage in the existing meta column.
 //! No chain data or dataset pages are rewritten. Databases without imported data remain empty
-//! in this namespace. Existing v2 pages and the shared quota counter are preserved. Legacy
-//! publisher-bound roots cannot be converted: rebuild and explicitly import their datasets.
+//! in this namespace. No committed-data migration is needed because the feature is not live.
 use crate::migration::{MigrationContext, MigrationError};
 
 /// Records the schema boundary through the migration runner, without modifying any DB records.
@@ -23,9 +22,7 @@ mod tests {
         options.create_if_missing(true);
         options.create_missing_column_families(true);
         let rows: Vec<(&[u8], &[u8])> = vec![
-            (b"committed_data_pages_v2/test", b"immutable dataset page"),
-            (b"committed_data_pages_v1/test", b"legacy publisher-bound page"),
-            (b"committed_data_pages_usage_v1", b"quota counter"),
+            (b"committed_data_pages/test", b"immutable dataset page"),
             (b"HEAD_PROJECTION", b"unrelated chain metadata"),
         ];
         {
