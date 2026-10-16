@@ -28,7 +28,7 @@ pub struct ForwardSyncConfig {
     pub snap_sync: bool,
     pub keep_pre_v0_13_2_hashes: bool,
     /// Sync bouncer weights and committed datasets from a compatible Madara feeder.
-    pub madara_extra_data_sync: bool,
+    pub madara_additional_data_sync: bool,
     pub disable_reorg: bool,
     pub disable_reorg_preconfirmed: bool,
 }
@@ -45,7 +45,7 @@ impl Default for ForwardSyncConfig {
             disable_tries: false,
             snap_sync: false,
             keep_pre_v0_13_2_hashes: false,
-            madara_extra_data_sync: false,
+            madara_additional_data_sync: false,
             disable_reorg: false,
             disable_reorg_preconfirmed: false,
         }
@@ -64,8 +64,8 @@ impl ForwardSyncConfig {
     }
 
     /// Enables the Madara-specific bouncer and committed-data extensions together.
-    pub fn madara_extra_data_sync(self, enabled: bool) -> Self {
-        Self { madara_extra_data_sync: enabled, ..self }
+    pub fn madara_additional_data_sync(self, enabled: bool) -> Self {
+        Self { madara_additional_data_sync: enabled, ..self }
     }
     pub fn disable_reorg(self, val: bool) -> Self {
         Self { disable_reorg: val, ..self }
@@ -83,7 +83,7 @@ pub fn forward_sync(
     controller_config: SyncControllerConfig,
     config: ForwardSyncConfig,
 ) -> GatewaySync {
-    let probe = Arc::new(GatewayLatestProbe::new(client.clone(), backend.clone(), config.madara_extra_data_sync));
+    let probe = Arc::new(GatewayLatestProbe::new(client.clone(), backend.clone(), config.madara_additional_data_sync));
     let probe = ThrottledRepeatedFuture::new(move |val| probe.clone().probe(val), Duration::from_secs(1));
     let get_pending_block = gateway_preconfirmed_block_sync(
         client.clone(),
@@ -127,7 +127,7 @@ impl GatewayForwardSync {
             config.block_parallelization,
             config.block_batch_size,
             config.keep_pre_v0_13_2_hashes,
-            config.madara_extra_data_sync,
+            config.madara_additional_data_sync,
             config.disable_reorg,
         );
         let classes_pipeline = classes::classes_pipeline(

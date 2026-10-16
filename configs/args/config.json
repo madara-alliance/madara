@@ -63,7 +63,7 @@
     "n_blocks_to_sync": null,
     "stop_on_sync": false,
     "backup_every_n_blocks": null,
-    "madara_extra_data_sync": false,
+    "madara_additional_data_sync": false,
     "disable_reorg": false,
     "disable_reorg_preconfirmed": false
   },

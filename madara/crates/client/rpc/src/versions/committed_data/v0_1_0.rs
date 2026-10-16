@@ -2,6 +2,7 @@
 //! Imports are durable before transaction admission. Rejected transactions can leave unused datasets.
 use crate::{Starknet, StarknetRpcApiError};
 use jsonrpsee::core::{async_trait, RpcResult};
+use jsonrpsee::types::ErrorObjectOwned;
 use m_proc_macros::versioned_rpc;
 use mp_convert::Felt;
 use mp_rpc::v0_10_2::BroadcastedTxn;
@@ -12,8 +13,37 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
+const MAX_SIGNATURE_CHECKS: usize = 4;
+const MAX_SIGNATURES: usize = 32;
+const MAX_DATASETS_PER_TRANSACTION: usize = 4;
 static SIGNATURE_CHECKS: LazyLock<Arc<tokio::sync::Semaphore>> =
-    LazyLock::new(|| Arc::new(tokio::sync::Semaphore::new(4)));
+    LazyLock::new(|| Arc::new(tokio::sync::Semaphore::new(MAX_SIGNATURE_CHECKS)));
+
+#[derive(Debug, thiserror::Error)]
+enum CommittedDataRpcError {
+    #[error("Unauthorized committed-data import")]
+    UnauthorizedImport,
+    #[error("Signature verification busy; retry later")]
+    SignatureVerificationBusy,
+    #[error("Combined submission requires active local block production")]
+    LocalProductionRequired,
+    #[error("Expected 1..=4 committed-data datasets")]
+    InvalidDatasetCount,
+    #[error("Query transactions cannot be submitted")]
+    QueryTransaction,
+}
+
+impl From<CommittedDataRpcError> for ErrorObjectOwned {
+    fn from(error: CommittedDataRpcError) -> Self {
+        let code = match error {
+            CommittedDataRpcError::UnauthorizedImport => -32001,
+            CommittedDataRpcError::SignatureVerificationBusy => -32002,
+            CommittedDataRpcError::LocalProductionRequired => -32003,
+            CommittedDataRpcError::InvalidDatasetCount | CommittedDataRpcError::QueryTransaction => -32602,
+        };
+        Self::owned(code, error.to_string(), None::<()>)
+    }
+}
 
 /// Wire-compatible felt array, bounded while decoding rather than after allocation.
 #[derive(Debug, Serialize)]
@@ -98,9 +128,9 @@ impl<'de> Deserialize<'de> for CommittedDataImports {
                 formatter.write_str("1..=4 committed-data datasets")
             }
             fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut sequence: A) -> Result<Self::Value, A::Error> {
-                let mut datasets = Vec::with_capacity(4);
+                let mut datasets = Vec::with_capacity(MAX_DATASETS_PER_TRANSACTION);
                 loop {
-                    if datasets.len() == 4 {
+                    if datasets.len() == MAX_DATASETS_PER_TRANSACTION {
                         if sequence.next_element::<serde::de::IgnoredAny>()?.is_some() {
                             return Err(serde::de::Error::custom("Too many committed-data datasets"));
                         }
@@ -144,8 +174,8 @@ fn validate_import_signatures(
     count: usize,
     signatures: &[ImportSignature],
 ) -> RpcResult<()> {
-    let reject = || jsonrpsee::types::ErrorObjectOwned::owned(-32001, "Unauthorized committed-data import", None::<()>);
-    if signatures.len() > 32 {
+    let reject = || CommittedDataRpcError::UnauthorizedImport.into();
+    if signatures.len() > MAX_SIGNATURES {
         return Err(reject());
     }
     if allowed.is_empty() {
@@ -219,9 +249,10 @@ impl CommittedDataRpcApiV0_1_0Server for Starknet {
         let chain_id = self.backend.chain_config().chain_id.clone();
         let count = values.len();
         let signatures = signatures.unwrap_or_default();
-        let permit = SIGNATURE_CHECKS.clone().try_acquire_owned().map_err(|_| {
-            jsonrpsee::types::ErrorObjectOwned::owned(-32002, "Signature verification busy; retry later", None::<()>)
-        })?;
+        let permit = SIGNATURE_CHECKS
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| ErrorObjectOwned::from(CommittedDataRpcError::SignatureVerificationBusy))?;
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
             validate_import_signatures(&allowed, &chain_id, root, count, &signatures)
@@ -238,38 +269,22 @@ impl CommittedDataRpcApiV0_1_0Server for Starknet {
         transaction: BroadcastedTxn,
     ) -> RpcResult<ImportAndSubmitResult> {
         if !local_submission_ready(self) {
-            return Err(jsonrpsee::types::ErrorObjectOwned::owned(
-                -32003,
-                "Combined submission requires active local block production",
-                None::<()>,
-            ));
+            return Err(CommittedDataRpcError::LocalProductionRequired.into());
         }
-        if !(1..=4).contains(&datasets.0.len()) {
-            return Err(jsonrpsee::types::ErrorObjectOwned::owned(
-                -32602,
-                "Expected 1..=4 committed-data datasets",
-                None::<()>,
-            ));
+        if !(1..=MAX_DATASETS_PER_TRANSACTION).contains(&datasets.0.len()) {
+            return Err(CommittedDataRpcError::InvalidDatasetCount.into());
         }
         // The transaction is deliberately submitted through the same validated path as public RPC.
         // In particular, do not accept a query-only transaction as a publication request.
         if transaction.is_query() {
-            return Err(jsonrpsee::types::ErrorObjectOwned::owned(
-                -32602,
-                "Query transactions cannot be submitted",
-                None::<()>,
-            ));
+            return Err(CommittedDataRpcError::QueryTransaction.into());
         }
         for dataset in datasets.0 {
             self.import_committed_data_snapshot(dataset.root, dataset.values, Some(dataset.signatures)).await?;
         }
         // Catch a sequencer that entered catch-up while the (possibly large) imports were running.
         if !local_submission_ready(self) {
-            return Err(jsonrpsee::types::ErrorObjectOwned::owned(
-                -32003,
-                "Combined submission requires active local block production",
-                None::<()>,
-            ));
+            return Err(CommittedDataRpcError::LocalProductionRequired.into());
         }
         let transaction_hash = match transaction {
             BroadcastedTxn::Invoke(tx) => {

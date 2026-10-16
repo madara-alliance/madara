@@ -134,10 +134,7 @@ impl L1SyncService {
 impl Service for L1SyncService {
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
         if let Some((config, client)) = self.sync_worker_config.take().zip(self.client.clone()) {
-            runner.service_loop(move |ctx| async move {
-                client.run_sync_worker(ctx, config).await?;
-                anyhow::Ok(())
-            });
+            runner.service_loop(move |ctx| client.run_sync_worker(ctx, config));
         } else {
             tracing::debug!("l1 sync is disabled");
         }

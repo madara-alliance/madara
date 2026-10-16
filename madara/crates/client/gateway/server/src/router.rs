@@ -52,13 +52,13 @@ async fn feeder_gateway_router(
 ) -> Result<Response<String>, Infallible> {
     match (req.method(), path) {
         (&Method::GET, "feeder_gateway/get_committed_data_roots") => {
-            Ok(crate::committed_data::get(req, backend, "roots").await.unwrap_or_else(Into::into))
+            Ok(crate::committed_data::get_roots(req, backend).await.unwrap_or_else(Into::into))
         }
         (&Method::GET, "feeder_gateway/get_committed_data") => {
-            Ok(crate::committed_data::get(req, backend, "page").await.unwrap_or_else(Into::into))
+            Ok(crate::committed_data::get_page(req, backend).await.unwrap_or_else(Into::into))
         }
         (&Method::GET, "feeder_gateway/get_committed_data_witness") => {
-            Ok(crate::committed_data::get(req, backend, "witness").await.unwrap_or_else(Into::into))
+            Ok(crate::committed_data::get_witness(req, backend).await.unwrap_or_else(Into::into))
         }
         (&Method::GET, "feeder_gateway/get_preconfirmed_block") => {
             Ok(handle_get_preconfirmed_block(req, backend).await.unwrap_or_else(Into::into))
