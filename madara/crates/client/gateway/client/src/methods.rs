@@ -29,6 +29,8 @@ use std::{borrow::Cow, sync::Arc};
 const MAX_RETRIES: usize = 5;
 const BASE_DELAY_MS: u64 = 100;
 const BACKOFF_BASE: u32 = 2;
+const COMMITTED_DATA_ROOTS_RESPONSE_BYTES: usize = 8 * 1024;
+const COMMITTED_DATA_PAGE_RESPONSE_BYTES: usize = 512 * 1024;
 
 impl GatewayProvider {
     /// Generic retry mechanism for GET requests
@@ -119,10 +121,10 @@ impl GatewayProvider {
         if let Some(after) = after {
             request = request.add_param("after", format!("{after:#x}"));
         }
-        request.send_get_bounded(8192).await
+        request.send_get_bounded(COMMITTED_DATA_ROOTS_RESPONSE_BYTES).await
     }
 
-    /// Fetches at most 4096 values. The receiving node must verify the completed root.
+    /// Fetches at most `VALUES_PER_PAGE` values. The receiving node must verify the completed root.
     pub async fn get_committed_data_page(
         &self,
         root: Felt,
@@ -133,7 +135,7 @@ impl GatewayProvider {
             .expect("static URI segment")
             .add_param("root", format!("{root:#x}"))
             .add_param("start", start.to_string())
-            .send_get_bounded(512 * 1024)
+            .send_get_bounded(COMMITTED_DATA_PAGE_RESPONSE_BYTES)
             .await
     }
 
