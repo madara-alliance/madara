@@ -216,10 +216,13 @@ impl JobHandlerService {
                 // to process it normally. A live processor refreshes this timestamp, so a
                 // redelivery cannot heal and overlap an active attempt.
                 let timeout_seconds = config.service_config().get_job_timeout(&job.job_type);
-                let cutoff_time = Utc::now() - chrono::Duration::seconds(timeout_seconds as i64);
-
                 let is_stale = match job.metadata.common.process_started_at {
-                    Some(started_at) => started_at < cutoff_time,
+                    // This field is persisted with second precision. Compare whole elapsed
+                    // seconds so sub-second truncation cannot make a freshly heartbeated lease
+                    // appear stale at the timeout boundary.
+                    Some(started_at) => {
+                        Utc::now().signed_duration_since(started_at).num_seconds() > timeout_seconds as i64
+                    }
                     // If process_started_at is None, the job was never properly started - treat as stale
                     None => true,
                 };
