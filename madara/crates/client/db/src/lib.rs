@@ -445,7 +445,7 @@ pub struct ExecutionReadCacheConfig {
     pub max_memory_bytes: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct MadaraBackendConfig {
     /// Permit committed reads during account execution, independently of dataset ingestion.
     /// L1 handlers must not read committed data, directly or through another contract;
@@ -461,19 +461,6 @@ pub struct MadaraBackendConfig {
     pub skip_migration_backup: bool,
     /// Execution-time read cache for hot contract state.
     pub execution_read_cache: ExecutionReadCacheConfig,
-}
-
-impl Default for MadaraBackendConfig {
-    fn default() -> Self {
-        Self {
-            use_committed_data: false,
-            flush_every_n_blocks: None,
-            save_preconfirmed: false,
-            unsafe_starting_block: None,
-            skip_migration_backup: false,
-            execution_read_cache: Default::default(),
-        }
-    }
 }
 
 mod backend;

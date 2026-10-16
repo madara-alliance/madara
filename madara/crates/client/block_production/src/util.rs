@@ -341,7 +341,7 @@ mod tests {
             let value = executor.block_context.committed_data_witnesses.value(tree.root(), Felt::ZERO).unwrap();
             assert_eq!(
                 (executor.block_context.use_committed_data, value),
-                (use_committed_data, Some(Felt::TWO)),
+                (use_committed_data, Some((Felt::TWO, tree.height()))),
                 "saved configuration: {}",
                 saved.is_some()
             );
