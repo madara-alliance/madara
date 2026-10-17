@@ -314,7 +314,7 @@ strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-generate-pie = { git = "https://github.com/keep-starknet-strange/snos.git", rev = "2ab3bfa2a63196a53a49c9d0a1d64fa23ff60f92" }
+generate-pie = { git = "https://github.com/karnotxyz/snos.git", rev = "ec314c53ecdedd7d5772fdf071542d847ce2b816" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
@@ -324,8 +324,8 @@ orchestrator-ethereum-settlement-client = { path = "orchestrator/crates/settleme
 orchestrator-starknet-settlement-client = { path = "orchestrator/crates/settlement-clients/starknet" }
 orchestrator-utils = { path = "orchestrator/crates/utils" }
 orchestrator-aggregator-runner = { path = "orchestrator/crates/aggregator-runner" }
-apollo_starknet_os_program = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLLO-0.14.2-RC.7-fix" }
-starknet_os = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLLO-0.14.2-RC.7-fix" }
+apollo_starknet_os_program = { git = "https://github.com/karnotxyz/sequencer", rev = "9a919da83014beec95d5e1f24ad2b1eaabbf3de1" }
+starknet_os = { git = "https://github.com/karnotxyz/sequencer", rev = "9a919da83014beec95d5e1f24ad2b1eaabbf3de1" }
 orchestrator-prover-client-interface = { path = "orchestrator/crates/prover-clients/prover-client-interface" }
 orchestrator-gps-fact-checker = { path = "orchestrator/crates/prover-clients/gps-fact-checker" }
 orchestrator-sharp-service = { path = "orchestrator/crates/prover-clients/sharp-service" }
