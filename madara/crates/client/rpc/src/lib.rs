@@ -1019,6 +1019,8 @@ pub struct Starknet {
     pub(crate) block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
     pub ctx: ServiceContext,
     pub(crate) rpc_unsafe_enabled: bool,
+    /// Serializes managed-block execution while later replay requests wait for their turn.
+    pub(crate) replay_block_ingestion: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl Starknet {
@@ -1044,6 +1046,7 @@ impl Starknet {
             ctx,
             pre_v0_9_preconfirmed_as_pending: false,
             rpc_unsafe_enabled: false,
+            replay_block_ingestion: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
