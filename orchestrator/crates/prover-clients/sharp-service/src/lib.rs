@@ -238,7 +238,7 @@ pub fn map_sharp_status(
         TaskType::Job => match res.status {
             CairoJobStatus::Failed => TaskStatus::Failed(res.error_log.clone().unwrap_or_default()),
             CairoJobStatus::Invalid => TaskStatus::Failed(format!(
-                "Job is invalid: {:?}. error_log: {}",
+                "SHARP job status INVALID; invalid reason: {:?}; error log: {}",
                 res.invalid_reason.clone().unwrap_or_default(),
                 res.error_log.as_deref().unwrap_or("none")
             )),
@@ -262,7 +262,7 @@ pub fn map_sharp_status(
         TaskType::Aggregation => match res.status {
             CairoJobStatus::Failed => TaskStatus::Failed(res.error_log.clone().unwrap_or_default()),
             CairoJobStatus::Invalid => TaskStatus::Failed(format!(
-                "Applicative job is invalid: {:?}. error_log: {}",
+                "SHARP aggregation status INVALID; invalid reason: {:?}; error log: {}",
                 res.invalid_reason.clone().unwrap_or_default(),
                 res.error_log.as_deref().unwrap_or("none")
             )),
