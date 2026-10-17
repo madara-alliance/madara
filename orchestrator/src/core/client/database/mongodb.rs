@@ -783,6 +783,35 @@ impl DatabaseClient for MongoDbClient {
         }
     }
 
+    async fn refresh_job_processing_lease(
+        &self,
+        id: Uuid,
+        version: i32,
+        process_started_at: chrono::DateTime<Utc>,
+    ) -> Result<(), DatabaseError> {
+        let filter = doc! {
+            "id": id,
+            "version": version,
+            "status": bson::to_bson(&JobStatus::LockedForProcessing)?,
+        };
+        let update = doc! {
+            "$set": {
+                // CommonMetadata serializes this field with chrono::serde::ts_seconds_option.
+                "metadata.common.process_started_at": Bson::Int64(process_started_at.timestamp()),
+                "updated_at": Bson::DateTime(Utc::now().round_subsecs(0).into()),
+            }
+        };
+
+        let result = self.get_job_collection().update_one(filter, update, None).await?;
+        if result.matched_count == 1 {
+            Ok(())
+        } else {
+            Err(DatabaseError::UpdateFailed(format!(
+                "Processing lease is no longer owned for job {id} at version {version}"
+            )))
+        }
+    }
+
     async fn get_latest_job_by_type(
         &self,
         job_type: JobType,

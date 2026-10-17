@@ -113,6 +113,22 @@ pub enum JobError {
     /// Indicates an error occurred while downcasting from an object
     #[error("Orchestrator Error: {0}")]
     AnyHowError(#[from] anyhow::Error),
+
+    /// Processing was interrupted after its database lock was durably restored.
+    #[error("Job {id} processing was interrupted by orchestrator shutdown")]
+    ShutdownInterrupted { id: Uuid },
+
+    /// Another live processing attempt still owns the job lease.
+    #[error("Job {id} is already owned by an active processing attempt")]
+    ProcessingLeaseActive { id: Uuid },
+
+    /// Processing was interrupted, but the database lock could not be restored.
+    #[error("Failed to restore job {id} after orchestrator shutdown: {source}")]
+    ShutdownRestoreFailed {
+        id: Uuid,
+        #[source]
+        source: DatabaseError,
+    },
 }
 
 impl JobError {
