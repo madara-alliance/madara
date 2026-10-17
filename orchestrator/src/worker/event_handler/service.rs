@@ -698,15 +698,11 @@ impl JobHandlerService {
                         JobStatus::Failed,
                         &job.job_type,
                     );
-                    let move_result = JobService::move_job_to_failed(
-                        &job,
-                        config.clone(),
-                        format!(
-                            "Verification rejected. Max process attempts reached: {}",
-                            job.metadata.common.process_attempt_no
-                        ),
-                    )
-                    .await;
+                    // The rejection is the terminal failure. It was recorded above,
+                    // so clear it before move_job_to_failed to avoid rotating it into
+                    // history and replacing it with a generic retry-limit message.
+                    job.metadata.common.failure_reason = None;
+                    let move_result = JobService::move_job_to_failed(&job, config.clone(), e).await;
 
                     workload.finish_error();
                     return move_result;
@@ -734,10 +730,7 @@ impl JobHandlerService {
                     );
 
                     // Send SNS alert for verification timeout
-                    let alert_message = format!(
-                        "Job Verification Timeout Alert: Job ID: {}, Type: {:?}, Internal_Id: {}, Verification Attempts: {}",
-                        job.id, job.job_type, internal_id, job.metadata.common.verification_attempt_no
-                    );
+                    let alert_message = JobService::verification_timeout_alert_message(&job, &config).await;
 
                     if let Err(e) = config.alerts().send_message(alert_message).await {
                         error!(
