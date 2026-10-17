@@ -255,7 +255,6 @@ async fn test_process_job_l2_with_da_segment(
         Ok(vec![AggregatorBatch::new(
             batch_index,
             end_block + 1,
-            Some(String::from("")),
             256,
             1,
             AggregatorBatchWeights::default(),
@@ -324,16 +323,8 @@ async fn test_process_job_l2_with_da_segment(
 // ==================== Utility functions ===========================
 
 fn test_aggregator_batch(index: u64, start_block: u64, end_block: u64) -> AggregatorBatch {
-    AggregatorBatch::new(
-        index,
-        start_block,
-        Some(String::new()),
-        256,
-        1,
-        AggregatorBatchWeights::default(),
-        StarknetVersion::V0_14_1,
-    )
-    .update(end_block, 256, 1, AggregatorBatchWeights::default(), None)
+    AggregatorBatch::new(index, start_block, 256, 1, AggregatorBatchWeights::default(), StarknetVersion::V0_14_1)
+        .update(end_block, 256, 1, AggregatorBatchWeights::default(), None)
 }
 
 async fn state_transition_job_for_batch(batch_index: u64) -> crate::types::jobs::job_item::JobItem {

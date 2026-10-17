@@ -28,7 +28,7 @@ pub enum DaSegmentError {
 /// Convert DA segment felts to blob bytes.
 ///
 /// **L2 Usage**: This function is used for L2 settlements where the DA segment
-/// is provided by the prover (Atlantic) as encrypted/compressed state diff data.
+/// is provided as encrypted/compressed state diff data.
 /// The prover generates this segment by encrypting the state diff with symmetric
 /// keys derived from public keys.
 ///

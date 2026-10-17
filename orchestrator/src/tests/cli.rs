@@ -1,7 +1,7 @@
 //! Parser tests for the prover-selection CLI surface.
 //!
 //! Locks down the guarantees that used to be given by the old `ArgGroup` on
-//! `--sharp` / `--atlantic` / `--mock` booleans. The new surface relies on:
+//! `--sharp` / `--mock` booleans. The new surface relies on:
 //! 1. A required `ProverKind` enum field at the `RunCmd` level.
 //! 2. `required_if_eq("prover", "<kind>")` on the per-prover CLI structs.
 //!
@@ -76,30 +76,6 @@ fn sharp_required_args() -> Vec<&'static str> {
     ]
 }
 
-/// Required-when-atlantic sub-args.
-fn atlantic_required_args() -> Vec<&'static str> {
-    vec![
-        "--atlantic-service-url",
-        "http://atlantic.example/",
-        "--atlantic-rpc-node-url",
-        "http://rpc.example/",
-        "--atlantic-mock-fact-hash",
-        "true",
-        "--atlantic-prover-type",
-        "starkware_sharp",
-        "--atlantic-settlement-layer",
-        "ethereum",
-        "--atlantic-verifier-contract-address",
-        "0x0000000000000000000000000000000000000000",
-        "--atlantic-network",
-        "TESTNET",
-        "--atlantic-verifier-cairo-vm",
-        "rust",
-        "--atlantic-verifier-result",
-        "proof-generation",
-    ]
-}
-
 /// Single test; env stripping + assertions live in one function to keep the
 /// process-global env manipulation serialized regardless of how tests run.
 #[test]
@@ -128,18 +104,7 @@ fn prover_selection_parser() {
     args.extend(sharp_required_args());
     Cli::try_parse_from(args).expect("sharp with required sub-args should parse");
 
-    // 5. --prover atlantic without required sub-args: should fail.
-    let mut args = baseline();
-    args.extend(["--prover", "atlantic"]);
-    Cli::try_parse_from(args).expect_err("expected clap to reject --prover atlantic without sub-args");
-
-    // 6. --prover atlantic with all required sub-args: should parse cleanly.
-    let mut args = baseline();
-    args.extend(["--prover", "atlantic"]);
-    args.extend(atlantic_required_args());
-    Cli::try_parse_from(args).expect("atlantic with required sub-args should parse");
-
-    // 7. --prover mock has no required sub-args.
+    // 5. --prover mock has no required sub-args.
     let mut args = baseline();
     args.extend(["--prover", "mock"]);
     let cli = Cli::try_parse_from(args).expect("mock should parse without sub-args");
@@ -148,7 +113,7 @@ fn prover_selection_parser() {
     };
     assert!(run_command.snos_args.rpc_for_snos_backup.is_none(), "--rpc-for-snos-backup should be optional");
 
-    // 8. --rpc-for-snos-backup is accepted when explicitly provided.
+    // 6. --rpc-for-snos-backup is accepted when explicitly provided.
     let mut args = baseline();
     args.extend(["--rpc-for-snos-backup", "http://localhost:9546", "--prover", "mock"]);
     let cli = Cli::try_parse_from(args).expect("mock should parse with optional SNOS backup RPC");
@@ -160,7 +125,7 @@ fn prover_selection_parser() {
         Some("http://localhost:9546/")
     );
 
-    // 9. `ignore_case = true`: uppercase values must be accepted so operators
+    // 7. `ignore_case = true`: uppercase values must be accepted so operators
     // can set `MADARA_ORCHESTRATOR_PROVER=SHARP` by convention without a
     // silent fallback.
     let mut args = baseline();

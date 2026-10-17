@@ -47,7 +47,7 @@
         "--aws-sns",
         "--settle-on-ethereum",
         "--prover",
-        "atlantic",
+        "sharp",
         "--da-on-ethereum"
       ],
       // Working folder for execution. Change as necessary if program requires a different value:

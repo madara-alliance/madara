@@ -169,10 +169,7 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
         Url::parse(format!("http://localhost:{}", server.port()).as_str()).expect("Failed to parse URL"),
     ));
 
-    let mut prover_client = MockProverClient::new();
-    if !has_existing_batch {
-        prover_client.expect_submit_task().times(2).returning(|_| Ok("bucket_id".to_string()));
-    }
+    let prover_client = MockProverClient::new();
 
     // Mock builtin weights calls for each block
     let builtin_weights = get_dummy_builtin_weights();
@@ -347,8 +344,7 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
         Url::parse(format!("http://localhost:{}", server.port()).as_str()).expect("Failed to parse URL"),
     ));
 
-    let mut prover_client = MockProverClient::new();
-    prover_client.expect_submit_task().times(1).returning(|_| Ok("new_bucket_id".to_string()));
+    let prover_client = MockProverClient::new();
 
     // Mock builtin weights calls for each block
     let builtin_weights = get_dummy_builtin_weights();

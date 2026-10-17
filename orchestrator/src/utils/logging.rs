@@ -461,18 +461,14 @@ pub fn init_logging() {
 ///
 /// # Classification
 ///
-/// - **Orchestrator crates** → Specific service names (ATLANTIC, UTILS, GPS_FACT_CHK, etc.)
+/// - **Orchestrator crates** → Specific service names (UTILS, GPS_FACT_CHK, etc.)
 /// - **Generic orchestrator** → "-" (no specific service, core orchestrator code)
 /// - **SNOS crates** → "SNOS" (`generate_pie` / `rpc_client` logs bridged through `log`)
 /// - **Third-party dependencies** → "EXTERNAL" (logs from Rust ecosystem crates)
 ///
-/// Note: "EXTERNAL" refers to third-party Rust crates (tokio, hyper, reqwest, etc.),
-/// NOT external services like Atlantic. Atlantic logs are tagged as "ATLANTIC".
-///
 /// # Examples
 ///
 /// ```ignore
-/// extract_service_name("orchestrator_atlantic_service::client") → "ATLANTIC"
 /// extract_service_name("orchestrator_utils::logging")           → "UTILS"
 /// extract_service_name("generate_pie::state_update")            → "SNOS"
 /// extract_service_name("rpc_client::client")                    → "SNOS"
@@ -481,9 +477,7 @@ pub fn init_logging() {
 /// extract_service_name("hyper::client")                         → "EXTERNAL"
 /// ```
 fn extract_service_name(target: &str) -> &'static str {
-    if target.starts_with("orchestrator_atlantic_service") {
-        "ATLANTIC"
-    } else if target.starts_with("orchestrator_gps_fact_checker") {
+    if target.starts_with("orchestrator_gps_fact_checker") {
         "GPS_FACT_CHK"
     } else if target.starts_with("orchestrator_prover_client_interface") {
         "PROVER_IFACE"

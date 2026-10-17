@@ -14,7 +14,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - readme: setup instructions added
 - Added : Grafana dashboard
 - tests: http_client tests added
-- Added Atlantic proving service integration
 - setup functions added for cloud and db
 - Added cli args support for all the services
 - Setup functions added for cloud and db

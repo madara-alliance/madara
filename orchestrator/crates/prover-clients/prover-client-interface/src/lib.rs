@@ -32,13 +32,8 @@ pub trait ProverClient: Send + Sync {
         n_steps: Option<usize>,
     ) -> Result<String, ProverClientError>;
 
-    /// Fetch aggregation artifacts after aggregation status is Succeeded.
-    ///
-    /// For provers that aggregate remotely (e.g. Atlantic), this fetches CairoPIE, DA segment,
-    /// and optionally the proof from the remote service.
-    ///
-    /// For provers that aggregate locally (e.g. SHARP, Mock), artifacts are already stored by
-    /// the handler during `process_job`, so this returns all `None`.
+    /// Fetch the aggregation proof after aggregation succeeds when requested.
+    /// Other artifacts are stored locally by the handler during `process_job`.
     async fn get_aggregation_artifacts(
         &self,
         external_id: &str,
@@ -48,11 +43,8 @@ pub trait ProverClient: Send + Sync {
 
 pub struct CreateJobInfo {
     pub cairo_pie: Box<CairoPie>,
-    pub bucket_id: Option<String>,
-    pub bucket_job_index: Option<u64>,
-    pub num_steps: Option<usize>,
     /// Caller-provided tracking key for the child proof job.
-    /// Atlantic uses it for idempotency lookup; SHARP uses it as the cairo job key.
+    /// SHARP uses it as the cairo job key.
     pub dedup_id: String,
 }
 
@@ -69,24 +61,15 @@ pub struct ApplicativeJobInfo {
 
 /// Artifacts returned by a prover after aggregation completes.
 ///
-/// Fields are `Some` when the prover fetches them from a remote source (Atlantic).
-/// Fields are `None` when artifacts were already stored locally by the handler (SHARP / Mock).
+/// The proof is `Some` when requested from SHARP.
 #[derive(Default)]
 pub struct AggregationArtifacts {
-    pub cairo_pie: Option<Vec<u8>>,
-    pub da_segment: Option<Vec<u8>>,
     pub proof: Option<Vec<u8>>,
 }
 
 pub enum Task {
     /// Submit a child CairoPIE for proving.
     CreateJob(CreateJobInfo),
-    /// Create a new Atlantic bucket.
-    CreateBucket,
-    /// Trigger aggregation for a batch.
-    ///
-    /// **Atlantic**: closes the bucket and returns the bucket ID.
-    RunAggregation(String),
     /// Submit a pre-built aggregator CairoPIE.
     ///
     /// **SHARP**: submitted as an applicative job with child job keys.
@@ -107,7 +90,6 @@ pub enum TaskType {
     Job,
     /// An aggregation task.
     ///
-    /// For Atlantic, this polls the bucket status.
     /// For SHARP, this polls the applicative job status.
     /// For Mock, this polls the `registerFact` tx receipt (or succeeds immediately if
     /// on-chain registration is disabled).
@@ -132,12 +114,8 @@ pub enum ProverClientError {
     FailedToCreateTempFile(String),
     #[error("Failed to write file: {0}")]
     FailedToWriteFile(String),
-    #[error("Failed to get aggregator id for bucket ID: {0}")]
-    FailedToGetAggregatorId(String),
     #[error("Network error: {0}")]
     NetworkError(String),
     #[error("Invalid proof format: {0}")]
     InvalidProofFormat(String),
-    #[error("Missing Cairo verifier program hash")]
-    MissingCairoVerifierProgramHash,
 }

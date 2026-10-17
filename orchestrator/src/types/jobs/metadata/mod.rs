@@ -124,11 +124,6 @@ pub struct AggregatorMetadata {
     // Worker populated field
     /// Batch number corresponding to the Aggregator job
     pub batch_num: u64,
-    /// Bucket ID received from the prover client (Atlantic only).
-    /// `None` for provers without a bucket concept (SHARP, Mock).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub bucket_id: Option<String>,
-
     /// Aggregator fact to check for on-chain registration during verification.
     /// If `None`, no on-chain check is performed.
     /// If `Some(value)`, it checks for `value` on the chain.
@@ -176,14 +171,6 @@ pub struct ProvingMetadata {
     pub download_proof: Option<String>,
     /// Number of steps taken by SNOS to generate the proof
     pub n_steps: Option<usize>,
-    /// Atlantic bucket ID used for L2 applicative recursion child jobs.
-    /// `None` for provers without bucketed child-job submission (SHARP, Mock) and for L3.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub bucket_id: Option<String>,
-    /// Index of the child proof within the Atlantic bucket.
-    /// `None` when the prover does not use bucketed child-job submission.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub bucket_job_index: Option<u64>,
 }
 
 /// Metadata specific to SNOS (Starknet OS) jobs.

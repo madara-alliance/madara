@@ -137,7 +137,9 @@ secretGenerator:
     literals:
       - AWS_ACCESS_KEY_ID=your-access-key
       - AWS_SECRET_ACCESS_KEY=your-secret-key
-      - MADARA_ORCHESTRATOR_ATLANTIC_API_KEY=your-api-key
+      - MADARA_ORCHESTRATOR_SHARP_USER_CRT=your-client-certificate
+      - MADARA_ORCHESTRATOR_SHARP_USER_KEY=your-client-key
+      - MADARA_ORCHESTRATOR_SHARP_SERVER_CRT=your-server-certificate
       - MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL=your-mongodb-url
 ```
 
@@ -171,7 +173,9 @@ spec:
 1. **Secrets Management**: Sensitive data is separated into Kubernetes Secrets (`secrets.yaml`)
    - `AWS_ACCESS_KEY_ID`
    - `AWS_SECRET_ACCESS_KEY`
-   - `MADARA_ORCHESTRATOR_ATLANTIC_API_KEY`
+   - `MADARA_ORCHESTRATOR_SHARP_USER_CRT`
+   - `MADARA_ORCHESTRATOR_SHARP_USER_KEY`
+   - `MADARA_ORCHESTRATOR_SHARP_SERVER_CRT`
    - `MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL`
 
 2. **ConfigMap vs Secrets**:
@@ -193,14 +197,16 @@ Before deploying, update these values in your overlay:
 
 - `AWS_ACCESS_KEY_ID` - AWS access key for S3/SQS/SNS
 - `AWS_SECRET_ACCESS_KEY` - AWS secret key
-- `MADARA_ORCHESTRATOR_ATLANTIC_API_KEY` - Atlantic service API key
+- `MADARA_ORCHESTRATOR_SHARP_USER_CRT` - SHARP client certificate
+- `MADARA_ORCHESTRATOR_SHARP_USER_KEY` - SHARP client private key
+- `MADARA_ORCHESTRATOR_SHARP_SERVER_CRT` - SHARP server certificate
 - `MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY` - Ethereum settlement private key
 - `MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL` - MongoDB connection string
 
 ### Required ConfigMap Values (via `configMapGenerator`)
 
-- `MADARA_ORCHESTRATOR_ATLANTIC_RPC_NODE_URL` - RPC node URL
-- `MADARA_ORCHESTRATOR_ATLANTIC_VERIFIER_CONTRACT_ADDRESS` - Verifier contract address
+- `MADARA_ORCHESTRATOR_SHARP_RPC_NODE_URL` - RPC node URL used by SHARP
+- `MADARA_ORCHESTRATOR_GPS_VERIFIER_CONTRACT_ADDRESS` - GPS verifier contract address
 - `MADARA_ORCHESTRATOR_AWS_PREFIX` - AWS resource prefix
 - `MADARA_ORCHESTRATOR_AWS_S3_BUCKET_IDENTIFIER` - S3 bucket name or ARN
 - `MADARA_ORCHESTRATOR_DATABASE_NAME` - Database name
@@ -247,7 +253,9 @@ kubectl get secret <secret-name> -n <namespace> -o jsonpath='{.data}' | jq -r 't
        literals:
          - AWS_ACCESS_KEY_ID=your-dev-access-key
          - AWS_SECRET_ACCESS_KEY=your-dev-secret-key
-         - MADARA_ORCHESTRATOR_ATLANTIC_API_KEY=your-dev-api-key
+         - MADARA_ORCHESTRATOR_SHARP_USER_CRT=your-client-certificate
+         - MADARA_ORCHESTRATOR_SHARP_USER_KEY=your-client-key
+         - MADARA_ORCHESTRATOR_SHARP_SERVER_CRT=your-server-certificate
          - MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL=mongodb://dev-url
    ```
 

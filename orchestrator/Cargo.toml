@@ -57,7 +57,6 @@ num-traits = { workspace = true }
 omniqueue = { workspace = true, optional = true }
 once_cell = { workspace = true }
 orchestrator-aggregator-runner = { workspace = true }
-orchestrator-atlantic-service = { workspace = true }
 orchestrator-da-client-interface = { workspace = true }
 orchestrator-ethereum-da-client = { workspace = true, optional = true }
 orchestrator-ethereum-settlement-client = { workspace = true }
@@ -91,7 +90,6 @@ tokio = { workspace = true, features = [
 ] }
 tokio-util = { workspace = true }
 url = { workspace = true }
-utils-mock-atlantic-server = { workspace = true }
 uuid = { workspace = true, features = ["v4", "serde"] }
 
 aws-sdk-iam = { workspace = true }

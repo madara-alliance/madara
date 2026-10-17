@@ -1,6 +1,5 @@
 use crate::services::constants::*;
 use crate::services::localstack::LocalstackConfigBuilder;
-use crate::services::mock_prover::MockProverConfig;
 use crate::services::mongodb::MongoConfigBuilder;
 use crate::services::orchestrator::Layer;
 use crate::services::server::ServerError;
@@ -10,7 +9,6 @@ use crate::services::{
     helpers::{get_database_path, get_free_port},
     localstack::{LocalstackConfig, LocalstackError},
     madara::{MadaraConfig, MadaraConfigBuilder, MadaraError},
-    mock_prover::{MockProverConfigBuilder, MockProverError},
     mock_verifier::{MockVerifierDeployerConfig, MockVerifierDeployerConfigBuilder, MockVerifierDeployerError},
     mongodb::{MongoConfig, MongoError},
     orchestrator::{OrchestratorConfig, OrchestratorConfigBuilder, OrchestratorError, OrchestratorMode, ProverKind},
@@ -68,8 +66,6 @@ pub enum SetupError {
     BootstrapperV2(#[from] BootstrapperV2Error),
     #[error("Mock Verifier Deployer service error: {0}")]
     MockVerifierDeployer(#[from] MockVerifierDeployerError),
-    #[error("Mock Prover service error: {0}")]
-    MockProver(#[from] MockProverError),
     #[error("Setup timeout: {0}")]
     Timeout(String),
     #[error("Dependency validation failed: {0}")]
@@ -99,7 +95,6 @@ pub struct Timeouts {
     pub complete_l1_setup: Duration,
     pub complete_l2_setup: Duration,
     pub complete_full_node_syncing: Duration,
-    pub start_mock_prover: Duration,
     pub complete_orchestration: Duration,
 }
 
@@ -113,7 +108,6 @@ impl Default for Timeouts {
             complete_l1_setup: Duration::from_secs(360),
             complete_l2_setup: Duration::from_secs(1800),
             complete_full_node_syncing: Duration::from_secs(300),
-            start_mock_prover: Duration::from_secs(180),
             complete_orchestration: Duration::from_secs(2400), // 40 mins
         }
     }
@@ -137,7 +131,6 @@ pub struct SetupConfig {
     pub madara_config: MadaraConfig,
     pub pathfinder_config: PathfinderConfig,
     pub mock_verifier_deployer_config: MockVerifierDeployerConfig,
-    pub mock_prover_config: MockProverConfig,
     pub orchestrator_run_config: OrchestratorConfig,
     pub bootstrapper_setup_base_config: Option<BootstrapperV2Config>,
     pub bootstrapper_setup_madara_config: Option<BootstrapperV2Config>,
@@ -155,7 +148,6 @@ impl Default for SetupConfig {
             madara_config: MadaraConfig::default(),
             pathfinder_config: PathfinderConfig::default(),
             mock_verifier_deployer_config: MockVerifierDeployerConfig::default(),
-            mock_prover_config: MockProverConfig::default(),
             orchestrator_run_config: OrchestratorConfig::default(),
             bootstrapper_setup_base_config: None,
             bootstrapper_setup_madara_config: None,
@@ -222,11 +214,6 @@ impl SetupConfig {
     /// Get the Bootstrapper Setup Madara Config
     pub fn get_bootstrapper_setup_madara_config(&self) -> &BootstrapperV2Config {
         self.bootstrapper_setup_madara_config.as_ref().expect("Bootstrapper setup madara config not set")
-    }
-
-    /// Get the Mock Prover Config
-    pub fn get_mock_prover_config(&self) -> &MockProverConfig {
-        &self.mock_prover_config
     }
 
     /// Get the Orchestrator Setup Config
@@ -309,12 +296,6 @@ impl SetupConfigBuilder {
         self
     }
 
-    /// Set the Mock Prover Config
-    pub fn mock_prover_config(mut self, mock_prover_config: MockProverConfig) -> Self {
-        self.config.mock_prover_config = mock_prover_config;
-        self
-    }
-
     /// Set the Bootstrapper Setup Base Config
     pub fn bootstrapper_setup_base_config(mut self, bootstrapper_setup_base_config: BootstrapperV2Config) -> Self {
         self.config.bootstrapper_setup_base_config = Some(bootstrapper_setup_base_config);
@@ -394,8 +375,6 @@ impl SetupConfigBuilder {
             .logs((true, true))
             .build();
 
-        let mock_prover_config = MockProverConfigBuilder::new().port(get_free_port().await?).logs((true, true)).build();
-
         let orchestrator_run_config = OrchestratorConfigBuilder::run_l2()
             .port(get_free_port().await?)
             .prover(prover_kind)
@@ -405,7 +384,6 @@ impl SetupConfigBuilder {
             .ethereum_rpc_url(anvil_config.endpoint())
             .mongodb(true)
             .mongodb_connection_url(mongodb_config.endpoint())
-            // .atlantic_service_url(mock_prover_config.endpoint())
             .env_var("MADARA_ORCHESTRATOR_MADARA_RPC_URL", madara_config.rpc_endpoint())
             .env_var("MADARA_ORCHESTRATOR_RPC_FOR_SNOS", pathfinder_config.endpoint())
             .env_var("MADARA_ORCHESTRATOR_MADARA_FEEDER_GATEWAY_URL", madara_config.feeder_gateway_endpoint())
@@ -423,7 +401,6 @@ impl SetupConfigBuilder {
             .orchestrator_setup_config(orchestrator_setup_config)
             .bootstrapper_setup_base_config(bootstrapper_base_config)
             .bootstrapper_setup_madara_config(bootstrapper_madara_config)
-            .mock_prover_config(mock_prover_config)
             .mongo_config(mongodb_config)
             .localstack_config(localstack_config)
             .orchestrator_run_config(orchestrator_run_config)
@@ -479,7 +456,6 @@ impl SetupConfigBuilder {
             .pathfinder_config(pathfinder_config)
             .mock_verifier_deployer_config(test_config.mock_verifier_deployer_config)
             .orchestrator_setup_config(test_config.orchestrator_setup_config)
-            .mock_prover_config(test_config.mock_prover_config)
             .mongo_config(test_config.mongo_config)
             .localstack_config(test_config.localstack_config)
             .orchestrator_run_config(orchestrator_run_config);

@@ -25,7 +25,7 @@ spec:
           args:
             - run
             - --prover
-            - atlantic
+            - sharp
             - --aws
             - --settle-on-ethereum
             - --aws-s3
@@ -44,6 +44,10 @@ spec:
             - containerPort: 3000
               name: rpc
               protocol: TCP
+          volumeMounts:
+            - name: sharp-mtls
+              mountPath: /var/run/orchestrator-sharp
+              readOnly: true
           resources:
             limits:
               cpu: "4"
@@ -53,6 +57,17 @@ spec:
               memory: 8Gi
           terminationMessagePath: /dev/termination-log
           terminationMessagePolicy: File
+      volumes:
+        - name: sharp-mtls
+          secret:
+            secretName: madara-orchestrator-secrets
+            items:
+              - key: MADARA_ORCHESTRATOR_SHARP_USER_CRT
+                path: user.crt
+              - key: MADARA_ORCHESTRATOR_SHARP_USER_KEY
+                path: user.key
+              - key: MADARA_ORCHESTRATOR_SHARP_SERVER_CRT
+                path: server.crt
       dnsPolicy: ClusterFirst
       restartPolicy: Always
       schedulerName: default-scheduler

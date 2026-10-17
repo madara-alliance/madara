@@ -121,7 +121,7 @@ pub fn da_word(
 /// is compressed and prepared as calldata (not encrypted blobs).
 ///
 /// For L2 settlements with encrypted DA, use [`da_segment_to_blobs`] which
-/// processes the pre-encrypted DA segment received from the prover (Atlantic).
+/// processes a pre-encrypted DA segment received from a prover.
 ///
 /// # Process
 /// 1. Converts felts to BigUint

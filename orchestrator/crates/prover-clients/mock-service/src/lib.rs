@@ -74,15 +74,6 @@ impl ProverClient for MockProverService {
             // tracking key so the stored external_id stays deterministic.
             Task::CreateJob(CreateJobInfo { dedup_id, .. }) => Ok(dedup_id),
 
-            Task::CreateBucket => Err(ProverClientError::TaskInvalid(
-                "Mock prover does not support bucket creation. Aggregator batching should skip CreateBucket."
-                    .to_string(),
-            )),
-
-            Task::RunAggregation(_) => Err(ProverClientError::TaskInvalid(
-                "Mock prover does not support bucket-based aggregation; use RunAggregationWithPie.".to_string(),
-            )),
-
             Task::RunAggregationWithPie(ApplicativeJobInfo { fact_hash, .. }) => {
                 let fact = fact_hash.ok_or_else(|| {
                     ProverClientError::TaskInvalid("fact_hash is required for Mock aggregation".to_string())

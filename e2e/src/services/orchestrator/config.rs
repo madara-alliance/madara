@@ -34,7 +34,6 @@ pub enum AWSEventBridgeType {
 #[strum(serialize_all = "lowercase")]
 pub enum ProverKind {
     Sharp,
-    Atlantic,
     Mock,
 }
 
@@ -44,9 +43,8 @@ impl TryFrom<&str> for ProverKind {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value.to_ascii_lowercase().as_str() {
             "sharp" => Ok(Self::Sharp),
-            "atlantic" => Ok(Self::Atlantic),
             "mock" => Ok(Self::Mock),
-            invalid => Err(format!("Invalid prover kind `{invalid}`. Expected one of: sharp, atlantic, mock")),
+            invalid => Err(format!("Invalid prover kind `{invalid}`. Expected one of: sharp, mock")),
         }
     }
 }
@@ -116,7 +114,6 @@ pub struct OrchestratorConfig {
 
     // Prover — single enum mirrors the orchestrator CLI's `--prover`.
     prover: Option<ProverKind>,
-    atlantic_service_url: Option<Url>,
 
     // Block Processing
     max_block_to_process: Option<u64>,
@@ -151,7 +148,6 @@ impl Default for OrchestratorConfig {
             ethereum_rpc_url: None,
             da_on_starknet: false,
             prover: None,
-            atlantic_service_url: None,
 
             max_block_to_process: None,
             min_block_to_process: None,
@@ -254,11 +250,6 @@ impl OrchestratorConfig {
         self.mongodb_connection_url.as_ref()
     }
 
-    /// Get the Atlantic service URL
-    pub fn atlantic_service_url(&self) -> Option<&Url> {
-        self.atlantic_service_url.as_ref()
-    }
-
     /// Get the binary path
     pub fn binary_path(&self) -> &PathBuf {
         &self.binary_path
@@ -357,12 +348,6 @@ impl OrchestratorConfig {
             Some(ProverKind::Sharp) => {
                 command.arg("--prover").arg(ProverKind::Sharp.to_string());
             }
-            Some(ProverKind::Atlantic) => {
-                command.arg("--prover").arg(ProverKind::Atlantic.to_string());
-                if let Some(service_url) = self.atlantic_service_url() {
-                    command.arg("--atlantic-service-url").arg(service_url.to_string());
-                }
-            }
             Some(ProverKind::Mock) => {
                 command.arg("--prover").arg(ProverKind::Mock.to_string());
             }
@@ -412,7 +397,7 @@ impl OrchestratorConfigBuilder {
         Self::new()
             .layer(Layer::L2)
             .mode(OrchestratorMode::Run)
-            .prover(ProverKind::Atlantic)
+            .prover(ProverKind::Sharp)
             .event_bridge_type(AWSEventBridgeType::Rule)
             .settle_on_ethereum(true)
             .da_on_ethereum(true)
@@ -420,16 +405,6 @@ impl OrchestratorConfigBuilder {
 
     pub fn setup_l2() -> Self {
         Self::new().layer(Layer::L2).mode(OrchestratorMode::Setup)
-    }
-
-    pub fn run_l3() -> Self {
-        Self::new()
-            .layer(Layer::L3)
-            .mode(OrchestratorMode::Run)
-            .prover(ProverKind::Atlantic)
-            .event_bridge_type(AWSEventBridgeType::Rule)
-            .settle_on_starknet(true)
-            .da_on_starknet(true)
     }
 
     pub fn setup_l3() -> Self {
@@ -553,15 +528,9 @@ impl OrchestratorConfigBuilder {
         self
     }
 
-    /// Select the prover (Sharp / Atlantic / Mock).
+    /// Select the prover (Sharp / Mock).
     pub fn prover(mut self, kind: ProverKind) -> Self {
         self.config.prover = Some(kind);
-        self
-    }
-
-    /// Set the Atlantic service URL
-    pub fn atlantic_service_url(mut self, url: Url) -> Self {
-        self.config.atlantic_service_url = Some(url);
         self
     }
 
@@ -585,7 +554,6 @@ mod tests {
     #[test]
     fn prover_kind_try_from_accepts_supported_values() {
         assert_eq!(ProverKind::try_from("sharp"), Ok(ProverKind::Sharp));
-        assert_eq!(ProverKind::try_from("ATLANTIC"), Ok(ProverKind::Atlantic));
         assert_eq!(ProverKind::try_from(String::from("mock")), Ok(ProverKind::Mock));
     }
 
@@ -594,6 +562,6 @@ mod tests {
         let error = ProverKind::try_from("stone").unwrap_err();
 
         assert!(error.contains("stone"));
-        assert!(error.contains("sharp, atlantic, mock"));
+        assert!(error.contains("sharp, mock"));
     }
 }

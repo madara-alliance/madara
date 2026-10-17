@@ -344,9 +344,10 @@ impl<'a> RequestBuilder<'a> {
 /// * `String` - The error text from the response or a fallback message
 pub async fn extract_http_error_text(response: Response, operation: &str) -> (String, StatusCode) {
     let status = response.status();
-    let text = response.text().await.unwrap_or_else(|_| {
-        format!("Atlantic request failed for {} operation - no error response provided", operation)
-    });
+    let text = response
+        .text()
+        .await
+        .unwrap_or_else(|_| format!("Request failed for {operation} - no error response provided"));
     (text, status)
 }
 

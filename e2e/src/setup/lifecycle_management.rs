@@ -32,11 +32,6 @@ impl ServiceLifecycleManager {
                 println!("🛑 Orchestrator stopped");
             }
 
-            if let Some(mut mock_prover) = services.mock_prover_service.take() {
-                mock_prover.stop()?;
-                println!("🛑 Mock Prover stopped");
-            }
-
             if let Some(mut pathfinder) = services.pathfinder_service.take() {
                 pathfinder.stop()?;
                 println!("🛑 Pathfinder stopped");

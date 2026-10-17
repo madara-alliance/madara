@@ -1,13 +1,11 @@
 use std::path::Path;
 
-use crate::cli::prover::atlantic::AtlanticCliArgs;
 use crate::cli::prover::mock::MockCliArgs;
 use crate::cli::prover::sharp::SharpCliArgs;
 use crate::cli::settlement::ethereum::EthereumSettlementCliArgs;
 use crate::cli::RunCmd;
 use crate::OrchestratorError;
 use alloy::primitives::Address;
-use orchestrator_atlantic_service::AtlanticValidatedArgs;
 use orchestrator_mock_service::MockValidatedArgs;
 use orchestrator_sharp_service::SharpValidatedArgs;
 use orchestrator_utils::env_utils::resolve_secret_from_file;
@@ -17,7 +15,6 @@ use std::str::FromStr;
 #[derive(Debug, Clone)]
 pub enum ProverConfig {
     Sharp(SharpValidatedArgs),
-    Atlantic(AtlanticValidatedArgs),
     Mock(MockValidatedArgs),
 }
 
@@ -28,13 +25,12 @@ pub enum ProverConfig {
 ///
 /// Also used by clap as the typed value of the `--prover` / `MADARA_ORCHESTRATOR_PROVER`
 /// argument. `rename_all = "snake_case"` makes the accepted values lower-cased
-/// (`sharp`, `atlantic`, `mock`), which matches the strings used by `required_if_eq`
+/// (`sharp`, `mock`), which matches the strings used by `required_if_eq`
 /// on the per-prover CLI structs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 #[clap(rename_all = "snake_case")]
 pub enum ProverKind {
     Sharp,
-    Atlantic,
     Mock,
 }
 
@@ -42,7 +38,6 @@ impl ProverConfig {
     pub fn kind(&self) -> ProverKind {
         match self {
             ProverConfig::Sharp(_) => ProverKind::Sharp,
-            ProverConfig::Atlantic(_) => ProverKind::Atlantic,
             ProverConfig::Mock(_) => ProverKind::Mock,
         }
     }
@@ -53,7 +48,6 @@ impl ProverKind {
     pub fn label(self) -> &'static str {
         match self {
             ProverKind::Sharp => "sharp",
-            ProverKind::Atlantic => "atlantic",
             ProverKind::Mock => "mock",
         }
     }
@@ -64,12 +58,11 @@ impl TryFrom<RunCmd> for ProverConfig {
     fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
         // Prover selection comes from the single typed `--prover` arg
         // (env: `MADARA_ORCHESTRATOR_PROVER`). Clap validates the enum value at
-        // parse time, so "exactly one of sharp/atlantic/mock" is already
+        // parse time, so "exactly one of sharp/mock" is already
         // guaranteed — we just dispatch to the right per-prover validator,
         // which in turn checks that its required sub-envs are present.
         match run_cmd.prover {
             ProverKind::Sharp => validate_sharp(run_cmd.sharp_args, run_cmd.layer).map(ProverConfig::Sharp),
-            ProverKind::Atlantic => validate_atlantic(run_cmd.atlantic_args, run_cmd.layer).map(ProverConfig::Atlantic),
             ProverKind::Mock => validate_mock(
                 run_cmd.mock_args,
                 &run_cmd.ethereum_settlement_args,
@@ -117,55 +110,6 @@ fn validate_sharp(args: SharpCliArgs, layer: Layer) -> Result<SharpValidatedArgs
         sharp_settlement_layer: args
             .sharp_settlement_layer
             .ok_or_else(|| OrchestratorError::RunCommandError("Sharp settlement layer is required".to_string()))?,
-    })
-}
-
-fn validate_atlantic(args: AtlanticCliArgs, layer: Layer) -> Result<AtlanticValidatedArgs, OrchestratorError> {
-    if layer == Layer::L3 && args.cairo_verifier_program_hash.is_none() {
-        return Err(OrchestratorError::RunCommandError("Cairo verifier program hash is required for L3".to_string()));
-    }
-
-    let atlantic_api_key = resolve_secret_from_file("MADARA_ORCHESTRATOR_ATLANTIC_API_KEY")
-        .map_err(OrchestratorError::RunCommandError)?
-        .or(args.atlantic_api_key)
-        .ok_or_else(|| OrchestratorError::RunCommandError("Atlantic API key is required".to_string()))?;
-
-    Ok(AtlanticValidatedArgs {
-        atlantic_api_key,
-        atlantic_service_url: args
-            .atlantic_service_url
-            .ok_or_else(|| OrchestratorError::RunCommandError("Atlantic URL is required".to_string()))?,
-        atlantic_rpc_node_url: args
-            .atlantic_rpc_node_url
-            .ok_or_else(|| OrchestratorError::RunCommandError("Atlantic RPC node URL is required".to_string()))?,
-        atlantic_verifier_contract_address: args.atlantic_verifier_contract_address.ok_or_else(|| {
-            OrchestratorError::RunCommandError("Atlantic verifier contract address is required".to_string())
-        })?,
-        atlantic_settlement_layer: args
-            .atlantic_settlement_layer
-            .ok_or_else(|| OrchestratorError::RunCommandError("Atlantic settlement layer is required".to_string()))?,
-        atlantic_mock_fact_hash: args
-            .atlantic_mock_fact_hash
-            .ok_or_else(|| OrchestratorError::RunCommandError("Atlantic mock fact hash is required".to_string()))?,
-        atlantic_prover_type: args
-            .atlantic_prover_type
-            .ok_or_else(|| OrchestratorError::RunCommandError("Atlantic prover type is required".to_string()))?,
-        atlantic_network: args
-            .atlantic_network
-            .ok_or_else(|| OrchestratorError::RunCommandError("Atlantic network is required".to_string()))?,
-        atlantic_cairo_vm: args
-            .atlantic_verifier_cairo_vm
-            .ok_or_else(|| OrchestratorError::SetupCommandError("Atlantic cairo vm is required".to_string()))?,
-        atlantic_result: args
-            .atlantic_verifier_result
-            .ok_or_else(|| OrchestratorError::SetupCommandError("Atlantic result is required".to_string()))?,
-        cairo_verifier_program_hash: args.cairo_verifier_program_hash,
-        atlantic_sharp_prover: args
-            .atlantic_sharp_prover
-            .ok_or_else(|| OrchestratorError::RunCommandError("Atlantic sharp prover is required".to_string()))?,
-        atlantic_artifacts_base_url: args
-            .atlantic_artifacts_base_url
-            .ok_or_else(|| OrchestratorError::RunCommandError("Atlantic artifacts base URL is required".to_string()))?,
     })
 }
 

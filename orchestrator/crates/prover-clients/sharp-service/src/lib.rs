@@ -87,12 +87,6 @@ impl ProverClient for SharpProverService {
                 );
                 Ok(cairo_job_key)
             }
-            Task::CreateBucket => Err(ProverClientError::TaskInvalid(
-                "SHARP does not support bucket creation. Aggregator batching should skip CreateBucket.".to_string(),
-            )),
-            Task::RunAggregation(_) => Err(ProverClientError::TaskInvalid(
-                "SHARP does not support bucket-based aggregation. Use RunAggregationWithPie.".to_string(),
-            )),
             Task::RunAggregationWithPie(ApplicativeJobInfo {
                 cairo_pie_zip_bytes,
                 children_cairo_job_keys,
@@ -214,7 +208,7 @@ impl ProverClient for SharpProverService {
         } else {
             None
         };
-        Ok(AggregationArtifacts { cairo_pie: None, da_segment: None, proof })
+        Ok(AggregationArtifacts { proof })
     }
 }
 

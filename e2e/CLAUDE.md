@@ -95,7 +95,6 @@ Orchestration (Orchestrator Setup → Runtime)
 | Pathfinder      | Starknet full node             | 9545                                       |
 | Bootstrapper V2 | L1/L2 contract initialization  | Process                                    |
 | Orchestrator    | Proof pipeline coordinator     | Dynamic                                    |
-| Mock Prover     | Optional Atlantic mock wrapper | Dynamic by default, 3001 constant fallback |
 
 ### Configuration Timeouts
 

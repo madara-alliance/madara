@@ -6,7 +6,6 @@ members = [
   "e2e-tests",
   # "bootstrapper",  # Temporarily disabled due to zaun dependency issues
   "build-artifacts",
-  "test_utils/crates/mock-atlantic-server",
 ]
 # Everything except test-related packages, so that they are not compiled when doing `cargo build`.
 default-members = [
@@ -329,11 +328,8 @@ starknet_os = { git = "https://github.com/starkware-libs/sequencer", tag = "APOL
 orchestrator-prover-client-interface = { path = "orchestrator/crates/prover-clients/prover-client-interface" }
 orchestrator-gps-fact-checker = { path = "orchestrator/crates/prover-clients/gps-fact-checker" }
 orchestrator-sharp-service = { path = "orchestrator/crates/prover-clients/sharp-service" }
-orchestrator-atlantic-service = { path = "orchestrator/crates/prover-clients/atlantic-service" }
 orchestrator-mock-service = { path = "orchestrator/crates/prover-clients/mock-service" }
 orchestrator = { path = "orchestrator" }
-
-utils-mock-atlantic-server = { path = "test_utils/crates/mock-atlantic-server" }
 
 base64ct = "=1.6.0"
 time = "0.3"
