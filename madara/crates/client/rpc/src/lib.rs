@@ -1023,6 +1023,8 @@ pub struct Starknet {
     pub ctx: ServiceContext,
     pub(crate) rpc_unsafe_enabled: bool,
     pub(crate) sync_threshold_blocks: u64,
+    /// Serializes managed-block execution while later replay requests wait for their turn.
+    pub(crate) replay_block_ingestion: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl Starknet {
@@ -1049,6 +1051,7 @@ impl Starknet {
             pre_v0_9_preconfirmed_as_pending: false,
             rpc_unsafe_enabled: false,
             sync_threshold_blocks: DEFAULT_SYNC_THRESHOLD_BLOCKS,
+            replay_block_ingestion: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 

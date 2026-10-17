@@ -30,6 +30,7 @@ const REVERT_STOP_POLL_INTERVAL: Duration = Duration::from_millis(200);
 const REVERT_SHUTDOWN_DELAY: Duration = Duration::from_millis(100);
 const REPLAY_BLOCK_PRECONFIRMED_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const REPLAY_BLOCK_CONFIRM_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+const REPLAY_BLOCK_MAX_PIPELINE_DEPTH: u64 = 10;
 
 enum FlushMode {
     All { nonce_filter: MempoolNonceFilter },
@@ -186,6 +187,79 @@ async fn wait_for_confirmed_block<D: MadaraStorageRead>(
     })
     .await
     .context(format!("Timed out waiting for block #{} to be confirmed", block_n))?
+}
+
+fn replay_execution_tip(head: mc_db::chain_head::ChainHeadState) -> Option<u64> {
+    head.internal_preconfirmed_tip.or(head.external_preconfirmed_tip).or(head.confirmed_tip)
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ReplayExecutionTurn {
+    Ready,
+    Waiting,
+    AlreadyAdvanced,
+}
+
+fn replay_execution_turn(head: mc_db::chain_head::ChainHeadState, block_n: u64) -> ReplayExecutionTurn {
+    let execution_tip = replay_execution_tip(head);
+    if execution_tip == block_n.checked_sub(1) {
+        ReplayExecutionTurn::Ready
+    } else if execution_tip.is_some_and(|tip| tip >= block_n) {
+        ReplayExecutionTurn::AlreadyAdvanced
+    } else {
+        ReplayExecutionTurn::Waiting
+    }
+}
+
+async fn wait_for_replay_execution_turn<D: MadaraStorageRead>(
+    backend: &std::sync::Arc<mc_db::MadaraBackend<D>>,
+    block_n: u64,
+) -> anyhow::Result<()> {
+    let mut head_updates = backend.watch_chain_head_state();
+
+    timeout(REPLAY_BLOCK_PRECONFIRMED_TIMEOUT, async {
+        loop {
+            let head = backend.chain_head_state();
+            match replay_execution_turn(head, block_n) {
+                ReplayExecutionTurn::Ready => return Ok(()),
+                ReplayExecutionTurn::AlreadyAdvanced => {
+                    anyhow::bail!(
+                        "Cannot replay block {} because execution tip has already advanced to {:?}",
+                        block_n,
+                        replay_execution_tip(head)
+                    );
+                }
+                ReplayExecutionTurn::Waiting => {}
+            }
+
+            head_updates
+                .changed()
+                .await
+                .context("Chain-head notification channel closed while waiting for replay turn")?;
+        }
+    })
+    .await
+    .context(format!("Timed out waiting for replay execution turn for block #{}", block_n))?
+}
+
+async fn wait_for_internal_preconfirmed_block<D: MadaraStorageRead>(
+    backend: &std::sync::Arc<mc_db::MadaraBackend<D>>,
+    block_n: u64,
+) -> anyhow::Result<()> {
+    let mut head_updates = backend.watch_chain_head_state();
+    timeout(REPLAY_BLOCK_PRECONFIRMED_TIMEOUT, async {
+        loop {
+            let head = backend.chain_head_state();
+            if head.internal_preconfirmed_tip.is_some_and(|tip| tip >= block_n)
+                || head.confirmed_tip.is_some_and(|tip| tip >= block_n)
+            {
+                return Ok(());
+            }
+            head_updates.changed().await.context("Chain-head notification channel closed after replay block close")?;
+        }
+    })
+    .await
+    .context(format!("Timed out waiting for replay block #{} to enter the internal preconfirmed chain", block_n))?
 }
 
 #[async_trait]
@@ -559,10 +633,26 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         }
 
         let block_prod_handle = self.block_prod_handle.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?;
+        if !block_prod_handle.replay_mode_enabled() {
+            return Err(StarknetRpcApiError::ErrUnexpectedError {
+                error: "Managed replay requires Madara to start with --replay-mode".to_string().into(),
+            }
+            .into());
+        }
 
         let block_n = replay_block_request.custom_header.block_n;
-        let expected_parent = block_n.checked_sub(1);
         let latest_confirmed = self.backend.latest_confirmed_block_n();
+        let first_unconfirmed = latest_confirmed.map_or(0, |tip| tip.saturating_add(1));
+        let pipeline_depth = block_n.saturating_sub(first_unconfirmed).saturating_add(1);
+
+        tracing::info!(
+            target: "rpc::admin",
+            block_number = block_n,
+            tx_count = replay_block_request.transactions.len(),
+            pipeline_depth,
+            latest_confirmed = ?latest_confirmed,
+            "replay_block_received"
+        );
 
         if latest_confirmed >= Some(block_n) {
             return Err(StarknetRpcApiError::ErrUnexpectedError {
@@ -575,16 +665,21 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .into());
         }
 
-        if latest_confirmed != expected_parent && !(block_n == 0 && latest_confirmed.is_none()) {
+        if pipeline_depth > REPLAY_BLOCK_MAX_PIPELINE_DEPTH {
             return Err(StarknetRpcApiError::ErrUnexpectedError {
                 error: format!(
-                    "Cannot replay block {} on top of latest confirmed block {:?}",
-                    block_n, latest_confirmed
+                    "Cannot queue replay block {} at pipeline depth {}; maximum is {}",
+                    block_n, pipeline_depth, REPLAY_BLOCK_MAX_PIPELINE_DEPTH
                 )
                 .into(),
             }
             .into());
         }
+
+        wait_for_replay_execution_turn(&self.backend, block_n).await.map_err(StarknetRpcApiError::from)?;
+        let ingestion_guard = self.replay_block_ingestion.lock().await;
+        // A different handler may have advanced the internal tip before this request acquired the lock.
+        wait_for_replay_execution_turn(&self.backend, block_n).await.map_err(StarknetRpcApiError::from)?;
 
         if let Some(preconfirmed) = self.backend.block_view_on_preconfirmed(block_n) {
             return Err(StarknetRpcApiError::ErrUnexpectedError {
@@ -602,6 +697,15 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             replay_block_request.transactions.iter().map(ReplayBlockTransaction::expected_tx_hash).collect::<Vec<_>>();
 
         self.backend.set_custom_header(replay_block_request.custom_header).map_err(StarknetRpcApiError::from)?;
+        if let Some(last_tx_hash) = expected_tx_hashes.last().copied() {
+            self.backend
+                .set_replay_boundary(ReplayBlockBoundary {
+                    block_n,
+                    expected_tx_count: expected_tx_hashes.len() as u64,
+                    last_tx_hash,
+                })
+                .map_err(StarknetRpcApiError::from)?;
+        }
 
         for tx in replay_block_request.transactions {
             let expected_tx_hash = tx.expected_tx_hash();
@@ -656,17 +760,38 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             }
         }
 
-        wait_for_preconfirmed_alignment(&self.backend, block_n, &expected_tx_hashes)
-            .await
-            .map_err(StarknetRpcApiError::from)?;
+        if expected_tx_hashes.is_empty() {
+            block_prod_handle
+                .close_block()
+                .await
+                .context("Force-closing empty replayed block")
+                .map_err(StarknetRpcApiError::from)?;
+        } else {
+            wait_for_preconfirmed_alignment(&self.backend, block_n, &expected_tx_hashes)
+                .await
+                .map_err(StarknetRpcApiError::from)?;
+        }
 
-        block_prod_handle
-            .close_block()
-            .await
-            .context("Force-closing replayed block")
-            .map_err(StarknetRpcApiError::from)?;
+        wait_for_internal_preconfirmed_block(&self.backend, block_n).await.map_err(StarknetRpcApiError::from)?;
+        let head = self.backend.chain_head_state();
+        tracing::info!(
+            target: "rpc::admin",
+            block_number = block_n,
+            confirmed_tip = ?head.confirmed_tip,
+            external_preconfirmed_tip = ?head.external_preconfirmed_tip,
+            internal_preconfirmed_tip = ?head.internal_preconfirmed_tip,
+            "replay_block_primary_execution_completed"
+        );
+        drop(ingestion_guard);
 
         let block_hash = wait_for_confirmed_block(&self.backend, block_n).await.map_err(StarknetRpcApiError::from)?;
+
+        tracing::info!(
+            target: "rpc::admin",
+            block_number = block_n,
+            block_hash = %format_args!("{block_hash:#x}"),
+            "replay_block_confirmed"
+        );
 
         Ok(ReplayBlockResult { block_number: block_n, block_hash, transaction_hashes: expected_tx_hashes })
     }

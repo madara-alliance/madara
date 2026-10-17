@@ -386,9 +386,11 @@ impl InvokeTransactionV3 {
     }
 }
 
+#[serde_as]
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct L1HandlerTransactionWithFee {
     pub tx: L1HandlerTransaction,
+    #[serde_as(as = "U128AsHex")]
     pub paid_fee_on_l1: u128,
 }
 
