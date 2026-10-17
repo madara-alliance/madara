@@ -196,6 +196,7 @@ async fn atlantic_client_does_not_resubmit_when_job_exists() {
 
 /// Test get_query_by_dedup_id - query exists
 #[tokio::test]
+#[ignore = "Atlantic service is deprecated"]
 async fn atlantic_client_get_query_by_dedup_id_found() {
     // Use a known dedup_id that already exists on Atlantic (avoids submitting a new job)
     // This job exists in Project Madara_CI
@@ -234,6 +235,7 @@ async fn atlantic_client_get_query_by_dedup_id_found() {
 
 /// Test get_query_by_dedup_id - query does not exist
 #[tokio::test]
+#[ignore = "Atlantic service is deprecated"]
 async fn atlantic_client_get_query_by_dedup_id_not_found() {
     let _ = env_logger::try_init();
     dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env file");
@@ -269,6 +271,7 @@ async fn atlantic_client_get_query_by_dedup_id_not_found() {
 }
 
 #[tokio::test]
+#[ignore = "Atlantic service is deprecated"]
 async fn atlantic_client_get_task_status_works() {
     let _ = env_logger::try_init();
     dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env file");
@@ -298,6 +301,7 @@ async fn atlantic_client_get_task_status_works() {
 }
 
 #[tokio::test]
+#[ignore = "Atlantic service is deprecated"]
 async fn atlantic_client_get_bucket_status_works() {
     let _ = env_logger::try_init();
     dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env file");
@@ -327,6 +331,7 @@ async fn atlantic_client_get_bucket_status_works() {
 }
 
 #[tokio::test]
+#[ignore = "Atlantic service is deprecated"]
 async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
     let _ = env_logger::try_init();
     dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env file");
