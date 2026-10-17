@@ -163,7 +163,7 @@ async fn wait_for_preconfirmed_alignment<D: MadaraStorageRead>(
                 continue;
             }
 
-            chain_head.changed().await.context("Chain-head notification channel closed while awaiting replay")?;
+            chain_head.recv().await;
         }
     })
     .await
@@ -182,7 +182,7 @@ async fn wait_for_confirmed_block<D: MadaraStorageRead>(
                 return view.get_block_info().map(|info| info.block_hash);
             }
 
-            chain_head.changed().await.context("Chain-head notification channel closed while awaiting confirmation")?;
+            chain_head.recv().await;
         }
     })
     .await
@@ -232,10 +232,7 @@ async fn wait_for_replay_execution_turn<D: MadaraStorageRead>(
                 ReplayExecutionTurn::Waiting => {}
             }
 
-            head_updates
-                .changed()
-                .await
-                .context("Chain-head notification channel closed while waiting for replay turn")?;
+            head_updates.recv().await;
         }
     })
     .await
@@ -255,7 +252,7 @@ async fn wait_for_internal_preconfirmed_block<D: MadaraStorageRead>(
             {
                 return Ok(());
             }
-            head_updates.changed().await.context("Chain-head notification channel closed after replay block close")?;
+            head_updates.recv().await;
         }
     })
     .await
