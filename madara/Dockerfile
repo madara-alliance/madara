@@ -17,6 +17,11 @@ ENV CHEF_TAR=cargo-chef-x86_64-unknown-linux-gnu.tar.gz
 
 ENV RUSTC_WRAPPER=/bin/sccache
 
+# Enable the x86-64 features used by RocksDB's accelerated CRC and vectorized paths.
+# Keep this overridable for builders targeting a different CPU baseline.
+ARG MADARA_RUSTFLAGS="-C target-cpu=x86-64-v3 -C target-feature=+pclmulqdq"
+ENV RUSTFLAGS="${MADARA_RUSTFLAGS}"
+
 ENV WGET="-O- --timeout=10 --waitretry=3 --retry-connrefused --progress=dot:mega"
 
 # Copy Makefile for LLVM installation
@@ -108,7 +113,7 @@ RUN python3.9 -m venv /app/sequencer_venv && \
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/registry \
     . /app/sequencer_venv/bin/activate && \
-    CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo chef cook --release --recipe-path recipe.json
+    CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo chef cook --profile production --recipe-path recipe.json
 
 COPY Cargo.toml Cargo.lock ./
 COPY madara madara
@@ -118,7 +123,7 @@ COPY .db-versions.yml .db-versions.yml
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/registry \
     . /app/sequencer_venv/bin/activate && \
-    CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo build --release --bin madara
+    CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo build --profile production --bin madara
 
 # Step 3: runner
 FROM debian:bookworm-slim AS runner
@@ -150,7 +155,7 @@ ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib:/lib/x86_64-linux-gnu:/li
 
 WORKDIR /app
 
-COPY --from=builder-rust /app/target/release/madara /bin
+COPY --from=builder-rust /app/target/production/madara /bin
 
 ENV TINI_VERSION=v0.19.0
 ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /bin/tini

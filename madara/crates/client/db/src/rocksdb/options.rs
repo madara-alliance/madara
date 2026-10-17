@@ -377,9 +377,11 @@ pub fn rocksdb_global_options(config: &RocksDBConfig) -> Result<Options> {
     options.increase_parallelism(cores);
     options.set_max_background_jobs(cores);
 
-    // Atomic flush ensures all column families are flushed together,
-    // maintaining consistency across the database.
-    options.set_atomic_flush(true);
+    // WAL-backed WriteBatch operations are already consistent across column
+    // families. Atomic flush is intended for WAL-disabled databases and forces
+    // every column family to flush whenever any one memtable fills, creating
+    // unnecessary tiny SSTs for this write-heavy multi-CF workload.
+    options.set_atomic_flush(false);
 
     // Allow compaction jobs to be split across multiple threads.
     // A single large compaction can use up to `cores` threads.
@@ -438,9 +440,6 @@ pub fn rocksdb_global_options(config: &RocksDBConfig) -> Result<Options> {
     // wal_bytes_per_sync: Sync WAL every 512KB.
     // WAL writes are smaller but more frequent; smaller sync interval is appropriate.
     options.set_wal_bytes_per_sync(512 * KiB as u64);
-
-    // Note: enable_pipelined_write is NOT used because it's incompatible with
-    // atomic_flush, which we need for cross-column-family consistency.
 
     // ═══════════════════════════════════════════════════════════════════════════
     // LOGGING & FILE MANAGEMENT
@@ -502,7 +501,7 @@ impl Column {
     ///   drains L0 -> L1 as soon as `level0_file_num_compaction_trigger=4` is exceeded.
     ///   Required for append-only log CFs where universal's size-ratio / size-amp
     ///   heuristics fail to fire and L0 SSTs accumulate past the stop trigger,
-    ///   stalling the entire DB via `atomic_flush`.
+    ///   backpressuring writes to that column family.
     ///
     /// ## Compression
     ///

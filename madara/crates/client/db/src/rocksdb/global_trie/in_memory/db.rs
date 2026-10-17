@@ -187,6 +187,45 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
         self.get_from_snapshot(key)
     }
 
+    fn get_multi(&self, keys: &[DatabaseKey<'_>]) -> Result<Vec<Option<ByteVec>>, Self::DatabaseError> {
+        let mut values = vec![None; keys.len()];
+        let mut read_snapshot = vec![true; keys.len()];
+
+        for (index, key) in keys.iter().enumerate() {
+            if let Some(value) = self.changed_value(key) {
+                values[index] = value;
+                read_snapshot[index] = false;
+            }
+        }
+
+        for kind in 0..3 {
+            let indices = keys
+                .iter()
+                .enumerate()
+                .filter_map(|(index, key)| {
+                    let key_kind = match key {
+                        DatabaseKey::Trie(_) => 0,
+                        DatabaseKey::Flat(_) => 1,
+                        DatabaseKey::TrieLog(_) => 2,
+                    };
+                    (read_snapshot[index] && key_kind == kind).then_some(index)
+                })
+                .collect::<Vec<_>>();
+            let Some(&first_index) = indices.first() else {
+                continue;
+            };
+
+            let handle = self.snapshot.db.get_column(self.column_mapping.map(&keys[first_index]).clone());
+            let results =
+                self.snapshot.batched_multi_get_cf(&handle, indices.iter().map(|&index| keys[index].as_slice()), false);
+            for (index, value) in indices.into_iter().zip(results) {
+                values[index] = value?.map(|value| value.as_ref().into());
+            }
+        }
+
+        Ok(values)
+    }
+
     /// Merges snapshot rows and in-memory overlay changes for one logical Bonsai prefix.
     /// Overlay deletions remove snapshot rows, and the returned key order is deterministic.
     fn get_by_prefix(&self, prefix: &DatabaseKey) -> Result<Vec<(ByteVec, ByteVec)>, Self::DatabaseError> {
@@ -249,6 +288,16 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
         Ok(previous)
     }
 
+    fn insert_untracked(
+        &mut self,
+        key: &DatabaseKey,
+        value: &[u8],
+        _batch: Option<&mut Self::Batch>,
+    ) -> Result<(), Self::DatabaseError> {
+        self.changed.insert(to_changed_key(key), Some(value.into()));
+        Ok(())
+    }
+
     fn remove(
         &mut self,
         key: &DatabaseKey,
@@ -257,6 +306,15 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
         let previous = self.previous_value_for_write(key)?;
         self.changed.insert(to_changed_key(key), None);
         Ok(previous)
+    }
+
+    fn remove_untracked(
+        &mut self,
+        key: &DatabaseKey,
+        _batch: Option<&mut Self::Batch>,
+    ) -> Result<(), Self::DatabaseError> {
+        self.changed.insert(to_changed_key(key), None);
+        Ok(())
     }
 
     /// Marks every snapshot and overlay key under a logical prefix as deleted in memory.
