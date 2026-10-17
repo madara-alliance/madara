@@ -347,9 +347,9 @@ rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", rev = "75f1
 librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", rev = "75f13c78fdf970b0afd2f21f52caf3317341341c" }
 
 [patch."https://github.com/starkware-libs/sequencer"]
-apollo_infra_utils = { git = "https://github.com/heemankv/sequencer", rev = "b3e63763029d8fb6878a1e1d73935eccd29275fc" }
-apollo_proc_macros = { git = "https://github.com/heemankv/sequencer", rev = "b3e63763029d8fb6878a1e1d73935eccd29275fc" }
-apollo_sizeof = { git = "https://github.com/heemankv/sequencer", rev = "b3e63763029d8fb6878a1e1d73935eccd29275fc" }
-apollo_sizeof_macros = { git = "https://github.com/heemankv/sequencer", rev = "b3e63763029d8fb6878a1e1d73935eccd29275fc" }
-blockifier = { git = "https://github.com/heemankv/sequencer", rev = "b3e63763029d8fb6878a1e1d73935eccd29275fc" }
-starknet_api = { git = "https://github.com/heemankv/sequencer", rev = "b3e63763029d8fb6878a1e1d73935eccd29275fc" }
+apollo_infra_utils = { git = "https://github.com/heemankv/sequencer", rev = "0568b0e4e0c427c5ac3237028db1154ba9f90388" }
+apollo_proc_macros = { git = "https://github.com/heemankv/sequencer", rev = "0568b0e4e0c427c5ac3237028db1154ba9f90388" }
+apollo_sizeof = { git = "https://github.com/heemankv/sequencer", rev = "0568b0e4e0c427c5ac3237028db1154ba9f90388" }
+apollo_sizeof_macros = { git = "https://github.com/heemankv/sequencer", rev = "0568b0e4e0c427c5ac3237028db1154ba9f90388" }
+blockifier = { git = "https://github.com/heemankv/sequencer", rev = "0568b0e4e0c427c5ac3237028db1154ba9f90388" }
+starknet_api = { git = "https://github.com/heemankv/sequencer", rev = "0568b0e4e0c427c5ac3237028db1154ba9f90388" }
