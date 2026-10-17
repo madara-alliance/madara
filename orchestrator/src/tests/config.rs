@@ -411,7 +411,7 @@ impl TestConfigBuilder {
 
         let config = Arc::new(Config::new(
             layer.unwrap_or(Layer::L2),
-            prover_kind.unwrap_or(ProverKind::Atlantic),
+            prover_kind.unwrap_or(ProverKind::Mock),
             params.orchestrator_params,
             chain_details,
             starknet_client.clone(),
@@ -543,9 +543,7 @@ pub mod implement_client {
     pub(crate) fn init_prover_client(service: ConfigType, params: &EnvParams) -> Box<dyn ProverClient> {
         match service {
             ConfigType::Mock(client) => client.into(),
-            ConfigType::Actual => {
-                Config::build_prover_service(&params.prover_params, &params.orchestrator_params, None, None, None)
-            }
+            ConfigType::Actual => Config::build_prover_service(&params.prover_params),
             ConfigType::Dummy => Box::new(MockProverClient::new()),
         }
     }

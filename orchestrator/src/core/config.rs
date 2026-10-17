@@ -1,14 +1,11 @@
 #[cfg(feature = "testing")]
 use alloy::providers::ProviderBuilder;
-use cairo_vm::Felt252;
 use starknet_core::types::Felt;
 
 use crate::compression::batch_rpc::BatchRpcClient;
 use crate::utils::rest_client::RestClient;
 use anyhow::Context;
 use cairo_vm::types::layout_name::LayoutName;
-use hex;
-use orchestrator_atlantic_service::AtlanticProverService;
 use orchestrator_da_client_interface::DaClient;
 use orchestrator_ethereum_da_client::EthereumDaClient;
 use orchestrator_ethereum_settlement_client::EthereumSettlementClient;
@@ -23,7 +20,7 @@ use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
 use std::str::FromStr;
 use std::sync::Arc;
-use tracing::{error, info};
+use tracing::info;
 use url::Url;
 
 use crate::core::client::lock::mongodb::MongoLockClient;
@@ -324,11 +321,6 @@ impl Config {
         let alerts = Self::build_alert_client(&alert_args, provider_config.clone()).await?;
         let queue = Self::build_queue_client(&queue_args, provider_config.clone()).await?;
 
-        // Start mock Atlantic server if flag is enabled
-        if run_cmd.mock_atlantic_server {
-            Self::start_mock_atlantic_server(&prover_config, run_cmd.mock_atlantic_server).await;
-        }
-
         // Fetch chain details from node with retry logic
         let chain_details =
             ChainDetails::fetch(&params.madara_rpc_url, &params.madara_feeder_gateway_url, layer.is_l3())
@@ -343,13 +335,7 @@ impl Config {
         }
 
         // External Clients Initialization
-        let prover_client = Self::build_prover_service(
-            &prover_config,
-            &params,
-            Some(format!("0x{}", hex::encode(&chain_details.chain_id))),
-            Some(Felt252::from_str(chain_details.strk_fee_token_address.as_str())?),
-            run_cmd.da_public_keys.clone(),
-        );
+        let prover_client = Self::build_prover_service(&prover_config);
         let da_client: Box<dyn DaClient + Send + Sync + 'static> = Self::build_da_client(&da_config).await;
         let settlement_client = Self::build_settlement_client(&settlement_config).await?;
 
@@ -432,65 +418,12 @@ impl Config {
     ///
     /// # Arguments
     /// * `prover_params` - The proving service parameters
-    /// * `params` - The config parameters
-    /// * `chain_id_hex` - The chain ID in hex format
-    /// * `fee_token_address` - The fee token address
     /// # Returns
     /// * `Box<dyn ProverClient>` - The proving service
-    pub(crate) fn build_prover_service(
-        prover_params: &ProverConfig,
-        params: &ConfigParam,
-        chain_id_hex: Option<String>,
-        fee_token_address: Option<Felt252>,
-        da_public_keys: Option<Vec<Felt>>,
-    ) -> Box<dyn ProverClient + Send + Sync> {
+    pub(crate) fn build_prover_service(prover_params: &ProverConfig) -> Box<dyn ProverClient + Send + Sync> {
         match prover_params {
             ProverConfig::Sharp(sharp_params) => Box::new(SharpProverService::new_with_args(sharp_params)),
-            ProverConfig::Atlantic(atlantic_params) => Box::new(AtlanticProverService::new_with_args(
-                atlantic_params,
-                &params.prover_layout_name,
-                chain_id_hex,
-                fee_token_address,
-                da_public_keys,
-            )),
             ProverConfig::Mock(mock_params) => Box::new(MockProverService::new_with_args(mock_params)),
-        }
-    }
-
-    /// start_mock_atlantic_server - Start the mock Atlantic server
-    ///
-    /// # Arguments
-    /// * `prover_params` - The proving service parameters
-    /// * `allow_mock_hash_server` - Whether to allow the mock Atlantic server
-    /// # Returns
-    /// * `Box<dyn ProverClient>` - The proving service
-    ///
-    /// # Notes
-    /// This function is used to start the mock Atlantic server if the flag is enabled and we're in testnet.
-    /// It starts the mock server in a background task and gives it time to start.
-    async fn start_mock_atlantic_server(prover_params: &ProverConfig, allow_mock_hash_server: bool) {
-        match prover_params {
-            ProverConfig::Atlantic(atlantic_params) => {
-                // Start mock Atlantic server if flag is enabled and we're in testnet
-                if allow_mock_hash_server && atlantic_params.atlantic_network == "TESTNET" {
-                    info!("Mock Atlantic server flag is enabled, starting mock server...");
-
-                    // Start the mock server in a background task
-                    tokio::spawn(async move {
-                        info!("Starting mock Atlantic server on port 4001");
-                        if let Err(e) = utils_mock_atlantic_server::start_mock_atlantic_server().await {
-                            error!("Failed to start mock Atlantic server: {}", e);
-                        }
-                    });
-
-                    // Give the mock server time to start
-                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-                    info!("Mock Atlantic server started successfully");
-                }
-            }
-            ProverConfig::Sharp(_) | ProverConfig::Mock(_) => {
-                tracing::warn!("Mock Atlantic server flag is enabled, but prover is not Atlantic");
-            }
         }
     }
 

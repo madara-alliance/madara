@@ -81,12 +81,6 @@ pub const MADARA_GATEWAY_PORT: u16 = 8080;
 pub static MADARA_WAITING_DURATION: LazyLock<Duration> = LazyLock::new(|| Duration::from_secs(1));
 
 // =============================================================================
-// MOCK PROVER SERVICE
-// =============================================================================
-pub const MOCK_PROVER_BINARY: &str = "mock-atlantic-server";
-pub const MOCK_PROVER_PORT: u16 = 3001;
-
-// =============================================================================
 // PATHFINDER SERVICE
 // =============================================================================
 pub const PATHFINDER_PORT: u16 = 9545;

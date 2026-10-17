@@ -67,75 +67,10 @@ async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
 }
 
 #[rstest]
-#[tokio::test]
-async fn test_process_job() {
-    let server = MockServer::start();
-    let mut prover_client = MockProverClient::new();
-
-    prover_client.expect_submit_task().with(always()).times(1).returning(|task| match task {
-        orchestrator_prover_client_interface::Task::CreateJob(info) => {
-            assert_eq!(info.dedup_id, "00000000-0000-0000-0000-000000000000");
-            Ok("task_id".to_string())
-        }
-        other => panic!("unexpected task submitted: {:?}", std::mem::discriminant(&other)),
-    });
-    let provider = JsonRpcClient::new(HttpTransport::new(
-        Url::parse(format!("http://localhost:{}", server.port()).as_str()).expect("Failed to parse URL"),
-    ));
-
-    let mut file =
-        File::open(Path::new(&format!("{}/src/tests/artifacts/fibonacci.zip", env!("CARGO_MANIFEST_DIR")))).unwrap();
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer).unwrap();
-
-    let mut storage = MockStorageClient::new();
-    let buffer_bytes = Bytes::from(buffer);
-    let cairo_pie_path = format!("0/{}", CAIRO_PIE_FILE_NAME);
-    storage.expect_get_data().with(eq(cairo_pie_path.clone())).return_once(move |_| Ok(buffer_bytes));
-
-    let services = TestConfigBuilder::new()
-        .configure_starknet_client(provider.into())
-        .configure_prover_kind(ProverKind::Atlantic)
-        .configure_prover_client(prover_client.into())
-        .configure_storage_client(storage.into())
-        .build()
-        .await;
-
-    let metadata = JobMetadata {
-        common: CommonMetadata::default(),
-        specific: JobSpecificMetadata::Proving(ProvingMetadata {
-            input_path: Some(ProvingInputType::CairoPie(cairo_pie_path)),
-            ..Default::default()
-        }),
-    };
-
-    assert_eq!(
-        ProvingJobHandler
-            .process_job(
-                services.config,
-                &mut JobItem {
-                    id: Uuid::default(),
-                    internal_id: 0,
-                    job_type: JobType::ProofCreation,
-                    status: JobStatus::Created,
-                    external_id: String::new().into(),
-                    metadata,
-                    version: 0,
-                    created_at: Utc::now().round_subsecs(0),
-                    updated_at: Utc::now().round_subsecs(0)
-                }
-            )
-            .await
-            .unwrap(),
-        "task_id".to_string()
-    );
-}
-
-#[rstest]
 #[case(ProverKind::Sharp, "0xsharpfeedface")]
 #[case(ProverKind::Mock, "0xmockfeedface")]
 #[tokio::test]
-async fn test_process_job_uses_snos_fact_for_non_atlantic_provers(
+async fn test_process_job_uses_snos_fact_for_supported_provers(
     #[case] prover_kind: ProverKind,
     #[case] snos_fact: &str,
 ) {
@@ -230,25 +165,11 @@ async fn test_process_job_uses_snos_fact_for_non_atlantic_provers(
 }
 
 #[test]
-fn test_tracking_id_uses_job_uuid_for_atlantic() {
-    let job_id = Uuid::nil();
-    let tracking_id = proving_job_tracking_id(ProverKind::Atlantic, job_id, None).unwrap();
-    assert_eq!(tracking_id, job_id.to_string());
+fn test_tracking_id_uses_fact_hash() {
+    assert_eq!(proving_job_tracking_id(Some("0xfeedface".to_string())).unwrap(), "0xfeedface");
 }
 
 #[test]
-fn test_tracking_id_uses_fact_hash_for_sharp_and_mock() {
-    let sharp_tracking_id =
-        proving_job_tracking_id(ProverKind::Sharp, Uuid::nil(), Some("0xfeedface".to_string())).unwrap();
-    let mock_tracking_id =
-        proving_job_tracking_id(ProverKind::Mock, Uuid::nil(), Some("0xfeedface".to_string())).unwrap();
-
-    assert_eq!(sharp_tracking_id, "0xfeedface");
-    assert_eq!(mock_tracking_id, "0xfeedface");
-}
-
-#[test]
-fn test_tracking_id_requires_snos_fact_for_sharp_and_mock() {
-    assert!(proving_job_tracking_id(ProverKind::Sharp, Uuid::nil(), None).is_err());
-    assert!(proving_job_tracking_id(ProverKind::Mock, Uuid::nil(), None).is_err());
+fn test_tracking_id_requires_snos_fact() {
+    assert!(proving_job_tracking_id(None).is_err());
 }

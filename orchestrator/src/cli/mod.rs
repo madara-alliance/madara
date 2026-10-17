@@ -142,16 +142,13 @@ pub struct RunCmd {
 
     // Prover: single enum selects which backend to use. The per-prover struct
     // below that matches the selection is validated in `TryFrom<RunCmd> for
-    // ProverConfig` — the others are ignored. Accepted values: sharp, atlantic,
-    // mock (case-insensitive via `ignore_case = true`).
+    // ProverConfig` — the other is ignored. Accepted values: sharp and mock
+    // (case-insensitive via `ignore_case = true`).
     #[arg(env = "MADARA_ORCHESTRATOR_PROVER", long, value_enum, ignore_case = true)]
     pub prover: ProverKind,
 
     #[clap(flatten)]
     pub sharp_args: prover::sharp::SharpCliArgs,
-
-    #[clap(flatten)]
-    pub atlantic_args: prover::atlantic::AtlanticCliArgs,
 
     #[clap(flatten)]
     pub mock_args: prover::mock::MockCliArgs,
@@ -189,11 +186,6 @@ pub struct RunCmd {
     pub service_args: service::ServiceCliArgs,
     #[clap(flatten)]
     pub instrumentation_args: instrumentation::InstrumentationCliArgs,
-
-    /// Run the mock Atlantic server for testing purposes.
-    /// This starts a local mock server that simulates the Atlantic prover service.
-    #[clap(long)]
-    pub mock_atlantic_server: bool,
 
     #[arg(env = "MADARA_ORCHESTRATOR_STORE_AUDIT_ARTIFACTS", long)]
     pub store_audit_artifacts: bool,

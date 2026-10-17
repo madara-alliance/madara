@@ -8,7 +8,7 @@ use crate::core::client::queue::MockQueueClient;
 use crate::tests::common::test_utils::{acquire_test_lock, get_job_handler_context_safe};
 use crate::tests::config::TestConfigBuilder;
 use crate::tests::workers::utils::{db_checks_proving_worker, get_job_by_mock_id_vector};
-use crate::types::batch::{AggregatorBatch, SnosBatch};
+use crate::types::batch::SnosBatch;
 use crate::types::jobs::metadata::JobSpecificMetadata;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::queue::QueueType;
@@ -50,15 +50,6 @@ async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dy
 
     // Create mock SNOS jobs with snos_fact field set
     let mut snos_jobs = Vec::new();
-
-    db.expect_get_aggregator_batch_for_block().returning(|_| {
-        Ok(Some(AggregatorBatch {
-            index: 1,
-            bucket_id: Some(String::from("ABCD1234")),
-            start_block: 0,
-            ..Default::default()
-        }))
-    });
 
     for i in 1..=num_jobs {
         // Skip job with ID 3 if incomplete_runs is true

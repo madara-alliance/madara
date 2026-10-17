@@ -1,4 +1,4 @@
-use crate::core::config::{Config, ProverKind};
+use crate::core::config::Config;
 use crate::error::job::snos::SnosError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
@@ -11,7 +11,6 @@ use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::utils::fact_info::get_fact_info;
 use async_trait::async_trait;
 use cairo_vm::types::layout_name::LayoutName;
-use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
 use orchestrator_aggregator_runner::{AggregatorFelt, AggregatorRunnerOutput, PROGRAM_HASHES};
@@ -36,8 +35,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
 
     /// Process the aggregator job.
     ///
-    /// - **Atlantic**: closes the bucket via `RunAggregation(bucket_id)`.
-    /// - **SHARP / Mock**: both use the shared [`run_and_submit_with_local_aggregation`]
+    /// SHARP and Mock both use the shared [`run_and_submit_with_local_aggregation`]
     ///   path — runs the aggregator locally, stores artifacts (PIE, DA segment, program
     ///   output) to S3, then submits `Task::RunAggregationWithPie`. SHARP submits an
     ///   applicative job; Mock optionally registers the fact hash on an L1 `MockGpsVerifier`.
@@ -48,25 +46,8 @@ impl JobHandlerTrait for AggregatorJobHandler {
         let metadata: AggregatorMetadata = job.metadata.specific.clone().try_into()?;
 
         tracing::Span::current().record("batch_id", metadata.batch_num);
-        if let Some(ref bucket_id) = metadata.bucket_id {
-            tracing::Span::current().record("bucket_id", bucket_id.as_str());
-        }
-
-        let external_id = match config.prover_kind() {
-            ProverKind::Atlantic => {
-                let bucket_id = metadata
-                    .bucket_id
-                    .as_ref()
-                    .ok_or_else(|| JobError::Other(OtherError(eyre!("Atlantic aggregator job missing bucket_id"))))?;
-                config.prover_client().submit_task(Task::RunAggregation(bucket_id.clone())).await.map_err(|e| {
-                    error!(error = %e, "Failed to close bucket");
-                    JobError::ProverClientError(e)
-                })?
-            }
-            kind @ (ProverKind::Sharp | ProverKind::Mock) => {
-                self.run_and_submit_with_local_aggregation(&config, job, kind.label()).await?
-            }
-        };
+        let external_id =
+            self.run_and_submit_with_local_aggregation(&config, job, config.prover_kind().label()).await?;
 
         config
             .database()
@@ -95,9 +76,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
             })?
             .into();
 
-        // Mock uses `ensure_on_chain_registration` to cross-check `isValid(fact)` on the
-        // mock verifier during verification. For Atlantic/SHARP this field is either
-        // unset or used differently, so passing it through is safe either way.
+        // Mock and SHARP use `ensure_on_chain_registration` to cross-check `isValid(fact)`.
         let fact = metadata.ensure_on_chain_registration.clone();
         let task_status =
             config.prover_client().get_task_status(TaskType::Aggregation, &external_id, fact).await.map_err(|e| {
@@ -111,10 +90,8 @@ impl JobHandlerTrait for AggregatorJobHandler {
                 Ok(JobVerificationStatus::Pending)
             }
             TaskStatus::Succeeded => {
-                // Atlantic: returns CairoPIE + DA segment bytes (fetched from remote storage).
-                // SHARP / Mock: returns empty — artifacts (PIE, DA segment, program output)
-                // were already written to S3 during process_job by the local aggregation path.
-                // Empty is safe here; the `if let Some(..)` guards below handle both cases.
+                // Local aggregation already wrote the PIE, DA segment, and program output.
+                // SHARP optionally returns the proof when audit artifacts are enabled.
                 let artifacts = config
                     .prover_client()
                     .get_aggregation_artifacts(&external_id, metadata.download_proof.is_some())
@@ -123,27 +100,6 @@ impl JobHandlerTrait for AggregatorJobHandler {
                         error!(error = %e, "Failed to fetch aggregation artifacts");
                         JobError::Other(OtherError(eyre!(e)))
                     })?;
-
-                if let Some(cairo_pie_bytes) = artifacts.cairo_pie {
-                    config
-                        .storage()
-                        .put_data(bytes::Bytes::from(cairo_pie_bytes.clone()), &metadata.cairo_pie_path)
-                        .await?;
-                    let cairo_pie =
-                        CairoPie::from_bytes(&cairo_pie_bytes).map_err(|e| JobError::Other(OtherError(eyre!(e))))?;
-                    let fact_info = get_fact_info(&cairo_pie, None, true)?;
-                    AggregatorJobHandler::store_program_output(
-                        &config,
-                        internal_id,
-                        fact_info.program_output,
-                        &metadata.program_output_path,
-                    )
-                    .await?;
-                }
-
-                if let Some(da_segment_bytes) = artifacts.da_segment {
-                    config.storage().put_data(bytes::Bytes::from(da_segment_bytes), &metadata.da_segment_path).await?;
-                }
 
                 if let Some(proof_bytes) = artifacts.proof {
                     if let Some(ref download_path) = metadata.download_proof {

@@ -322,15 +322,8 @@ mod tests {
 
     #[test]
     fn aggregator_batch_response_includes_input_size_upper_bound() {
-        let mut batch = AggregatorBatch::new(
-            7,
-            100,
-            None,
-            256,
-            123_456,
-            AggregatorBatchWeights::new(10, 20),
-            StarknetVersion::V0_14_2,
-        );
+        let mut batch =
+            AggregatorBatch::new(7, 100, 256, 123_456, AggregatorBatchWeights::new(10, 20), StarknetVersion::V0_14_2);
         batch.end_block = 109;
         batch.status = AggregatorBatchStatus::Closed;
 

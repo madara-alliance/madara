@@ -181,53 +181,20 @@ Mock services and test utilities for development and testing.
 
 ```text
 test_utils/
-├── crates/
-│   └── mock-atlantic-server/  # Mock Atlantic prover server
-│       ├── Cargo.toml
-│       └── src/
-│           ├── main.rs
-│           ├── lib.rs
-│           ├── server.rs     # Axum HTTP server
-│           └── types.rs
 └── scripts/
     └── deploy_dummy_verifier.sh  # Deploy MockGPSVerifier
 ```
 
-**Atlantic API Reference:**
-
-- Swagger UI: <https://atlantic.api.herodotus.cloud/docs/>
-- OpenAPI JSON: <https://atlantic.api.herodotus.cloud/docs/json>
-
 ### Test Utils Commands
 
 ```bash
-# Build mock Atlantic server
-cargo build -p utils-mock-atlantic-server
-
-# Run mock Atlantic server
-cargo run -p utils-mock-atlantic-server -- --port 4001
-cargo run -p utils-mock-atlantic-server -- --port 8080
-cargo run -p utils-mock-atlantic-server -- --port 8080 --failure-rate 0.1
-
 # Deploy dummy verifier
 ./test_utils/scripts/deploy_dummy_verifier.sh \
   --private-key "0xac0974..." \
   --anvil-url "http://localhost:8545"
 ```
 
-### Mock Atlantic API
-
-```text
-POST /atlantic-query?apiKey={key}  # Submit proving job
-GET  /atlantic-query/{job_id}      # Get job status
-GET  /is-alive                     # Health check
-```
-
 ### Test Utils Key Info
-
-- Standalone and orchestrator-embedded default port: 4001
-- Default API key: "mock-key"
-- Job states: Received → InProgress → Done/Failed
 - Configurable failure rate, delays, auto-complete
 
 ---
@@ -338,6 +305,5 @@ MADARA_RPC_PORT: 9944
 1. **Cairo → Build-Artifacts**: Cairo contracts compiled to JSON artifacts
 2. **Scripts → Build-Artifacts**: `scripts/artifacts.sh` rebuilds artifacts
 3. **Scripts → Cairo**: `scripts/js-tests.sh` uses Cairo test contracts
-4. **Test-Utils → Scripts**: Mock Atlantic used by orchestrator tests
-5. **Tools → Development**: Nix configs ensure Foundry/Scarb availability
-6. **EVM → Cairo**: Kakarot wraps Starknet contracts for EVM access
+4. **Tools → Development**: Nix configs ensure Foundry/Scarb availability
+5. **EVM → Cairo**: Kakarot wraps Starknet contracts for EVM access

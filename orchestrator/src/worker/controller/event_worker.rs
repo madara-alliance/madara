@@ -87,7 +87,6 @@ impl EventWorker {
                     span_type = "Job",
                     external_id = tracing::field::Empty,
                     batch_id = tracing::field::Empty,
-                    bucket_id = tracing::field::Empty,
                     block_start = tracing::field::Empty,
                     block_end = tracing::field::Empty,
                     aggregator_query_id = tracing::field::Empty

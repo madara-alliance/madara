@@ -53,9 +53,6 @@ async fn prover_client_submit_task_works() {
     assert!(sharp_service
         .submit_task(Task::CreateJob(CreateJobInfo {
             cairo_pie: Box::new(cairo_pie),
-            bucket_id: None,
-            bucket_job_index: None,
-            num_steps: None,
             dedup_id: uuid::Uuid::new_v4().to_string(),
         }))
         .await

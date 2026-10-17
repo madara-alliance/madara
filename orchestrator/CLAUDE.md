@@ -12,7 +12,7 @@ multi-stage job processing pipeline with distributed workers and queue-based exe
 
 - Queue-based job management with three-phase execution (Creation → Processing → Verification)
 - Distributed worker architecture for scaling job processing
-- Multiple prover backends (SHARP, ATLANTIC, mock)
+- SHARP proving with an in-process mock backend for development
 - Multiple settlement layers (Ethereum, Starknet)
 - Multiple DA layers (Ethereum, Starknet)
 - Multi-layer support (L2, L3)
@@ -74,16 +74,6 @@ RUST_LOG=debug RUST_BACKTRACE=1 cargo llvm-cov nextest \
 RUST_LOG=info cargo test --package e2e-tests --test test_orchestrator_workflow -- --nocapture
 ```
 
-### Mock Services
-
-Add `--mock-atlantic-server` to a complete `orchestrator run ...` command to
-start the in-tree Atlantic mock server on port 4001.
-
-```bash
-# Mock prover service (Docker)
-docker run -p 6000:6000 ocdbytes/mock-prover:latest
-```
-
 ## Architecture Overview
 
 ### Crate Organization
@@ -98,7 +88,7 @@ docker run -p 6000:6000 ocdbytes/mock-prover:latest
 
 - `prover-client-interface/`: Trait for prover services (submit task, get status, get proof)
 - `sharp-service/`: SHARP prover integration
-- `atlantic-service/`: ATLANTIC prover integration
+- `mock-service/`: In-process mock prover for development and tests
 - `gps-fact-checker/`: GPS fact verification utilities
 
 **`crates/settlement-clients/`** - Settlement Layer Clients
@@ -200,13 +190,7 @@ MADARA_ORCHESTRATOR_DATABASE_NAME
 
 ```text
 SHARP: MADARA_ORCHESTRATOR_SHARP_URL, MADARA_ORCHESTRATOR_SHARP_CUSTOMER_ID
-ATLANTIC: MADARA_ORCHESTRATOR_ATLANTIC_API_KEY, MADARA_ORCHESTRATOR_ATLANTIC_SERVICE_URL
 ```
-
-**Atlantic API Documentation:**
-
-- Swagger UI: <https://atlantic.api.herodotus.cloud/docs/>
-- OpenAPI JSON: <https://atlantic.api.herodotus.cloud/docs/json>
 
 **Settlement Layers:**
 
@@ -229,7 +213,7 @@ MADARA_ORCHESTRATOR_MAX_NUM_BLOBS
 - Storage group: `--aws-s3` (requires provider)
 - Queue group: `--aws-sqs` (requires provider)
 - Alert group: `--aws-sns` (requires provider)
-- Prover group: `--prover <sharp|atlantic|mock>` / `MADARA_ORCHESTRATOR_PROVER` (single enum; replaces the old mutually-exclusive bool flags)
+- Prover group: `--prover <sharp|mock>` / `MADARA_ORCHESTRATOR_PROVER`
 - Settlement group: `--settle-on-ethereum` or `--settle-on-starknet`
 - DA group: `--da-on-ethereum` or `--da-on-starknet`
 

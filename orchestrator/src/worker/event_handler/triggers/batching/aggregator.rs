@@ -1,7 +1,7 @@
 use crate::compression::batch_rpc::BatchRpcClient;
 use crate::compression::blob::{convert_felt_vec_to_blob_data, state_update_to_blob_data};
 use crate::compression::squash::squash;
-use crate::core::config::{Config, ConfigParam, ProverKind, StarknetVersion, SUPPORTED_STARKNET_VERSION};
+use crate::core::config::{Config, ConfigParam, StarknetVersion, SUPPORTED_STARKNET_VERSION};
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, AggregatorBatchWeights};
@@ -17,7 +17,6 @@ use bytes::Bytes;
 use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::eyre;
 use opentelemetry::KeyValue;
-use orchestrator_prover_client_interface::Task;
 use starknet::providers::Provider;
 use starknet_core::types::MaybePreConfirmedStateUpdate::{PreConfirmedUpdate, Update};
 use starknet_core::types::{BlockId, MaybePreConfirmedStateUpdate, StateUpdate};
@@ -25,7 +24,7 @@ use starknet_types_core::felt::Felt;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 const AGGREGATOR_N_TASKS_WORDS: usize = 1;
 const AGGREGATOR_CHILD_WRAPPER_WORDS: usize = 2;
@@ -448,25 +447,9 @@ impl AggregatorHandler {
             ))));
         }
 
-        let bucket_id = match self.config.prover_kind() {
-            ProverKind::Atlantic => {
-                let bucket_id = self.config.prover_client().submit_task(Task::CreateBucket).await.map_err(|e| {
-                    error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);
-                    JobError::Other(OtherError(eyre!(
-                        "Prover Client Error: Failed to submit create bucket task to prover client, {}",
-                        e
-                    )))
-                })?;
-                debug!(index = %index, bucket_id = %bucket_id, "Created new Atlantic bucket successfully");
-                Some(bucket_id)
-            }
-            ProverKind::Sharp | ProverKind::Mock => None,
-        };
-
         let batch = AggregatorBatch::new(
             index,
             start_block,
-            bucket_id,
             blob_len,
             aggregator_input_size_upper_bound,
             weights,
@@ -857,7 +840,6 @@ mod tests {
             id: uuid::Uuid::new_v4(),
             index: 1,
             orchestrator_version,
-            bucket_id: Some("test_bucket".to_string()),
             squashed_state_updates_path: "test/path.json".to_string(),
             blob_path: "test/blob".to_string(),
             starknet_version: version,

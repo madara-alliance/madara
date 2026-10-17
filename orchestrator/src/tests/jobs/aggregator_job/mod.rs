@@ -4,27 +4,15 @@ use super::super::common::default_job_item;
 use crate::core::client::database::MockDatabaseClient;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus};
-use crate::types::constant::{
-    get_batch_artifact_file, CAIRO_PIE_FILE_NAME, DA_SEGMENT_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, PROOF_FILE_NAME,
-};
+use crate::types::constant::{get_batch_artifact_file, PROOF_FILE_NAME};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{AggregatorMetadata, CommonMetadata, JobMetadata, JobSpecificMetadata};
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::worker::event_handler::jobs::aggregator::AggregatorJobHandler;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
-use bytes::Bytes;
-use chrono::{SubsecRound, Utc};
-use httpmock::prelude::*;
 use mockall::predicate::eq;
 use orchestrator_prover_client_interface::{MockProverClient, TaskStatus, TaskType};
-use orchestrator_utils::test_utils::setup_test_data;
 use rstest::*;
-use starknet::providers::jsonrpc::HttpTransport;
-use starknet::providers::JsonRpcClient;
-use std::fs::File;
-use std::io::Read;
-use std::path::Path;
-use url::Url;
 use uuid::Uuid;
 
 #[rstest]
@@ -56,36 +44,20 @@ async fn test_create_job() {
 async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
     // The following things happen in the aggregator job verification:
     // 1. Get the task status from the prover client
-    // 2. If the task is completed, get the artifacts from the prover client
-    // 3. Calculate the program output from cairo pie
-    // 4. Store the artifacts in the storage client
-    // 5. Update the job status in the database
+    // 2. If the task is completed, get the optional proof from the prover client
+    // 3. Update the job status in the database
 
     dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env file");
-
-    // Fetch a sample aggregator cairo pie
-    let data_dir = setup_test_data(vec![("aggregator.zip", false)]).await.expect("Failed to setup test data");
-
-    // Fetching the aggregator cairo pie from the file
-    let mut file = File::open(Path::new(data_dir.path().join("aggregator.zip").to_str().unwrap())).unwrap();
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer).unwrap();
-    let buffer_bytes = Bytes::from(buffer);
 
     // Mocking prover client
     let mut prover_client = MockProverClient::new();
     prover_client
         .expect_get_task_status()
-        .with(eq(TaskType::Aggregation), eq("bucket_id".to_string()), eq(None))
+        .with(eq(TaskType::Aggregation), eq("aggregation_id".to_string()), eq(None))
         .times(1)
         .returning(|_, _, _| Ok(TaskStatus::Succeeded));
-    let buffer_bytes_clone = buffer_bytes.clone();
-    prover_client.expect_get_aggregation_artifacts().times(1).returning(move |_, _| {
-        Ok(orchestrator_prover_client_interface::AggregationArtifacts {
-            cairo_pie: Some(buffer_bytes_clone.to_vec()),
-            da_segment: Some("da_segment".to_string().into_bytes()),
-            proof: Some("proof".to_string().into_bytes()),
-        })
+    prover_client.expect_get_aggregation_artifacts().times(1).returning(|_, _| {
+        Ok(orchestrator_prover_client_interface::AggregationArtifacts { proof: Some("proof".to_string().into_bytes()) })
     });
 
     // Mocking database client
@@ -111,84 +83,10 @@ async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
 
     job_item.metadata.specific = JobSpecificMetadata::Aggregator(AggregatorMetadata {
         batch_num: 1,
-        bucket_id: Some("bucket_id".to_string()),
         download_proof: Some(get_batch_artifact_file(1, PROOF_FILE_NAME)),
-        cairo_pie_path: get_batch_artifact_file(1, CAIRO_PIE_FILE_NAME),
-        program_output_path: get_batch_artifact_file(1, PROGRAM_OUTPUT_FILE_NAME),
-        da_segment_path: get_batch_artifact_file(1, DA_SEGMENT_FILE_NAME),
         ..Default::default()
     });
-    // verify_job reads external_id as the aggregation tracking ID (bucket_id for Atlantic).
-    job_item.external_id = "bucket_id".to_string().into();
+    job_item.external_id = "aggregation_id".to_string().into();
 
     assert!(AggregatorJobHandler.verify_job(services.config, &mut job_item).await.is_ok());
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_process_job() {
-    // The following things happen in the aggregator job processing:
-    // 1. Submit a task to the prover client
-    // 2. Update the batch status in the database
-
-    // Mocking prover client
-    let server = MockServer::start();
-    let mut prover_client = MockProverClient::new();
-    prover_client.expect_submit_task().times(1).returning(|_| Ok("bucket_id".to_string()));
-
-    // Mocking database client
-    let mut database_client = MockDatabaseClient::new();
-    database_client
-        .expect_update_aggregator_batch_status_by_index()
-        .with(eq(1), eq(AggregatorBatchStatus::PendingAggregatorVerification))
-        .returning(|_, _| {
-            Ok(AggregatorBatch {
-                id: Uuid::default(),
-                status: AggregatorBatchStatus::PendingAggregatorVerification,
-                ..Default::default()
-            })
-        })
-        .times(1);
-
-    // Creating a dummy provider
-    let provider = JsonRpcClient::new(HttpTransport::new(
-        Url::parse(format!("http://localhost:{}", server.port()).as_str()).expect("Failed to parse URL"),
-    ));
-
-    let services = TestConfigBuilder::new()
-        .configure_starknet_client(provider.into())
-        .configure_prover_client(prover_client.into())
-        .configure_database(database_client.into())
-        .build()
-        .await;
-
-    let metadata = JobMetadata {
-        common: CommonMetadata::default(),
-        specific: JobSpecificMetadata::Aggregator(AggregatorMetadata {
-            bucket_id: Some("bucket_id".to_string()),
-            batch_num: 1,
-            ..Default::default()
-        }),
-    };
-
-    assert_eq!(
-        AggregatorJobHandler
-            .process_job(
-                services.config,
-                &mut JobItem {
-                    id: Uuid::default(),
-                    internal_id: 0,
-                    job_type: JobType::ProofCreation,
-                    status: JobStatus::Created,
-                    external_id: String::new().into(),
-                    metadata,
-                    version: 0,
-                    created_at: Utc::now().round_subsecs(0),
-                    updated_at: Utc::now().round_subsecs(0)
-                }
-            )
-            .await
-            .unwrap(),
-        "bucket_id".to_string()
-    );
 }

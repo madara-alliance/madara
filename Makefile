@@ -98,7 +98,6 @@ Targets:
 
   - help               Show this help message
   - git-hook           Setup git hooks path to .githooks
-  - run-mock-atlantic-server  Run the mock Atlantic server (options: PORT=4002 FAILURE_RATE=0.1 MAX_CONCURRENT_JOBS=5 BIND_ADDR=0.0.0.0)
   - install-llvm19     Install LLVM 19 for Cairo Native (Usage: make install-llvm19 [SUDO=sudo] [CODENAME=jammy|bookworm])
 
 endef
@@ -474,45 +473,12 @@ setup-l3-localstack:
 .PHONY: run-orchestrator-l2
 run-orchestrator-l2:
 	@echo -e "$(DIM)Running orchestrator...$(RESET)"
-	@cargo run --package orchestrator -- run --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-ethereum --prover atlantic --da-on-ethereum 2>&1
-
-
-.PHONY: run-orchestrator-l3
-run-orchestrator-l3:
-	@echo -e "$(DIM)Running orchestrator...$(RESET)"
-	@cargo run --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --prover atlantic --mock-atlantic-server --da-on-starknet 2>&1
+	@cargo run --package orchestrator -- run --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-ethereum --prover sharp --da-on-ethereum 2>&1
 
 .PHONY: watch-orchestrator
 watch-orchestrator:
 	@echo -e "$(DIM)Watching orchestrator for changes...$(RESET)"
-	@cargo watch -x 'run --release --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --prover atlantic --da-on-starknet' 2>&1
-
-# Run the mock Atlantic server with enhanced CLI
-# Usage: make run-mock-atlantic-server
-#        PORT=4002 make run-mock-atlantic-server                    # Custom port
-#        MAX_CONCURRENT_JOBS=5 make run-mock-atlantic-server        # Limit concurrent jobs
-#        PORT=8080 FAILURE_RATE=0.2 MAX_CONCURRENT_JOBS=3 make run-mock-atlantic-server  # All options
-.PHONY: run-mock-atlantic-server
-run-mock-atlantic-server:
-	@echo -e "$(DIM)Starting mock Atlantic server...$(RESET)"
-	@CMD="cargo run --release --package utils-mock-atlantic-server --"; \
-	if [ ! -z "$(PORT)" ]; then \
-		CMD="$$CMD --port $(PORT)"; \
-		echo -e "$(INFO)Using custom port $(PORT)$(RESET)"; \
-	fi; \
-	if [ ! -z "$(FAILURE_RATE)" ]; then \
-		CMD="$$CMD --failure-rate $(FAILURE_RATE)"; \
-		echo -e "$(INFO)Using failure rate $(FAILURE_RATE)$(RESET)"; \
-	fi; \
-	if [ ! -z "$(BIND_ADDR)" ]; then \
-		CMD="$$CMD --bind-addr $(BIND_ADDR)"; \
-		echo -e "$(INFO)Binding to address $(BIND_ADDR)$(RESET)"; \
-	fi; \
-	if [ ! -z "$(MAX_CONCURRENT_JOBS)" ]; then \
-		CMD="$$CMD --max-concurrent-jobs $(MAX_CONCURRENT_JOBS)"; \
-		echo -e "$(INFO)Max concurrent jobs: $(MAX_CONCURRENT_JOBS)$(RESET)"; \
-	fi; \
-	$$CMD
+	@cargo watch -x 'run --release --package orchestrator -- run --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-ethereum --prover sharp --da-on-ethereum' 2>&1
 
 .PHONY: setup-bootstrapper
 setup-bootstrapper:

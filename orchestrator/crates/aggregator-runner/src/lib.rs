@@ -45,8 +45,8 @@ pub struct AggregatorRunnerOutput {
 
 /// Run the aggregator locally to produce an aggregator CairoPIE and DA segment.
 ///
-/// This is used in the SHARP L2 flow where the orchestrator must create the
-/// aggregator PIE itself (unlike Atlantic which does it remotely).
+/// This is used in the SHARP L2 flow where the orchestrator creates the
+/// aggregator PIE before submitting it.
 ///
 /// # Process
 /// 1. Build the bootloader output vector from pre-stored program outputs

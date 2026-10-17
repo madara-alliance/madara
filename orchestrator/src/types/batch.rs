@@ -30,7 +30,7 @@ pub enum AggregatorBatchStatus {
     Closed,
     /// Batch can be processed by the aggregator job.
     /// This means all child proofs are ready, so we can submit aggregation:
-    /// close the Atlantic bucket, or run local aggregation for SHARP / Mock.
+    /// run local aggregation for SHARP / Mock.
     PendingAggregatorRun,
     /// Aggregation has been submitted, and we are waiting for prover-side success.
     PendingAggregatorVerification,
@@ -108,11 +108,6 @@ pub struct AggregatorBatch {
     /// Sequential index of the aggregator batch (unique, auto-incrementing)
     /// Used for ordering and referencing batches
     pub index: u64,
-
-    /// Atlantic bucket ID for the batch.
-    /// `None` for provers without a bucket concept (SHARP, Mock).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub bucket_id: Option<String>,
 
     /// Path to the squashed state updates file
     /// This is done for optimization so we don't have to create a new squashed
@@ -206,15 +201,12 @@ impl AggregatorBatch {
     /// * `start_block` - Starting block number for the batch
     /// * `squashed_state_updates_path` - Path to store squashed state updates
     /// * `blob_path` - Path to store blob data
-    /// * `bucket_id` - Atlantic bucket identifier from the prover client, if applicable
-    ///
     /// # Returns
     /// A new `AggregatorBatch` instance with status `Open` and single block
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         index: u64,
         start_block: u64,
-        bucket_id: Option<String>,
         blob_len: usize,
         aggregator_input_size_upper_bound: usize,
         builtin_weights: AggregatorBatchWeights,
@@ -232,7 +224,6 @@ impl AggregatorBatch {
             aggregator_input_size_upper_bound,
             created_at: Utc::now().round_subsecs(0),
             updated_at: Utc::now().round_subsecs(0),
-            bucket_id,
             starknet_version,
             orchestrator_version: crate::types::constant::ORCHESTRATOR_VERSION.to_string(),
             status: AggregatorBatchStatus::Open,

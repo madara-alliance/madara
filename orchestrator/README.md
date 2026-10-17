@@ -118,7 +118,7 @@ The system uses dedicated queues for managing different job phases:
 - [Madara Node](https://github.com/madara-alliance/madara)
   - Required for block processing
   - Follow setup instructions at [Madara Documentation](https://github.com/madara-alliance/madara)
-- Prover service (`sharp`, `atlantic`, or `mock`)
+- Prover service (`sharp` or `mock`)
 - MongoDB for job management
 - AWS services (or Localstack for local development):
   - SQS for queues
@@ -355,7 +355,6 @@ RUST_LOG=info cargo run --release --bin orchestrator run \
 ### Command Line Options
 
 1. **Prover Services** — select one via `--prover <kind>` / `MADARA_ORCHESTRATOR_PROVER`:
-   - `atlantic`: Use Atlantic prover
    - `sharp`: Use SHARP prover
    - `mock`: Use the in-tree mock prover (dev / mocknet only)
 
@@ -428,15 +427,6 @@ MADARA_ORCHESTRATOR_SHARP_USER_CRT_FILE=<client-cert-path>
 MADARA_ORCHESTRATOR_SHARP_USER_KEY_FILE=<client-key-path>
 MADARA_ORCHESTRATOR_SHARP_SERVER_CRT_FILE=<server-cert-path>
 MADARA_ORCHESTRATOR_GPS_VERIFIER_CONTRACT_ADDRESS=<gps-verifier-address>
-# or
-# ATLANTIC Configuration
-MADARA_ORCHESTRATOR_ATLANTIC_API_KEY=<api-key>
-MADARA_ORCHESTRATOR_ATLANTIC_SERVICE_URL=<service-url>
-MADARA_ORCHESTRATOR_ATLANTIC_RPC_NODE_URL=<rpc-node-url>
-MADARA_ORCHESTRATOR_ATLANTIC_MOCK_FACT_HASH=false
-MADARA_ORCHESTRATOR_ATLANTIC_PROVER_TYPE=<prover-type>
-MADARA_ORCHESTRATOR_ATLANTIC_SETTLEMENT_LAYER=<settlement-layer>
-MADARA_ORCHESTRATOR_ATLANTIC_VERIFIER_CONTRACT_ADDRESS=<verifier-address>
 ```
 
 ### Database Configuration
