@@ -32,6 +32,7 @@ use crate::worker::event_handler::triggers::storage_cleanup::StorageCleanupTrigg
 use crate::worker::event_handler::triggers::update_state::UpdateStateJobTrigger;
 use crate::worker::event_handler::triggers::JobTrigger;
 use crate::worker::service::JobService;
+use crate::worker::utils::alerts::verification_timeout_alert_message;
 use orchestrator_utils::layer::Layer;
 use tracing::{debug, error, info, warn, Span};
 
@@ -730,7 +731,7 @@ impl JobHandlerService {
                     );
 
                     // Send SNS alert for verification timeout
-                    let alert_message = JobService::verification_timeout_alert_message(&job, &config).await;
+                    let alert_message = verification_timeout_alert_message(&job, &config).await;
 
                     if let Err(e) = config.alerts().send_message(alert_message).await {
                         error!(
