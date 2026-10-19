@@ -2,6 +2,7 @@
 //! Individual method semantics are documented by [`MadaraStorageRead`].
 
 use super::*;
+use crate::storage::CommittedDataPageEntries;
 
 impl MadaraStorageRead for RocksDBStorage {
     fn list_committed_data_versions(
@@ -31,7 +32,7 @@ impl MadaraStorageRead for RocksDBStorage {
         self.read_committed_data_count(root)
     }
 
-    fn get_committed_data_page(&self, root: Felt, start: u32) -> Result<Option<(u32, Vec<(Felt, Felt)>)>> {
+    fn get_committed_data_page(&self, root: Felt, start: u32) -> Result<Option<CommittedDataPageEntries>> {
         self.read_committed_data_page(root, start)
     }
 

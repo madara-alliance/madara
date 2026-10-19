@@ -13,6 +13,9 @@ use mp_state_update::StateDiff;
 use mp_transactions::{validated::ValidatedTransaction, L1HandlerTransactionWithFee};
 use starknet_api::core::ChainId;
 
+/// Total dataset entry count and one bounded page of sorted felt key/value pairs.
+pub type CommittedDataPageEntries = (u32, Vec<(Felt, Felt)>);
+
 #[derive(Debug, Clone)]
 pub struct EventFilter {
     pub start_block: u64,
@@ -139,7 +142,7 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
     }
 
     /// Returns the occupied count and up to 4096 values at an aligned offset.
-    fn get_committed_data_page(&self, _root: Felt, _start: u32) -> Result<Option<(u32, Vec<(Felt, Felt)>)>> {
+    fn get_committed_data_page(&self, _root: Felt, _start: u32) -> Result<Option<CommittedDataPageEntries>> {
         anyhow::bail!("Committed-data storage is unsupported by this backend")
     }
 
