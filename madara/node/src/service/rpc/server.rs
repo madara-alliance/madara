@@ -321,6 +321,10 @@ pub(crate) fn format_cors(maybe_cors: Option<&Vec<String>>) -> String {
     }
 }
 
+pub(crate) fn format_rpc_versions(versions: &[RpcVersion]) -> String {
+    format!("{:?}", versions.iter().map(|v| format!("/rpc/v{v}/")).collect::<Vec<_>>())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{serve, ServerConfig};
@@ -508,7 +512,4 @@ mod tests {
             .unwrap()
             .unwrap();
     }
-}
-pub(crate) fn format_rpc_versions(versions: &[RpcVersion]) -> String {
-    format!("{:?}", versions.iter().map(|v| format!("/rpc/v{v}/")).collect::<Vec<_>>())
 }
