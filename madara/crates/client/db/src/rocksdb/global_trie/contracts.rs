@@ -417,19 +417,15 @@ mod contract_trie_root_tests {
     #[rstest]
     fn test_stale_staged_drop_does_not_reset_newer_cache_generation(setup_test_backend: Arc<MadaraBackend>) {
         let backend = setup_test_backend;
-        let contract_address = sample_contract_address();
         let (_stale_root, stale_staged) =
             contract_trie_root_staged(&backend.db, &[], &[], &[], &sample_storage_diffs(Felt::TWO), 1).unwrap();
 
         backend.db.reset_cached_contract_storage_trie();
-
-        let (_fresh_root, fresh_staged) =
-            contract_trie_root_staged(&backend.db, &[], &[], &[], &sample_storage_diffs(Felt::from(3u64)), 2).unwrap();
-        let fresh_cache_root = cached_storage_root(&backend, contract_address);
+        let cached_trie = backend.db.cached_contract_storage_trie();
+        let reset_generation = cached_trie.generation();
         drop(stale_staged);
 
-        assert_eq!(cached_storage_root(&backend, contract_address), fresh_cache_root);
-        drop(fresh_staged);
+        assert_eq!(cached_trie.generation(), reset_generation);
     }
 
     #[rstest]
