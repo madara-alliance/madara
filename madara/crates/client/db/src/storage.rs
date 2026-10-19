@@ -106,6 +106,19 @@ pub struct StoredChainInfo {
 
 /// Trait abstracting over the storage interface.
 pub trait MadaraStorageRead: Send + Sync + 'static {
+    /// Lists at most 64 namespace/root labels strictly after a lexical cursor. Rescan each pass.
+    fn list_committed_data_versions(
+        &self,
+        _after: Option<mp_gateway::committed_data::CommittedDataVersion>,
+    ) -> Result<Vec<mp_gateway::committed_data::CommittedDataVersion>> {
+        anyhow::bail!("Committed-data version storage is unsupported by this backend")
+    }
+
+    /// Tests membership in a namespace; this is not evidence of on-chain publication.
+    fn has_committed_data_version(&self, _version: mp_gateway::committed_data::CommittedDataVersion) -> Result<bool> {
+        anyhow::bail!("Committed-data version storage is unsupported by this backend")
+    }
+
     /// Immutable private data; reads must be bounded by the proof path, not dataset size.
     fn get_committed_data_witness(
         &self,
@@ -216,6 +229,18 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
 
 /// Trait abstracting over the storage interface.
 pub trait MadaraStorageWrite: Send + Sync + 'static {
+    /// Durably registers a namespace/root label only after its complete dataset is present.
+    /// A crash before this write may leave an unused dataset; replay is idempotent.
+    /// Initialization may only create an empty namespace or repeat an existing root.
+    /// Replication and explicit-base updates pass `initializing = false`.
+    fn write_committed_data_version(
+        &self,
+        _version: mp_gateway::committed_data::CommittedDataVersion,
+        _initializing: bool,
+    ) -> Result<()> {
+        anyhow::bail!("Committed-data version storage is unsupported by this backend")
+    }
+
     /// Durably persists an authenticated immutable dataset, including the local confirmed-head
     /// checkpoint observed at import admission. This does not establish on-chain publication.
     /// Re-importing the same dataset must be idempotent; unsupported backends return an error.

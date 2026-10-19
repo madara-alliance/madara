@@ -6,13 +6,17 @@ use jsonrpsee::core::{async_trait, RpcResult};
 use jsonrpsee::types::ErrorObjectOwned;
 use m_proc_macros::versioned_rpc;
 use mp_convert::Felt;
+use mp_gateway::committed_data::CommittedDataUpdate;
 use mp_rpc::v0_10_2::BroadcastedTxn;
 use mp_utils::service::MadaraServiceId;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
     sync::{Arc, LazyLock},
+    time::Duration,
 };
+
+const CONFIRMED_EXECUTION_TIMEOUT: Duration = Duration::from_secs(60);
 
 const MAX_SIGNATURE_CHECKS: usize = 4;
 const MAX_SIGNATURES: usize = 32;
@@ -32,17 +36,36 @@ enum CommittedDataRpcError {
     InvalidDatasetCount,
     #[error("Query transactions cannot be submitted")]
     QueryTransaction,
+    #[error("Transaction outcome is still pending; check its receipt before retrying")]
+    ExecutionPending { transaction_hash: Felt },
+    #[error("Transaction executed and reverted")]
+    ExecutionReverted { transaction_hash: Felt, reason: String },
+    #[error("Unable to determine execution outcome; check the transaction receipt")]
+    ExecutionOutcomeUnavailable { transaction_hash: Felt },
 }
 
 impl From<CommittedDataRpcError> for ErrorObjectOwned {
     fn from(error: CommittedDataRpcError) -> Self {
-        let code = match error {
+        let code = match &error {
             CommittedDataRpcError::UnauthorizedImport => -32001,
             CommittedDataRpcError::SignatureVerificationBusy => -32002,
             CommittedDataRpcError::LocalProductionRequired => -32003,
+            CommittedDataRpcError::ExecutionPending { .. } => -32004,
+            CommittedDataRpcError::ExecutionReverted { .. } => -32005,
+            CommittedDataRpcError::ExecutionOutcomeUnavailable { .. } => -32006,
             CommittedDataRpcError::InvalidDatasetCount | CommittedDataRpcError::QueryTransaction => -32602,
         };
-        Self::owned(code, error.to_string(), None::<()>)
+        let data = match &error {
+            CommittedDataRpcError::ExecutionPending { transaction_hash }
+            | CommittedDataRpcError::ExecutionOutcomeUnavailable { transaction_hash } => {
+                Some(serde_json::json!({"transaction_hash":transaction_hash}))
+            }
+            CommittedDataRpcError::ExecutionReverted { transaction_hash, reason } => {
+                Some(serde_json::json!({"transaction_hash":transaction_hash,"revert_reason":reason}))
+            }
+            _ => None,
+        };
+        Self::owned(code, error.to_string(), data)
     }
 }
 
@@ -107,6 +130,9 @@ pub struct ImportSignature {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CommittedDataImport {
+    /// If present, entries are upserts relative to this namespace/base; otherwise a full map.
+    #[serde(default)]
+    pub update: Option<CommittedDataUpdate>,
     pub root: Felt,
     pub entries: CommittedDataEntries,
     #[serde(default)]
@@ -148,10 +174,12 @@ impl<'de> Deserialize<'de> for CommittedDataImports {
     }
 }
 
-/// Admission result only. Inclusion, execution and settlement must be checked separately.
+/// Confirmed L2 inclusion and successful execution. This does not imply proving or L1 settlement.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ImportAndSubmitResult {
     pub transaction_hash: Felt,
+    pub block_hash: Felt,
+    pub block_number: u64,
 }
 
 /// Canonical signing preimage: ASCII domain || chain-id felt (32 BE) || root (32 BE) || count (4 BE).
@@ -173,6 +201,29 @@ fn validate_import_signatures(
     count: usize,
     signatures: &[ImportSignature],
 ) -> RpcResult<()> {
+    let message = import_message_hash(
+        Felt::try_from(chain_id).map_err(|_| ErrorObjectOwned::from(CommittedDataRpcError::UnauthorizedImport))?,
+        root,
+        u32::try_from(count).map_err(|_| ErrorObjectOwned::from(CommittedDataRpcError::UnauthorizedImport))?,
+    );
+    validate_signatures(allowed, message, signatures)
+}
+
+/// Update signatures authorize the resulting map in a namespace, not its publication on-chain.
+/// The base presence byte distinguishes an empty base from the felt zero root.
+pub fn update_message_hash(chain_id: Felt, update: CommittedDataUpdate, root: Felt, count: u32) -> Felt {
+    let mut bytes = b"MADARA_COMMITTED_DATA_UPDATE_V1".to_vec();
+    for value in [chain_id, update.application_id, update.dataset_id] {
+        bytes.extend_from_slice(&value.to_bytes_be());
+    }
+    bytes.push(u8::from(update.base_root.is_some()));
+    bytes.extend_from_slice(&update.base_root.unwrap_or(Felt::ZERO).to_bytes_be());
+    bytes.extend_from_slice(&root.to_bytes_be());
+    bytes.extend_from_slice(&count.to_be_bytes());
+    starknet_core::utils::starknet_keccak(&bytes)
+}
+
+fn validate_signatures(allowed: &[Felt], message: Felt, signatures: &[ImportSignature]) -> RpcResult<()> {
     let reject = || CommittedDataRpcError::UnauthorizedImport.into();
     if signatures.len() > MAX_SIGNATURES {
         return Err(reject());
@@ -183,11 +234,6 @@ fn validate_import_signatures(
     if signatures.is_empty() {
         return Err(reject());
     }
-    let message = import_message_hash(
-        Felt::try_from(chain_id).map_err(|_| reject())?,
-        root,
-        u32::try_from(count).map_err(|_| reject())?,
-    );
     let mut seen = HashSet::new();
     for signature in signatures {
         if !allowed.contains(&signature.public_key)
@@ -205,6 +251,55 @@ fn validate_import_signatures(
     Ok(())
 }
 
+/// Wait for a confirmed receipt, not merely admission or speculative preconfirmed execution.
+/// Subscribe before the first lookup to avoid missing a block arriving between lookup and wait.
+/// Timeout/disconnection does not undo submission or stored data; callers reconcile by tx hash.
+async fn wait_for_confirmed_execution(
+    backend: Arc<mc_db::MadaraBackend>,
+    transaction_hash: Felt,
+    timeout: Duration,
+) -> RpcResult<ImportAndSubmitResult> {
+    let mut heads = backend.watch_chain_head_state();
+    let wait = async {
+        loop {
+            let reader = Arc::clone(&backend);
+            let outcome = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
+                let Some(transaction) = reader.view_on_latest().find_transaction_by_hash(&transaction_hash)? else {
+                    return Ok(None);
+                };
+                let Some(block) = transaction.block.as_confirmed() else { return Ok(None) };
+                let receipt = transaction.get_transaction()?.receipt;
+                anyhow::ensure!(*receipt.transaction_hash() == transaction_hash, "Receipt hash mismatch");
+                Ok(Some((
+                    ImportAndSubmitResult {
+                        transaction_hash,
+                        block_hash: block.get_block_info()?.block_hash,
+                        block_number: block.block_number(),
+                    },
+                    receipt.execution_result(),
+                )))
+            })
+            .await;
+            let outcome = match outcome {
+                Ok(Ok(outcome)) => outcome,
+                _ => return Err(CommittedDataRpcError::ExecutionOutcomeUnavailable { transaction_hash }.into()),
+            };
+            if let Some((included, execution)) = outcome {
+                return match execution {
+                    mp_receipt::ExecutionResult::Succeeded => Ok(included),
+                    mp_receipt::ExecutionResult::Reverted { reason } => {
+                        Err(CommittedDataRpcError::ExecutionReverted { transaction_hash, reason }.into())
+                    }
+                };
+            }
+            heads.recv().await;
+        }
+    };
+    tokio::time::timeout(timeout, wait)
+        .await
+        .map_err(|_| ErrorObjectOwned::from(CommittedDataRpcError::ExecutionPending { transaction_hash }))?
+}
+
 fn local_submission_ready(starknet: &Starknet) -> bool {
     starknet.committed_data_transaction_submission
         && starknet.ctx.service_status_actual(MadaraServiceId::BlockProduction).is_on()
@@ -214,6 +309,18 @@ fn local_submission_ready(starknet: &Starknet) -> bool {
 /// Private dataset API. Mount only on the separately enabled committed-data listener.
 #[versioned_rpc("V0_1_0", "madara")]
 pub trait CommittedDataRpcApi {
+    /// Merge upserts into an explicit retained base and check the expected resulting root.
+    /// A null base initializes an unused namespace or retries an already registered root.
+    /// This method does not update the on-chain root.
+    #[method(name = "updateCommittedDataSet")]
+    async fn update_committed_data_set(
+        &self,
+        update: CommittedDataUpdate,
+        root: Felt,
+        entries: CommittedDataEntries,
+        signatures: Option<Vec<ImportSignature>>,
+    ) -> RpcResult<()>;
+
     /// Imports and authenticates private data; requires available import capacity.
     /// Acknowledges only after durable storage. Does not publish or authorize its root on-chain.
     #[method(name = "importCommittedDataSet")]
@@ -226,7 +333,8 @@ pub trait CommittedDataRpcApi {
 
     /// Durably imports 1..=4 datasets, then submits any signed Starknet account transaction.
     /// A multicall is encoded inside one INVOKE transaction. Dataset imports are not rolled back
-    /// if a later import or transaction fails; the endpoint does not wait for inclusion.
+    /// if a later import or transaction fails. Success requires confirmed L2 inclusion and successful
+    /// execution. After 60 seconds, return an outcome-pending error containing the transaction hash.
     #[method(name = "importCommittedDataAndSubmitTransaction")]
     async fn import_committed_data_and_submit_transaction(
         &self,
@@ -237,6 +345,33 @@ pub trait CommittedDataRpcApi {
 
 #[async_trait]
 impl CommittedDataRpcApiV0_1_0Server for Starknet {
+    async fn update_committed_data_set(
+        &self,
+        update: CommittedDataUpdate,
+        root: Felt,
+        entries: CommittedDataEntries,
+        signatures: Option<Vec<ImportSignature>>,
+    ) -> RpcResult<()> {
+        let values = entries.into_inner();
+        let allowed = Arc::clone(&self.committed_data_signers);
+        let chain_id = Felt::try_from(&self.backend.chain_config().chain_id)
+            .map_err(|_| ErrorObjectOwned::from(CommittedDataRpcError::UnauthorizedImport))?;
+        let count = values.len() as u32; // CommittedDataEntries enforces the protocol bound.
+        let signatures = signatures.unwrap_or_default();
+        let permit = SIGNATURE_CHECKS
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| ErrorObjectOwned::from(CommittedDataRpcError::SignatureVerificationBusy))?;
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            validate_signatures(&allowed, update_message_hash(chain_id, update, root, count), &signatures)
+        })
+        .await
+        .map_err(|error| StarknetRpcApiError::from(anyhow::anyhow!(error)))??;
+        self.backend.update_committed_data(update, root, values).await.map_err(StarknetRpcApiError::from)?;
+        Ok(())
+    }
+
     async fn import_committed_data_snapshot(
         &self,
         root: Felt,
@@ -279,7 +414,15 @@ impl CommittedDataRpcApiV0_1_0Server for Starknet {
             return Err(CommittedDataRpcError::QueryTransaction.into());
         }
         for dataset in datasets.0 {
-            self.import_committed_data_snapshot(dataset.root, dataset.entries, Some(dataset.signatures)).await?;
+            match dataset.update {
+                Some(update) => {
+                    self.update_committed_data_set(update, dataset.root, dataset.entries, Some(dataset.signatures))
+                        .await?
+                }
+                None => {
+                    self.import_committed_data_snapshot(dataset.root, dataset.entries, Some(dataset.signatures)).await?
+                }
+            }
         }
         // Catch a sequencer that entered catch-up while the (possibly large) imports were running.
         if !local_submission_ready(self) {
@@ -308,14 +451,14 @@ impl CommittedDataRpcApiV0_1_0Server for Starknet {
                     .transaction_hash
             }
         };
-        Ok(ImportAndSubmitResult { transaction_hash })
+        wait_for_confirmed_execution(Arc::clone(&self.backend), transaction_hash, CONFIRMED_EXECUTION_TIMEOUT).await
     }
 }
 
 #[cfg(test)]
 mod committed_data_tests {
     use super::*;
-    use mc_db::MadaraBackend;
+    use mc_db::{MadaraBackend, MadaraStorageRead};
     use mc_devnet::{Call, DevnetPredeployedContract, Multicall, Selector};
     use mc_submit_tx::{SubmitTransaction, SubmitTransactionError};
     use mp_convert::ToFelt;
@@ -352,6 +495,30 @@ mod committed_data_tests {
         let signature = account.secret.sign(&hash).unwrap();
         tx.signature = vec![signature.r, signature.s].into();
         serde_json::from_value(serde_json::to_value(OldTxn::Invoke(OldInvoke::V3(tx))).unwrap()).unwrap()
+    }
+
+    /// Receipt fixture only: exercises RPC waiting, not real transaction execution/proving.
+    fn confirm_receipt_fixture(backend: &Arc<MadaraBackend>, hash: Felt) {
+        let block_number = backend.latest_confirmed_block_n().map_or(0, |number| number + 1);
+        backend
+            .write_access()
+            .add_full_block_with_classes(
+                &mp_block::FullBlockWithoutCommitments {
+                    header: mp_block::header::PreconfirmedHeader { block_number, ..Default::default() },
+                    transactions: vec![mp_block::TransactionWithReceipt {
+                        transaction: mp_transactions::Transaction::Invoke(mp_transactions::InvokeTransaction::V0(
+                            Default::default(),
+                        )),
+                        receipt: mp_receipt::InvokeTransactionReceipt { transaction_hash: hash, ..Default::default() }
+                            .into(),
+                    }],
+                    state_diff: Default::default(),
+                    events: vec![],
+                },
+                &[],
+                false,
+            )
+            .unwrap();
     }
 
     struct RecordingSubmitter {
@@ -406,8 +573,10 @@ mod committed_data_tests {
         let call = |funding_root, tx: &BroadcastedTxn| {
             serde_json::json!({"jsonrpc":"2.0","id":1,
                 "method":"madara_V0_1_0_importCommittedDataAndSubmitTransaction",
-                "params":[[{"root":root,"entries":values},
-                           {"root":funding_root,"entries":funding_values}],tx]})
+                "params":[[{"root":root,"entries":values,
+                            "update":{"application_id":"0x1","dataset_id":"0x2","base_root":null}},
+                           {"root":funding_root,"entries":funding_values,
+                            "update":{"application_id":"0x1","dataset_id":"0x2","base_root":root}}],tx]})
             .to_string()
         };
         let module = crate::rpc_api_committed_data(&starknet).unwrap();
@@ -429,6 +598,7 @@ mod committed_data_tests {
         assert!(backend.committed_data_witness(funding_root, Felt::ZERO).unwrap().is_none());
         assert_eq!(submitter.attempts.load(Ordering::SeqCst), 0);
 
+        confirm_receipt_fixture(&backend, Felt::THREE);
         let (response, _) = module.raw_json_request(&call(funding_root, &tx), 1).await.unwrap();
         let response: serde_json::Value = serde_json::from_str(&response).unwrap();
         assert_eq!(response["result"]["transaction_hash"], serde_json::json!(Felt::THREE));
@@ -470,7 +640,11 @@ mod committed_data_tests {
         names.sort_unstable();
         assert_eq!(
             names,
-            vec!["madara_V0_1_0_importCommittedDataAndSubmitTransaction", "madara_V0_1_0_importCommittedDataSet"]
+            vec![
+                "madara_V0_1_0_importCommittedDataAndSubmitTransaction",
+                "madara_V0_1_0_importCommittedDataSet",
+                "madara_V0_1_0_updateCommittedDataSet"
+            ]
         );
         starknet.set_rpc_unsafe_enabled(true);
         for api in [rpc_api_user(&starknet).unwrap(), rpc_api_admin(&starknet).unwrap()] {
@@ -564,6 +738,95 @@ mod committed_data_tests {
             &[ImportSignature { s: Felt::ZERO, ..signed }]
         )
         .is_err());
+    }
+
+    #[tokio::test]
+    async fn committed_data_update_rpc_authenticates_namespace_base_and_expected_root() {
+        use blockifier::execution::syscalls::committed_data::CommittedDataSet;
+        // Independent Python signing vector for the initial two-market map.
+        let fixture = CommittedDataUpdate { application_id: Felt::ONE, dataset_id: Felt::TWO, base_root: None };
+        assert_eq!(
+            update_message_hash(
+                Felt::from_hex_unchecked("0x534e5f5345504f4c4941"),
+                fixture,
+                Felt::from_hex_unchecked("0x5a32e2ffd847d637b53eff4f469dcea2ef05175e9b5497282eb9bfbbe14ecda"),
+                2
+            ),
+            Felt::from_hex_unchecked("0x1229be96497ad1baa92f6d7154f9979c23cb11bb31b2620a2715bd650b4ac9d")
+        );
+        assert!(serde_json::from_value::<CommittedDataUpdate>(serde_json::json!({
+            "application_id":"0x1","dataset_id":"0x2"}))
+        .is_err());
+        let (backend, mut starknet) = crate::test_utils::rpc_test_setup();
+        let public_key = starknet_types_core::curve::AffinePoint::generator().x();
+        starknet.set_committed_data_signers(vec![public_key]).unwrap();
+        let context = CommittedDataUpdate { application_id: Felt::ONE, dataset_id: Felt::TWO, base_root: None };
+        let entries = vec![(Felt::MAX, Felt::THREE)];
+        let root = CommittedDataSet::new(entries.clone()).unwrap().root();
+        let chain = Felt::try_from(&backend.chain_config().chain_id).unwrap();
+        let message = update_message_hash(chain, context, root, 1);
+        for other in [
+            update_message_hash(chain + Felt::ONE, context, root, 1),
+            update_message_hash(chain, CommittedDataUpdate { application_id: Felt::TWO, ..context }, root, 1),
+            update_message_hash(chain, CommittedDataUpdate { dataset_id: Felt::THREE, ..context }, root, 1),
+            update_message_hash(chain, CommittedDataUpdate { base_root: Some(Felt::ZERO), ..context }, root, 1),
+            update_message_hash(chain, context, root + Felt::ONE, 1),
+            update_message_hash(chain, context, root, 2),
+            import_message_hash(chain, root, 1),
+        ] {
+            assert_ne!(message, other);
+        }
+        let sig = starknet_core::crypto::ecdsa_sign(&Felt::ONE, &message).unwrap();
+        let signature = ImportSignature { public_key, r: sig.r, s: sig.s };
+        let module = crate::rpc_api_committed_data(&starknet).unwrap();
+        let call = |context: CommittedDataUpdate, signatures: Vec<ImportSignature>| {
+            serde_json::json!({
+            "jsonrpc":"2.0","id":1,"method":"madara_V0_1_0_updateCommittedDataSet",
+            "params":[context,root,entries,signatures]})
+            .to_string()
+        };
+        for request in [
+            call(context, vec![]),
+            call(CommittedDataUpdate { dataset_id: Felt::THREE, ..context }, vec![signature.clone()]),
+        ] {
+            let (response, _) = module.raw_json_request(&request, 1).await.unwrap();
+            assert_eq!(serde_json::from_str::<serde_json::Value>(&response).unwrap()["error"]["code"], -32001);
+            assert!(backend.db.get_committed_data_count(root).unwrap().is_none());
+        }
+        let (response, _) = module.raw_json_request(&call(context, vec![signature]), 1).await.unwrap();
+        let response: serde_json::Value = serde_json::from_str(&response).unwrap();
+        assert!(response.get("error").is_none(), "{response}");
+        assert_eq!(backend.db.list_committed_data_versions(None).unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn committed_data_combined_response_requires_confirmed_success_and_reports_reverts_or_pending() {
+        let (backend, _) = crate::test_utils::rpc_test_setup();
+        let fixture = crate::test_utils::make_sample_chain_for_block_getters(&backend);
+        let success =
+            wait_for_confirmed_execution(backend.clone(), fixture.tx_hashes[0], Duration::from_secs(5)).await.unwrap();
+        assert_eq!(success.block_hash, fixture.block_hashes[0]);
+        assert_eq!(success.block_number, 0);
+        let reverted = wait_for_confirmed_execution(backend.clone(), fixture.tx_hashes[2], Duration::from_secs(5))
+            .await
+            .unwrap_err();
+        assert_eq!(reverted.code(), -32005);
+        let data: serde_json::Value = serde_json::from_str(reverted.data().unwrap().get()).unwrap();
+        assert_eq!(data["transaction_hash"], serde_json::json!(fixture.tx_hashes[2]));
+        assert_eq!(data["revert_reason"], "too bad");
+        for hash in [fixture.tx_hashes[3], Felt::MAX] {
+            // Preconfirmed success is still not enough.
+            let pending =
+                wait_for_confirmed_execution(backend.clone(), hash, Duration::from_millis(25)).await.unwrap_err();
+            assert_eq!(pending.code(), -32004);
+            let data: serde_json::Value = serde_json::from_str(pending.data().unwrap().get()).unwrap();
+            assert_eq!(data["transaction_hash"], serde_json::json!(hash));
+        }
+        let waiting = wait_for_confirmed_execution(backend.clone(), fixture.tx_hashes[3], Duration::from_secs(5));
+        tokio::pin!(waiting);
+        assert!(tokio::time::timeout(Duration::from_millis(25), &mut waiting).await.is_err());
+        confirm_receipt_fixture(&backend, fixture.tx_hashes[3]);
+        assert_eq!(waiting.await.unwrap().block_number, 3);
     }
 
     #[test]

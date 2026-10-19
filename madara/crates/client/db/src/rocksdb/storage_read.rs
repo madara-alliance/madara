@@ -4,6 +4,17 @@
 use super::*;
 
 impl MadaraStorageRead for RocksDBStorage {
+    fn list_committed_data_versions(
+        &self,
+        after: Option<mp_gateway::committed_data::CommittedDataVersion>,
+    ) -> Result<Vec<mp_gateway::committed_data::CommittedDataVersion>> {
+        self.read_committed_data_versions(after)
+    }
+
+    fn has_committed_data_version(&self, version: mp_gateway::committed_data::CommittedDataVersion) -> Result<bool> {
+        self.contains_committed_data_version(version)
+    }
+
     fn get_committed_data_witness(
         &self,
         root: Felt,
