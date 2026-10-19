@@ -384,8 +384,9 @@ impl JobHandlerService {
         }
 
         // Keep the database lease fresh for the entire lifetime of this attempt. This is the
-        // exclusion mechanism after SQS visibility expires: another delivery sees a non-stale lock
-        // and is left pending instead of starting overlapping work.
+        // exclusion mechanism after SQS visibility expires: another delivery sees a non-stale lock,
+        // schedules one delayed replacement, and is ACKed instead of starting overlapping work or
+        // consuming another receive toward the DLQ limit.
         let lease_stop = CancellationToken::new();
         let lease = ProcessingLease {
             _guard: lease_stop.clone().drop_guard(),
@@ -603,6 +604,9 @@ impl JobHandlerService {
         timeout_seconds: u64,
         config: Arc<Config>,
     ) -> Result<(), JobError> {
+        // SQS supports at most 15 minutes of per-message delay. Returning success after this send
+        // ACKs the current delivery and gives the replacement a fresh receive budget. If the send
+        // fails, the error keeps the current delivery available for normal queue recovery.
         let delay_seconds = timeout_seconds.clamp(1, SQS_MAX_MESSAGE_DELAY_SECONDS);
         JobService::add_job_to_queue(
             config,
