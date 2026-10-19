@@ -2,6 +2,7 @@ use crate::core::client::lock::LockValue;
 use crate::core::config::Config;
 use crate::error::job::JobError;
 use crate::utils::metrics_recorder::MetricsRecorder;
+use crate::utils::provider_retry::retry_provider_read;
 use crate::worker::event_handler::triggers::batching::aggregator::{
     AggregatorBatchConfig, AggregatorHandler, AggregatorState, AggregatorStateHandler,
 };
@@ -177,8 +178,9 @@ impl AggregatorBatchingTrigger {
 
         // Getting the latest block number from the sequencer
         let provider = config.madara_rpc_client();
-        let last_block_in_provider =
-            provider.block_number().await.map_err(|e| JobError::ProviderError(e.to_string()))?;
+        let last_block_in_provider = retry_provider_read("madara_block_number", || provider.block_number())
+            .await
+            .map_err(|e| JobError::ProviderError(e.to_string()))?;
 
         // Calculating the last block number that needs to be assigned to a batch
         let last_block = config
