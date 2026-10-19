@@ -1,5 +1,97 @@
 use super::*;
 
+#[tokio::test]
+async fn devnet_snos_limit_rolls_five_transactions_across_blocks() {
+    use mp_chain_config::BlockProductionConfig;
+
+    let mut genesis = ChainGenesisDescription::base_config().unwrap();
+    let contracts = genesis.add_devnet_contracts(5).unwrap();
+    let chain_config = Arc::new(ChainConfig {
+        block_time: Duration::from_secs(30000),
+        no_empty_blocks: true,
+        block_production_concurrency: BlockProductionConfig {
+            batch_size: 2,
+            max_txs_per_account_per_batch: 1,
+            disable_concurrency: true,
+            ..Default::default()
+        },
+        bouncer_config: BouncerConfig { max_snos_full_output_cells: 130, ..BouncerConfig::max() },
+        ..ChainConfig::madara_devnet()
+    });
+    let backend = MadaraBackend::open_for_testing(chain_config);
+    backend.set_l1_gas_quote_for_testing();
+    genesis.build_and_store(&backend).await.unwrap();
+    let mempool = Arc::new(Mempool::new(backend.clone(), MempoolConfig::default()));
+    let tx_validator =
+        Arc::new(TransactionValidator::new(mempool.clone(), backend.clone(), TransactionValidatorConfig::default()));
+
+    let erc20 = Felt::from_hex_unchecked("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d");
+    let transfer_batch = |first_recipient: u64| {
+        (first_recipient..first_recipient + 10).fold(Multicall::default(), |calls, recipient| {
+            calls.with(Call {
+                to: erc20,
+                selector: Selector::from("transfer"),
+                calldata: vec![Felt::from(recipient), Felt::ONE, Felt::ZERO],
+            })
+        })
+    };
+    let multicalls =
+        [Multicall::default(), Multicall::default(), Multicall::default(), transfer_batch(1000), transfer_batch(2000)];
+    let mut expected_hashes = Vec::new();
+    for (index, multicall) in multicalls.into_iter().enumerate() {
+        let tx = make_invoke_tx(&contracts.0[index], multicall, &backend, Felt::ZERO);
+        expected_hashes.push(tx_validator.submit_invoke_transaction(tx.into()).await.unwrap().transaction_hash);
+        tokio::time::sleep(Duration::from_millis(2)).await;
+    }
+
+    let mut producer = BlockProductionTask::new(
+        backend.clone(),
+        mempool.clone(),
+        Arc::new(BlockProductionMetrics::register()),
+        Arc::new(L1ClientMock::new()),
+        false,
+        false,
+        false,
+    );
+    let mut notifications = producer.subscribe_state_notifications();
+    let _task = AbortOnDrop::spawn(async move { producer.run(ServiceContext::new_for_testing()).await.unwrap() });
+
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let (mut batches, mut closed_blocks) = (0, 0);
+        while batches < 4 || closed_blocks < 2 {
+            match notifications.recv().await.unwrap() {
+                BlockProductionStateNotification::BatchExecuted => batches += 1,
+                BlockProductionStateNotification::ClosedBlock { .. } => closed_blocks += 1,
+            }
+        }
+    })
+    .await
+    .unwrap();
+
+    let block_1 = backend.block_view_on_confirmed(1).unwrap();
+    let block_2 = backend.block_view_on_confirmed(2).unwrap();
+    let block_3 = backend.block_view_on_current_preconfirmed().unwrap();
+    let block_1_hashes = block_1
+        .get_executed_transactions(..)
+        .unwrap()
+        .into_iter()
+        .map(|tx| *tx.receipt.transaction_hash())
+        .collect::<Vec<_>>();
+    let block_2_hashes = block_2
+        .get_executed_transactions(..)
+        .unwrap()
+        .into_iter()
+        .map(|tx| *tx.receipt.transaction_hash())
+        .collect::<Vec<_>>();
+    let block_3_hashes =
+        block_3.get_executed_transactions(..).into_iter().map(|tx| *tx.receipt.transaction_hash()).collect::<Vec<_>>();
+
+    assert_eq!(block_1_hashes, expected_hashes[..3]);
+    assert_eq!(block_2_hashes, expected_hashes[3..4]);
+    assert_eq!(block_3_hashes, expected_hashes[4..]);
+    assert!(mempool.is_empty().await);
+}
+
 // This test makes sure that the preconfirmed tick closes the block
 // if the bouncer capacity is reached
 #[ignore] // FIXME: this test is complicated by the fact validation / actual execution fee may differ a bit. Ignore for now.

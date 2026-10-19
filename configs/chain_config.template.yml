@@ -15,6 +15,7 @@ l2_gas_price:
   min_price: ""
   max_change_denominator: ""
 bouncer_config:
+  max_snos_full_output_cells: ""
   block_max_capacity:
     sierra_gas: ""
     message_segment_length: ""

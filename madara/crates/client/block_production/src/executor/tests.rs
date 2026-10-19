@@ -440,6 +440,7 @@ async fn block_full_tail_precedes_fresh_work_and_drains_on_shutdown() {
         bouncer_config: BouncerConfig {
             block_max_capacity: BouncerWeights { n_txs: 170, ..BouncerWeights::max() },
             builtin_weights: Default::default(),
+            ..Default::default()
         },
         ..ChainConfig::madara_devnet()
     }));
@@ -501,6 +502,71 @@ async fn block_full_tail_precedes_fresh_work_and_drains_on_shutdown() {
     assert_eq!(actual_hashes, expected_hashes);
     assert_eq!(timestamps, (0..300).collect::<Vec<_>>());
     assert!(final_block);
+}
+
+#[tokio::test]
+async fn snos_output_limit_rolls_transaction_into_next_block() {
+    use blockifier::bouncer::BouncerConfig;
+    use mc_devnet::{ChainGenesisDescription, Multicall};
+    use mp_chain_config::{BlockProductionConfig, ChainConfig};
+
+    let mut genesis = ChainGenesisDescription::base_config().unwrap();
+    let contracts = genesis.add_devnet_contracts(2).unwrap();
+    let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig {
+        block_time: Duration::from_secs(30000),
+        block_production_concurrency: BlockProductionConfig {
+            batch_size: 2,
+            disable_concurrency: true,
+            ..Default::default()
+        },
+        bouncer_config: BouncerConfig { max_snos_full_output_cells: 60, ..BouncerConfig::max() },
+        ..ChainConfig::madara_devnet()
+    }));
+    backend.set_l1_gas_quote_for_testing();
+    genesis.build_and_store(&backend).await.unwrap();
+
+    let mut batch = BatchToExecute::default();
+    let mut expected_hashes = Vec::new();
+    for account in &contracts.0 {
+        let tx = crate::tests::make_invoke_tx(account, Multicall::default(), &backend, Felt::ZERO);
+        let (tx, mut info) = make_tx(&backend, BroadcastedTxn::Invoke(tx));
+        expected_hashes.push(tx.tx_hash().to_felt());
+        info.from_mempool = true;
+        batch.push(tx, info);
+    }
+
+    let (sender, batches) = mpsc::channel(1);
+    sender.send(batch).await.unwrap();
+    drop(sender);
+    let (replies, mut received) = mpsc::channel(10);
+    let (_commands_sender, commands) = mpsc::unbounded_channel();
+    let worker = tokio::task::spawn_blocking(move || {
+        thread::ExecutorThread::new(
+            backend,
+            batches,
+            replies,
+            commands,
+            Arc::new(BlockProductionMetrics::register()),
+            false,
+        )
+        .unwrap()
+        .run()
+    });
+
+    let mut lengths = Vec::new();
+    let mut actual_hashes = Vec::new();
+    while let Some(reply) = tokio::time::timeout(Duration::from_secs(30), received.recv()).await.unwrap() {
+        if let ExecutorMessage::BatchExecuted(result) = reply {
+            assert!(result.blockifier_results.iter().all(Result::is_ok));
+            assert!(result.executed_txs.additional_info.iter().all(|info| info.from_mempool));
+            lengths.push(result.executed_txs.len());
+            actual_hashes.extend(result.executed_txs.txs.iter().map(|tx| tx.tx_hash().to_felt()));
+        }
+    }
+    worker.await.unwrap().unwrap();
+
+    assert_eq!(lengths, [1, 1]);
+    assert_eq!(actual_hashes, expected_hashes);
 }
 
 #[tokio::test]

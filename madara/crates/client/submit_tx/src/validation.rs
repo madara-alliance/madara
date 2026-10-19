@@ -117,7 +117,8 @@ impl From<TransactionExecutionError> for SubmitTransactionError {
             | E::StarknetApiError(_)
             | E::TransactionFeeError(_)
             | E::TryFromIntError(_)
-            | E::TransactionTooLarge { .. }) => rejected(ValidateFailure, format!("{err:#}")),
+            | E::TransactionTooLarge { .. }
+            | E::TransactionTooLargeForProof { .. }) => rejected(ValidateFailure, format!("{err:#}")),
             err @ E::InvalidVersion { .. } => rejected(InvalidTransactionVersion, format!("{err:#}")),
             err @ (E::InvalidSegmentStructure(_, _) | E::ProgramError { .. }) => {
                 rejected(InvalidProgram, format!("{err:#}"))
@@ -497,5 +498,25 @@ impl TransactionLookup for TransactionValidator {
         hash: Felt,
     ) -> Result<Option<ProviderTransactionResponse>, SubmitTransactionError> {
         self.inner.feeder_transaction(hash).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn proof_output_oversize_is_a_terminal_rejection() {
+        let error: SubmitTransactionError = TransactionExecutionError::TransactionTooLargeForProof {
+            max_output_cells: 49_000,
+            predicted_output_cells: 49_001,
+        }
+        .into();
+
+        let SubmitTransactionError::Rejected(rejection) = error else {
+            panic!("proof output oversize should reject the transaction")
+        };
+        assert!(matches!(rejection.kind, RejectedTransactionErrorKind::ValidateFailure));
+        assert!(rejection.message.unwrap().contains("49001"));
     }
 }
