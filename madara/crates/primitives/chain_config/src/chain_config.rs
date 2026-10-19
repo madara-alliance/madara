@@ -911,6 +911,7 @@ mod tests {
 
         assert_eq!(chain_config.chain_name, "Starknet Mainnet");
         assert_eq!(chain_config.chain_id, ChainId::Mainnet);
+        assert_eq!(chain_config.bouncer_config.max_snos_full_output_cells, 49_000);
 
         let native_fee_token_address =
             Felt::from_hex("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d").unwrap();

@@ -260,6 +260,13 @@ mod tests {
     #[test]
     fn non_nonce_error_is_not_deferred() {
         assert!(!is_future_nonce_error(&TransactionExecutorError::BlockFull));
+        assert!(!is_future_nonce_error(
+            &TransactionExecutionError::TransactionTooLargeForProof {
+                max_output_cells: 49_000,
+                predicted_output_cells: 49_001,
+            }
+            .into()
+        ));
     }
 
     #[test]
