@@ -47,7 +47,7 @@ use crate::core::client::alert::MockAlertClient;
 use crate::error::job::snos::SnosError;
 use crate::tests::common::MessagePayloadType;
 use crate::tests::config::{ConfigType, MockType, TestConfigBuilder};
-use crate::tests::utils::build_job_item;
+use crate::tests::utils::{build_job_item, build_snos_batch};
 use crate::types::jobs::job_item::JobItem;
 
 #[cfg(test)]
@@ -1371,7 +1371,19 @@ async fn verify_job_with_rejected_status_works() {
 
     // Building config
     let mut mock_alert_client = MockAlertClient::new();
-    mock_alert_client.expect_send_message().times(1).returning(|_| Ok(()));
+    mock_alert_client
+        .expect_send_message()
+        .withf(|message| {
+            message.contains("Type: ProofCreation")
+                && message.contains("SNOS batch ID: 355523")
+                && message.contains("L2 block: 2912435")
+                && message.contains("Current failure: prover rejected")
+                && message.contains("Process attempts: 1")
+                && !message.contains("Block: 355523")
+                && !message.contains("Previous attempt failures")
+        })
+        .times(1)
+        .returning(|_| Ok(()));
 
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
@@ -1382,8 +1394,10 @@ async fn verify_job_with_rejected_status_works() {
 
     let database_client = services.config.database();
 
+    database_client.create_snos_batch(build_snos_batch(355523, None, 2912435)).await.unwrap();
+
     // Create a job with proper metadata structure
-    let mut job_item = build_job_item(JobType::DataSubmission, JobStatus::PendingVerification, 1);
+    let mut job_item = build_job_item(JobType::ProofCreation, JobStatus::PendingVerification, 355523);
 
     // Set process_attempt_no to 1 to simulate max attempts reached
     job_item.metadata.common.process_attempt_no = 1;
@@ -1393,13 +1407,16 @@ async fn verify_job_with_rejected_status_works() {
 
     let mut job_handler = MockJobHandlerTrait::new();
     // Expecting verify_job function to return Rejected status
-    job_handler.expect_verify_job().times(1).returning(move |_, _| Ok(JobVerificationStatus::Rejected("".to_string())));
+    job_handler
+        .expect_verify_job()
+        .times(1)
+        .returning(move |_, _| Ok(JobVerificationStatus::Rejected("prover rejected".to_string())));
     job_handler.expect_max_process_attempts().returning(move || 1u64);
 
     // Mocking the `get_job_handler` call - verify_job calls it exactly once
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
     let ctx = get_job_handler_context_safe();
-    ctx.expect().times(1).with(eq(JobType::DataSubmission)).returning(move |_| Arc::clone(&job_handler));
+    ctx.expect().times(1).with(eq(JobType::ProofCreation)).returning(move |_| Arc::clone(&job_handler));
 
     assert!(JobHandlerService::verify_job(job_item.id, services.config.clone()).await.is_ok());
 
@@ -1409,6 +1426,8 @@ async fn verify_job_with_rejected_status_works() {
 
     // Check that process attempt is recorded in common metadata
     assert_eq!(updated_job.metadata.common.process_attempt_no, 1);
+    assert_eq!(updated_job.metadata.common.failure_reason.as_deref(), Some("prover rejected"));
+    assert!(updated_job.metadata.common.previous_failure_reasons.is_empty());
 
     // Queue checks - verify no message was added to the process queue
     let queue_error = consume_message_with_retry(
@@ -1530,7 +1549,18 @@ async fn verify_job_with_pending_status_works() {
 
     // Mock alert client to handle verification timeout alert
     let mut mock_alert_client = MockAlertClient::new();
-    mock_alert_client.expect_send_message().times(1).returning(|_| Ok(()));
+    mock_alert_client
+        .expect_send_message()
+        .withf(|message| {
+            message.starts_with("Job Verification Timeout Alert")
+                && message.contains("Type: DataSubmission")
+                && message.contains("SNOS batch ID: 355524")
+                && message.contains("L2 block: 2912436")
+                && message.contains("Verification attempts: 1")
+                && !message.contains("Internal_Id")
+        })
+        .times(1)
+        .returning(|_| Ok(()));
 
     // Building config
     let services = TestConfigBuilder::new()
@@ -1542,8 +1572,10 @@ async fn verify_job_with_pending_status_works() {
 
     let database_client = services.config.database();
 
+    database_client.create_snos_batch(build_snos_batch(355524, None, 2912436)).await.unwrap();
+
     // Create a job with proper metadata structure
-    let mut job_item = build_job_item(JobType::DataSubmission, JobStatus::PendingVerification, 1);
+    let mut job_item = build_job_item(JobType::DataSubmission, JobStatus::PendingVerification, 355524);
 
     // Set verification_attempt_no to 0 - after increment in verify_job it will be 1 (max attempts)
     job_item.metadata.common.verification_attempt_no = 0;
