@@ -1,9 +1,13 @@
 //! Durable root-keyed datasets with bounded memory and bounded cold proof reads.
 use super::*;
 use blockifier::execution::syscalls::committed_data::{
-    CommittedDataError, CommittedDataProvider, CommittedDataSet, CommittedDataWitness,
+    CommittedDataError, CommittedDataProvider, CommittedDataSet, CommittedDataWitness, MAX_COMMITTED_DATA_VALUES,
 };
-use std::{collections::VecDeque, sync::Mutex};
+use mp_gateway::committed_data::{CommittedDataUpdate, CommittedDataVersion, VALUES_PER_PAGE};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    sync::Mutex,
+};
 use tokio::sync::Semaphore;
 
 /// Two imported trees at most; cold proof reads never wait on the import gate.
@@ -73,6 +77,79 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
 }
 
 impl<D: MadaraStorage> MadaraBackend<D> {
+    /// Applies keyed upserts to an explicit retained base. Omission and zero never delete keys.
+    /// Namespace labels are operational metadata, not application authorization or a latest head.
+    /// Cold bases are authenticated before merging; all resulting pages are durable before the
+    /// version label is acknowledged. Rejected transaction submission may leave an unused version.
+    pub async fn update_committed_data(
+        self: &Arc<Self>,
+        update: CommittedDataUpdate,
+        root: Felt,
+        entries: Vec<(Felt, Felt)>,
+    ) -> Result<()> {
+        let permit = Arc::clone(&self.committed_data_cache.import)
+            .try_acquire_owned()
+            .map_err(|_| anyhow::anyhow!("Committed-data import busy; retry import later"))?;
+        let imported_after_block = self.chain_head_state().confirmed_tip;
+        let backend = Arc::clone(self);
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            // Validate the patch before loading the base; do not hash a separate patch trie.
+            let mut patch = entries;
+            anyhow::ensure!(
+                (1..=MAX_COMMITTED_DATA_VALUES).contains(&patch.len()),
+                "Invalid committed-data patch size"
+            );
+            patch.sort_unstable_by_key(|entry| entry.0);
+            anyhow::ensure!(patch.windows(2).all(|pair| pair[0].0 != pair[1].0), "Duplicate committed-data patch key");
+            let version =
+                CommittedDataVersion { application_id: update.application_id, dataset_id: update.dataset_id, root };
+            let mut values = BTreeMap::new();
+            if let Some(base_root) = update.base_root {
+                anyhow::ensure!(
+                    backend.db.has_committed_data_version(CommittedDataVersion { root: base_root, ..version })?,
+                    "Base root is not registered in this namespace"
+                );
+                let base = match backend.committed_data_cache.get(base_root)? {
+                    Some(base) => base,
+                    None => {
+                        let mut entries = Vec::new();
+                        loop {
+                            let (count, page) = backend
+                                .db
+                                .get_committed_data_page(base_root, entries.len() as u32)?
+                                .ok_or_else(|| anyhow::anyhow!("Base dataset unavailable"))?;
+                            anyhow::ensure!(
+                                !page.is_empty() && page.len() <= VALUES_PER_PAGE,
+                                "Invalid base dataset page"
+                            );
+                            entries.extend(page);
+                            anyhow::ensure!(
+                                entries.len() <= count as usize && count as usize <= MAX_COMMITTED_DATA_VALUES,
+                                "Invalid base dataset count"
+                            );
+                            if entries.len() == count as usize {
+                                break;
+                            }
+                        }
+                        let base = Arc::new(CommittedDataSet::new(entries)?);
+                        anyhow::ensure!(base.root() == base_root, "Stored base dataset root mismatch");
+                        base
+                    }
+                };
+                values.extend(base.entries().iter().copied());
+            }
+            values.extend(patch);
+            // The same constructor is used by full imports and clients; no new hash format.
+            let tree = Arc::new(CommittedDataSet::new(values.into_iter().collect())?);
+            anyhow::ensure!(tree.root() == root, "Committed-data root does not match updated dataset");
+            backend.db.write_committed_data_dataset(&tree, imported_after_block)?;
+            backend.db.write_committed_data_version(version, update.base_root.is_none())?;
+            backend.committed_data_cache.insert(tree)
+        })
+        .await?
+    }
+
     /// Authenticates a dataset, durably writes its pages, then makes it available to execution.
     ///
     /// Rejects another admitted import before enqueuing blocking work. The permit stays with
@@ -124,6 +201,116 @@ mod tests {
     use crate::rocksdb::RocksDBConfig;
 
     #[tokio::test]
+    async fn committed_data_updates_retain_omitted_keys_history_and_namespaces_after_reopen() {
+        let directory = tempfile::tempdir().unwrap();
+        let open = || {
+            MadaraBackend::open_rocksdb(
+                directory.path(),
+                Arc::new(ChainConfig::madara_test()),
+                MadaraBackendConfig::default(),
+                RocksDBConfig::default(),
+                Arc::new(NativeConfig::default()),
+            )
+            .unwrap()
+        };
+        let namespace = CommittedDataUpdate { application_id: Felt::ONE, dataset_id: Felt::TWO, base_root: None };
+        let first = vec![(Felt::ONE, Felt::from(100_u32)), (Felt::TWO, Felt::from(200_u32))];
+        // Roots from the independently implemented Python incremental vectors.
+        let root = Felt::from_hex_unchecked("0x5a32e2ffd847d637b53eff4f469dcea2ef05175e9b5497282eb9bfbbe14ecda");
+        {
+            let backend = open();
+            backend.update_committed_data(namespace, root, first).await.unwrap();
+        }
+        let backend = open(); // Exercise an authenticated cold base, not the import cache.
+        let patch = vec![(Felt::TWO, Felt::from(250_u32)), (Felt::MAX, Felt::ZERO)];
+        let next = Felt::from_hex_unchecked("0x6f7b24abc22284b8724b96d0a157b7096a1a289bb76bb0a2b2d1a175fe870b0");
+        let update = CommittedDataUpdate { base_root: Some(root), ..namespace };
+        for bad in [
+            CommittedDataUpdate { application_id: Felt::THREE, ..update },
+            CommittedDataUpdate { dataset_id: Felt::THREE, ..update },
+            CommittedDataUpdate { base_root: Some(Felt::ZERO), ..update },
+        ] {
+            assert!(backend.update_committed_data(bad, next, patch.clone()).await.is_err());
+        }
+        assert!(backend.update_committed_data(update, next, vec![(Felt::TWO, Felt::ZERO); 2]).await.is_err());
+        assert!(backend.update_committed_data(update, Felt::ZERO, patch.clone()).await.is_err());
+        assert!(backend.db.get_committed_data_count(next).unwrap().is_none());
+        // A mistaken initial request must not register a replacement root in this namespace.
+        let replacement = vec![(Felt::TWO, Felt::from(250_u32))];
+        let replacement_root = CommittedDataSet::new(replacement.clone()).unwrap().root();
+        let error = backend.update_committed_data(namespace, replacement_root, replacement).await.unwrap_err();
+        assert!(error.to_string().contains("already initialized"));
+        assert!(!backend
+            .db
+            .has_committed_data_version(CommittedDataVersion {
+                application_id: namespace.application_id,
+                dataset_id: namespace.dataset_id,
+                root: replacement_root,
+            })
+            .unwrap());
+        // The first response might have been lost: resending the identical initialization is safe.
+        backend
+            .update_committed_data(
+                namespace,
+                root,
+                vec![(Felt::ONE, Felt::from(100_u32)), (Felt::TWO, Felt::from(200_u32))],
+            )
+            .await
+            .unwrap();
+        backend.update_committed_data(update, next, patch.clone()).await.unwrap();
+        backend.update_committed_data(update, next, patch).await.unwrap(); // Retry from the same base.
+        assert_eq!(backend.committed_data_witness(next, Felt::ONE).unwrap().unwrap().value, Felt::from(100_u32));
+        assert_eq!(backend.committed_data_witness(root, Felt::TWO).unwrap().unwrap().value, Felt::from(200_u32));
+        assert_eq!(backend.committed_data_witness(next, Felt::MAX).unwrap().unwrap().value, Felt::ZERO);
+        // A second application may reuse the same cryptographic map but has its own version label.
+        backend
+            .update_committed_data(
+                CommittedDataUpdate { application_id: Felt::THREE, ..namespace },
+                next,
+                vec![(Felt::ONE, Felt::from(100_u32)), (Felt::TWO, Felt::from(250_u32)), (Felt::MAX, Felt::ZERO)],
+            )
+            .await
+            .unwrap();
+        let versions = backend.db.list_committed_data_versions(None).unwrap();
+        assert_eq!(versions.len(), 3);
+        assert_eq!(backend.db.list_committed_data_versions(Some(versions[0])).unwrap(), versions[1..]);
+        drop(backend);
+        let backend = open();
+        assert_eq!(backend.db.list_committed_data_versions(None).unwrap(), versions);
+        for old in [root, next] {
+            assert!(backend.committed_data_witness(old, Felt::ONE).unwrap().unwrap().verify());
+        }
+        // Reusing a historical base creates an explicit branch; it never rewrites other versions.
+        backend.update_committed_data(update, root, vec![(Felt::TWO, Felt::from(200_u32))]).await.unwrap();
+        assert_eq!(backend.db.list_committed_data_versions(None).unwrap(), versions);
+    }
+
+    #[tokio::test]
+    async fn committed_data_updates_reject_corrupt_base_even_when_result_root_matches_corruption() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        let context = CommittedDataUpdate { application_id: Felt::ONE, dataset_id: Felt::ONE, base_root: None };
+        let root = CommittedDataSet::new(vec![(Felt::ZERO, Felt::TWO)]).unwrap().root();
+        backend.update_committed_data(context, root, vec![(Felt::ZERO, Felt::TWO)]).await.unwrap();
+        backend.committed_data_cache.entries.lock().unwrap().clear();
+        let mut key = b"committed_data_mpt/".to_vec();
+        key.extend_from_slice(&root.to_bytes_be());
+        key.extend_from_slice(&[0, 0, 0, 0, 0]);
+        let cf = backend.db.inner_db().cf_handle("meta").unwrap();
+        backend.db.inner_db().put_cf(&cf, key, [Felt::ZERO.to_bytes_be(), Felt::ONE.to_bytes_be()].concat()).unwrap();
+        let corrupted = CommittedDataSet::new(vec![(Felt::ZERO, Felt::ONE), (Felt::ONE, Felt::THREE)]).unwrap().root();
+        let error = backend
+            .update_committed_data(
+                CommittedDataUpdate { base_root: Some(root), ..context },
+                corrupted,
+                vec![(Felt::ONE, Felt::THREE)],
+            )
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("Stored base dataset root mismatch"));
+        assert!(backend.db.get_committed_data_count(corrupted).unwrap().is_none());
+    }
+
+    #[tokio::test]
     async fn committed_data_catalog_pages_existing_roots_and_values_without_schema_rewrite() {
         let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
         let mut roots = Vec::new();
@@ -133,6 +320,22 @@ mod tests {
             backend.import_committed_data_snapshot(root, values).await.unwrap();
             roots.push(root);
         }
+        let mut versions = Vec::new();
+        for (index, root) in roots.iter().copied().enumerate() {
+            let version = CommittedDataVersion { application_id: Felt::from(index), dataset_id: Felt::ZERO, root };
+            backend.db.write_committed_data_version(version, false).unwrap();
+            versions.push(version);
+        }
+        assert_eq!(backend.db.list_committed_data_versions(None).unwrap(), versions[..64]);
+        assert_eq!(backend.db.list_committed_data_versions(Some(versions[63])).unwrap(), versions[64..]);
+        assert!(backend.db.list_committed_data_versions(Some(versions[64])).unwrap().is_empty());
+        assert!(backend
+            .db
+            .write_committed_data_version(
+                CommittedDataVersion { application_id: Felt::ZERO, dataset_id: Felt::ONE, root: Felt::ZERO },
+                false
+            )
+            .is_err());
         roots.sort_unstable();
         assert_eq!(backend.db.list_committed_data_roots(None).unwrap(), roots[..64]);
         assert_eq!(backend.db.list_committed_data_roots(Some(roots[63])).unwrap(), roots[64..]);

@@ -51,6 +51,9 @@ async fn feeder_gateway_router(
     transaction_lookup: Arc<dyn TransactionLookup>,
 ) -> Result<Response<String>, Infallible> {
     match (req.method(), path) {
+        (&Method::GET, "feeder_gateway/get_committed_data_versions") => {
+            Ok(crate::committed_data::get_versions(req, backend).await.unwrap_or_else(Into::into))
+        }
         (&Method::GET, "feeder_gateway/get_committed_data_roots") => {
             Ok(crate::committed_data::get_roots(req, backend).await.unwrap_or_else(Into::into))
         }
@@ -149,11 +152,22 @@ mod committed_data_tests {
         let backend = MadaraBackend::open_for_testing(Arc::new(mp_chain_config::ChainConfig::madara_test()));
         let values = vec![(Felt::ZERO, Felt::ONE), (Felt::MAX, Felt::TWO)];
         let root = CommittedDataSet::new(values.clone()).unwrap().root();
-        backend.import_committed_data_snapshot(root, values.clone()).await.unwrap();
+        backend
+            .update_committed_data(
+                mp_gateway::committed_data::CommittedDataUpdate {
+                    application_id: Felt::ONE,
+                    dataset_id: Felt::TWO,
+                    base_root: None,
+                },
+                root,
+                values.clone(),
+            )
+            .await
+            .unwrap();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let server = tokio::spawn(async move {
-            for _ in 0..5 {
+            for _ in 0..8 {
                 let (stream, _) = listener.accept().await.unwrap();
                 let backend = backend.clone();
                 let service = hyper::service::service_fn(move |req: Request<Incoming>| {
@@ -194,6 +208,23 @@ mod committed_data_tests {
         assert!(witness.verify());
         assert!(query("GET", format!("get_committed_data?root={root:#x}&start=1")).await.0.starts_with("HTTP/1.1 400"));
         assert!(query("POST", "get_committed_data".into()).await.0.starts_with("HTTP/1.1 404"));
+        let (_, body) = query("GET", "get_committed_data_versions".into()).await;
+        let versions: Vec<mp_gateway::committed_data::CommittedDataVersion> = serde_json::from_str(&body).unwrap();
+        assert_eq!(
+            versions,
+            vec![mp_gateway::committed_data::CommittedDataVersion {
+                application_id: Felt::ONE,
+                dataset_id: Felt::TWO,
+                root,
+            }]
+        );
+        let (_, body) =
+            query("GET", format!("get_committed_data_versions?application_id=0x1&dataset_id=0x2&root={root:#x}")).await;
+        assert_eq!(body, "[]");
+        assert!(query("GET", "get_committed_data_versions?application_id=0x1".into())
+            .await
+            .0
+            .starts_with("HTTP/1.1 400"));
         server.await.unwrap();
     }
 }

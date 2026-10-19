@@ -4,6 +4,14 @@
 use super::*;
 
 impl MadaraStorageWrite for RocksDBStorage {
+    fn write_committed_data_version(
+        &self,
+        version: mp_gateway::committed_data::CommittedDataVersion,
+        initializing: bool,
+    ) -> Result<()> {
+        self.store_committed_data_version(version, initializing)
+    }
+
     fn write_committed_data_dataset(
         &self,
         dataset: &blockifier::execution::syscalls::committed_data::CommittedDataSet,

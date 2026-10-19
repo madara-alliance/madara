@@ -4,8 +4,19 @@ use blockifier::execution::syscalls::committed_data::{
     key_bit, leaf, CommittedDataBranch, CommittedDataSet, CommittedDataSibling, CommittedDataWitness,
     COMMITTED_DATA_TREE_HEIGHT, MAX_COMMITTED_DATA_VALUES,
 };
-use mp_gateway::committed_data::{ROOTS_PER_PAGE, VALUES_PER_PAGE};
+use mp_gateway::committed_data::{CommittedDataVersion, ROOTS_PER_PAGE, VALUES_PER_PAGE};
 use rocksdb::WriteBatch;
+
+// Separate catalog: root-keyed data can be shared by multiple namespaces without copying pages.
+const VERSIONS_PREFIX: &[u8] = b"committed_data_versions/";
+
+fn version_key(version: CommittedDataVersion) -> Vec<u8> {
+    let mut key = VERSIONS_PREFIX.to_vec();
+    for value in [version.application_id, version.dataset_id, version.root] {
+        key.extend_from_slice(&value.to_bytes_be());
+    }
+    key
+}
 
 const PREFIX: &[u8] = b"committed_data_mpt/";
 const PAGE_VALUES: usize = 256;
@@ -155,6 +166,75 @@ fn records(dataset: &CommittedDataSet) -> impl Iterator<Item = (Vec<u8>, Vec<u8>
     entries.chain(branches)
 }
 impl RocksDBStorage {
+    pub(super) fn contains_committed_data_version(&self, version: CommittedDataVersion) -> Result<bool> {
+        let cf = self.inner.get_column(meta::META_COLUMN);
+        let record = self.inner.db.get_pinned_cf(&cf, version_key(version))?;
+        if let Some(record) = &record {
+            anyhow::ensure!(record.is_empty(), "Invalid committed-data version record");
+        }
+        Ok(record.is_some())
+    }
+
+    pub(super) fn read_committed_data_versions(
+        &self,
+        after: Option<CommittedDataVersion>,
+    ) -> Result<Vec<CommittedDataVersion>> {
+        let snapshot = rocksdb_snapshot::SnapshotWithDBArc::new(Arc::clone(&self.inner));
+        let start = after.map(version_key).unwrap_or_else(|| VERSIONS_PREFIX.to_vec());
+        let mut iterator = snapshot.iterator_cf(
+            meta::META_COLUMN,
+            rocksdb::ReadOptions::default(),
+            rocksdb::IteratorMode::From(&start, rocksdb::Direction::Forward),
+        );
+        let mut versions = Vec::new();
+        while iterator.next()? {
+            let Some(raw) = iterator.key().filter(|raw| raw.starts_with(VERSIONS_PREFIX)) else { break };
+            if after.is_some() && raw == start {
+                continue;
+            }
+            let raw = &raw[VERSIONS_PREFIX.len()..];
+            anyhow::ensure!(raw.len() == 3 * FELT_BYTES, "Invalid committed-data version key");
+            versions.push(CommittedDataVersion {
+                application_id: canonical_felt(&raw[..FELT_BYTES])?,
+                dataset_id: canonical_felt(&raw[FELT_BYTES..2 * FELT_BYTES])?,
+                root: canonical_felt(&raw[2 * FELT_BYTES..])?,
+            });
+            if versions.len() == ROOTS_PER_PAGE {
+                break;
+            }
+        }
+        Ok(versions)
+    }
+
+    /// Data is already durable and immutable. This second fsynced write publishes its label.
+    /// No deletion exists, so a label can never race a data-pruning operation.
+    pub(super) fn store_committed_data_version(&self, version: CommittedDataVersion, initializing: bool) -> Result<()> {
+        // Serialize the check with every label write, including replication. Concurrent initial
+        // requests cannot both create distinct first roots. Existing-root retries remain harmless.
+        let _write = self
+            .inner
+            .committed_data_write
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Committed-data write lock poisoned"))?;
+        if initializing && !self.contains_committed_data_version(version)? {
+            let first = CommittedDataVersion { root: Felt::ZERO, ..version };
+            let initialized = self.contains_committed_data_version(first)?
+                || self.read_committed_data_versions(Some(first))?.first().is_some_and(|found| {
+                    (found.application_id, found.dataset_id) == (version.application_id, version.dataset_id)
+                });
+            anyhow::ensure!(!initialized, "Dataset already initialized; supply its base root");
+        }
+        anyhow::ensure!(self.read_committed_data_count(version.root)?.is_some(), "Version dataset unavailable");
+        let cf = self.inner.get_column(meta::META_COLUMN);
+        let mut batch = WriteBatch::default();
+        batch.put_cf(&cf, version_key(version), []);
+        let mut options = WriteOptions::default();
+        options.set_sync(true);
+        options.disable_wal(false);
+        self.inner.db.write_opt(batch, &options)?;
+        Ok(())
+    }
+
     /// Seek over complete roots without scanning their value/hash pages. Each response is bounded.
     /// Cursors are lexical, not a durable high watermark: readers must rescan from the start.
     pub(super) fn read_committed_data_roots(&self, after: Option<Felt>) -> Result<Vec<Felt>> {

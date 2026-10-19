@@ -7,7 +7,7 @@ use blockifier::execution::syscalls::committed_data::MAX_COMMITTED_DATA_VALUES;
 use hyper::{body::Incoming, Request, Response, StatusCode};
 use mc_db::{MadaraBackend, MadaraStorageRead};
 use mp_gateway::{
-    committed_data::{CommittedDataPage, VALUES_PER_PAGE},
+    committed_data::{CommittedDataPage, CommittedDataVersion, VALUES_PER_PAGE},
     error::{StarknetError, StarknetErrorCode},
 };
 use starknet_types_core::felt::Felt;
@@ -42,6 +42,25 @@ pub(crate) async fn get_roots(
     let params = get_params_from_request(&req);
     let after = params.get("after").map(|value| Felt::from_hex(value).map_err(|_| invalid())).transpose()?;
     bounded_read(move || Ok(create_json_response(StatusCode::OK, &backend.db.list_committed_data_roots(after)?))).await
+}
+
+/// Replicate namespace labels. The configured upstream is trusted for labels, never root publication.
+/// A cursor supplies all three components or none, ordered application/dataset/root.
+pub(crate) async fn get_versions(
+    req: Request<Incoming>,
+    backend: Arc<MadaraBackend>,
+) -> Result<Response<String>, GatewayError> {
+    let params = get_params_from_request(&req);
+    let parse = |name| params.get(name).map(|value| Felt::from_hex(value).map_err(|_| invalid())).transpose();
+    let after = match (parse("application_id")?, parse("dataset_id")?, parse("root")?) {
+        (None, None, None) => None,
+        (Some(application_id), Some(dataset_id), Some(root)) => {
+            Some(CommittedDataVersion { application_id, dataset_id, root })
+        }
+        _ => return Err(invalid()),
+    };
+    bounded_read(move || Ok(create_json_response(StatusCode::OK, &backend.db.list_committed_data_versions(after)?)))
+        .await
 }
 
 /// Return one bounded value slice; consumers authenticate the assembled root.
