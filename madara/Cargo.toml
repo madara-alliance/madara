@@ -125,6 +125,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 [dev-dependencies]
 # Core
 mc-e2e-tests = { workspace = true }
+mc-db = { workspace = true, features = ["testing"] }
 
 # Primitives
 mp-bloom-filter = { workspace = true }

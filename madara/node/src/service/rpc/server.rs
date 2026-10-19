@@ -55,13 +55,28 @@ struct PerConnection<RpcMiddleware, HttpMiddleware> {
 /// This future will complete once the server has been shutdown.
 pub async fn start_server(
     config: ServerConfig,
+    ctx: ServiceContext,
+    stop_handle: jsonrpsee::server::StopHandle,
+    starknet: Arc<Starknet>,
+) -> anyhow::Result<()> {
+    let addr = config.addr;
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .with_context(|| format!("Binding TCP listener to address: {addr}"))?;
+
+    serve(listener, config, ctx, stop_handle, starknet).await
+}
+
+async fn serve(
+    listener: tokio::net::TcpListener,
+    config: ServerConfig,
     mut ctx: ServiceContext,
     stop_handle: jsonrpsee::server::StopHandle,
     starknet: Arc<Starknet>,
 ) -> anyhow::Result<()> {
     let ServerConfig {
         name,
-        addr,
+        addr: _,
         cors,
         rpc_version_default,
         max_connections,
@@ -77,9 +92,6 @@ pub async fn start_server(
         supported_versions,
     } = config;
 
-    let listener = tokio::net::TcpListener::bind(addr)
-        .await
-        .with_context(|| format!("Binding TCP listener to address: {addr}"))?;
     let local_addr = listener.local_addr().context("Failed to retrieve local address after binding TCP listener")?;
 
     let ping_config = jsonrpsee::server::PingConfig::new()
@@ -187,7 +199,7 @@ pub async fn start_server(
     });
 
     let server = hyper::Server::from_tcp(listener.into_std()?)
-        .with_context(|| format!("Creating hyper server at: {addr}"))?
+        .with_context(|| format!("Creating hyper server at: {local_addr}"))?
         .serve(make_service);
 
     tracing::info!(
@@ -306,6 +318,195 @@ pub(crate) fn format_cors(maybe_cors: Option<&Vec<String>>) -> String {
         format!("{:?}", cors)
     } else {
         format!("{:?}", ["*"])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{serve, ServerConfig};
+    use async_trait::async_trait;
+    use jsonrpsee::{
+        core::client::ClientT, rpc_params, server::BatchRequestConfig, ws_client::WsClientBuilder, RpcModule,
+    };
+    use mc_db::MadaraBackend;
+    use mc_rpc::Starknet;
+    use mc_submit_tx::{SubmitTransaction, SubmitTransactionError, TransactionLookup};
+    use mp_chain_config::{ChainConfig, RpcVersion};
+    use mp_rpc::{
+        admin::BroadcastedDeclareTxnV0,
+        v0_10_2::BroadcastedInvokeTxn,
+        v0_9_0::{
+            AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, ClassAndTxnHash,
+            ContractAndTxnHash,
+        },
+    };
+    use mp_utils::service::ServiceContext;
+    use std::{sync::Arc, time::Duration};
+    use tokio::sync::{mpsc, Semaphore};
+
+    struct UnusedTransactionProvider;
+
+    #[async_trait]
+    impl SubmitTransaction for UnusedTransactionProvider {
+        async fn submit_declare_transaction(
+            &self,
+            _tx: BroadcastedDeclareTxn,
+        ) -> Result<ClassAndTxnHash, SubmitTransactionError> {
+            Err(SubmitTransactionError::Unsupported)
+        }
+
+        async fn submit_deploy_account_transaction(
+            &self,
+            _tx: BroadcastedDeployAccountTxn,
+        ) -> Result<ContractAndTxnHash, SubmitTransactionError> {
+            Err(SubmitTransactionError::Unsupported)
+        }
+
+        async fn submit_invoke_transaction(
+            &self,
+            _tx: BroadcastedInvokeTxn,
+        ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
+            Err(SubmitTransactionError::Unsupported)
+        }
+
+        async fn submit_declare_v0_transaction(
+            &self,
+            _tx: BroadcastedDeclareTxnV0,
+        ) -> Result<ClassAndTxnHash, SubmitTransactionError> {
+            Err(SubmitTransactionError::Unsupported)
+        }
+    }
+
+    #[async_trait]
+    impl TransactionLookup for UnusedTransactionProvider {
+        async fn received_transaction(&self, _hash: mp_convert::Felt) -> Option<bool> {
+            None
+        }
+
+        async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<mp_convert::Felt>> {
+            None
+        }
+    }
+
+    #[derive(Clone)]
+    struct BlockingRpcContext {
+        started: mpsc::UnboundedSender<&'static str>,
+        release: Arc<Semaphore>,
+    }
+
+    async fn blocking_response(context: Arc<BlockingRpcContext>, method: &'static str) -> &'static str {
+        context.started.send(method).expect("test receiver should remain open");
+        context.release.clone().acquire_owned().await.expect("test semaphore should remain open").forget();
+        "ok"
+    }
+
+    fn test_starknet(ctx: ServiceContext) -> Arc<Starknet> {
+        let provider = Arc::new(UnusedTransactionProvider);
+        Arc::new(Starknet::new(
+            MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test())),
+            provider.clone(),
+            provider,
+            Default::default(),
+            None,
+            ctx,
+        ))
+    }
+
+    #[tokio::test]
+    async fn execution_limit_is_shared_across_connections() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (started_tx, mut started_rx) = mpsc::unbounded_channel();
+        let release = Arc::new(Semaphore::new(0));
+        let mut module = RpcModule::new(BlockingRpcContext { started: started_tx, release: Arc::clone(&release) });
+        module
+            .register_async_method("starknet_V0_10_2_call", |_, context| async move {
+                blocking_response(context, "starknet_call").await
+            })
+            .unwrap();
+        module
+            .register_async_method("starknet_V0_10_2_estimateFee", |_, context| async move {
+                blocking_response(context, "starknet_estimateFee").await
+            })
+            .unwrap();
+        module.register_method("starknet_V0_10_2_blockNumber", |_, _| 1_u64).unwrap();
+
+        let ctx = ServiceContext::default();
+        let (stop_handle, _server_handle) = jsonrpsee::server::stop_channel();
+        let server = tokio::spawn(serve(
+            listener,
+            ServerConfig {
+                name: "test RPC".into(),
+                addr,
+                cors: None,
+                rpc_version_default: RpcVersion::RPC_VERSION_0_10_2,
+                max_connections: 4,
+                max_concurrent_executions: 1,
+                max_subs_per_conn: 4,
+                ws_inactive_timeout_secs: 60,
+                max_payload_in_mib: 1,
+                max_payload_out_mib: 1,
+                metrics: super::RpcMetrics::register().unwrap(),
+                message_buffer_capacity: 16,
+                methods: module.into(),
+                batch_config: BatchRequestConfig::Disabled,
+                supported_versions: vec![RpcVersion::RPC_VERSION_0_10_2],
+            },
+            ctx.clone(),
+            stop_handle,
+            test_starknet(ctx.clone()),
+        ));
+
+        let url = format!("ws://{addr}");
+        let connection_a = Arc::new(WsClientBuilder::default().build(&url).await.unwrap());
+        let connection_b = Arc::new(WsClientBuilder::default().build(&url).await.unwrap());
+
+        let first_client = Arc::clone(&connection_a);
+        let first =
+            tokio::spawn(
+                async move { first_client.request::<String, _>("starknet_call", rpc_params![]).await.unwrap() },
+            );
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), started_rx.recv())
+                .await
+                .expect("first connection should enter its handler"),
+            Some("starknet_call")
+        );
+
+        let second_client = Arc::clone(&connection_b);
+        let second = tokio::spawn(async move {
+            second_client.request::<String, _>("starknet_estimateFee", rpc_params![]).await.unwrap()
+        });
+        assert!(tokio::time::timeout(Duration::from_millis(50), started_rx.recv()).await.is_err());
+
+        let block_number = tokio::time::timeout(
+            Duration::from_secs(1),
+            connection_b.request::<u64, _>("starknet_blockNumber", rpc_params![]),
+        )
+        .await
+        .expect("light request should not wait for an execution permit")
+        .unwrap();
+        assert_eq!(block_number, 1);
+
+        release.add_permits(1);
+        assert_eq!(first.await.unwrap(), "ok");
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), started_rx.recv())
+                .await
+                .expect("second connection should acquire the shared execution permit"),
+            Some("starknet_estimateFee")
+        );
+
+        release.add_permits(1);
+        assert_eq!(second.await.unwrap(), "ok");
+        drop(connection_a);
+        drop(connection_b);
+        ctx.cancel_global();
+        tokio::time::timeout(Duration::from_secs(1), server)
+            .await
+            .expect("server should stop after cancellation")
+            .unwrap()
+            .unwrap();
     }
 }
 pub(crate) fn format_rpc_versions(versions: &[RpcVersion]) -> String {
