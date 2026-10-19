@@ -1,6 +1,6 @@
 use super::ContractTrieTimings;
 use crate::metrics::metrics;
-use crate::rocksdb::trie::{GlobalTrie, SharedContractStorageTrie, WrappedBonsaiError};
+use crate::rocksdb::trie::{ContractStorageTrieStageLease, GlobalTrie, SharedContractStorageTrie, WrappedBonsaiError};
 use crate::{prelude::*, rocksdb::RocksDBStorage};
 use bitvec::view::AsBits;
 use bonsai_trie::id::BasicId;
@@ -25,6 +25,7 @@ pub struct StagedContractTries {
     cache_generation: u64,
     contract_trie: GlobalTrie<Pedersen>,
     committed: bool,
+    _stage_lease: ContractStorageTrieStageLease,
 }
 
 impl Drop for StagedContractTries {
@@ -96,6 +97,9 @@ pub fn contract_trie_root_staged(
     let mut contract_leafs: HashMap<Felt, ContractLeaf> =
         HashMap::with_capacity(storage_diffs.len() + nonces.len() + deployed_contracts.len() + replaced_classes.len());
     let cached_contract_storage_trie = backend.cached_contract_storage_trie();
+    let stage_lease = cached_contract_storage_trie
+        .try_acquire_stage()
+        .context("another contract-storage trie stage is already active")?;
     let mut reset_cached_trie =
         ResetCachedStorageTrieOnDrop { backend: backend.clone(), cache_generation: None, armed: true };
     let cache_generation;
@@ -176,6 +180,7 @@ pub fn contract_trie_root_staged(
             cache_generation,
             contract_trie,
             committed: false,
+            _stage_lease: stage_lease,
         },
     ))
 }
@@ -376,6 +381,23 @@ mod contract_trie_root_tests {
     }
 
     #[rstest]
+    fn test_cached_contract_storage_trie_rejects_overlapping_stages(setup_test_backend: Arc<MadaraBackend>) {
+        let backend = setup_test_backend;
+        let (_first_root, first_staged) =
+            contract_trie_root_staged(&backend.db, &[], &[], &[], &sample_storage_diffs(Felt::TWO), 1).unwrap();
+
+        let error = contract_trie_root_staged(&backend.db, &[], &[], &[], &sample_storage_diffs(Felt::from(3u64)), 2)
+            .err()
+            .expect("a second outstanding stage must be rejected");
+        assert!(format!("{error:#}").contains("stage is already active"));
+
+        first_staged.commit(1).unwrap();
+        let (_second_root, second_staged) =
+            contract_trie_root_staged(&backend.db, &[], &[], &[], &sample_storage_diffs(Felt::from(3u64)), 2).unwrap();
+        second_staged.commit(2).unwrap();
+    }
+
+    #[rstest]
     fn test_revert_resets_cached_contract_storage_trie(setup_test_backend: Arc<MadaraBackend>) {
         let backend = setup_test_backend;
         let contract_address = sample_contract_address();
@@ -423,22 +445,19 @@ mod contract_trie_root_tests {
     }
 
     #[rstest]
-    fn test_concurrent_stale_commit_does_not_clobber_newer_cache(setup_test_backend: Arc<MadaraBackend>) {
+    fn test_cache_reset_does_not_allow_overlapping_stage(setup_test_backend: Arc<MadaraBackend>) {
         let backend = setup_test_backend;
-        let contract_address = sample_contract_address();
         let (_stale_root, stale_staged) =
             contract_trie_root_staged(&backend.db, &[], &[], &[], &sample_storage_diffs(Felt::TWO), 1).unwrap();
         let start_barrier = Arc::new(Barrier::new(2));
-        let finish_barrier = Arc::new(Barrier::new(2));
-        let (fresh_root_tx, fresh_root_rx) = mpsc::channel();
+        let (result_tx, result_rx) = mpsc::channel();
         let backend_for_worker = backend.clone();
         let start_barrier_for_worker = start_barrier.clone();
-        let finish_barrier_for_worker = finish_barrier.clone();
 
         let worker = thread::spawn(move || {
             start_barrier_for_worker.wait();
             backend_for_worker.db.reset_cached_contract_storage_trie();
-            let (_fresh_root, fresh_staged) = contract_trie_root_staged(
+            let error = contract_trie_root_staged(
                 &backend_for_worker.db,
                 &[],
                 &[],
@@ -446,19 +465,20 @@ mod contract_trie_root_tests {
                 &sample_storage_diffs(Felt::from(3u64)),
                 2,
             )
-            .unwrap();
-            fresh_root_tx.send(cached_storage_root(&backend_for_worker, contract_address)).unwrap();
-            finish_barrier_for_worker.wait();
-            drop(fresh_staged);
+            .err()
+            .expect("cache reset must not bypass the active stage lease");
+            result_tx.send(error).unwrap();
         });
 
         start_barrier.wait();
-        let fresh_cache_root = fresh_root_rx.recv().unwrap();
+        let overlap_error = result_rx.recv().unwrap();
+        assert!(format!("{overlap_error:#}").contains("stage is already active"));
         let err = stale_staged.commit(1).unwrap_err();
         assert!(format!("{err:#}").contains("generation changed before staged commit"));
-        assert_eq!(cached_storage_root(&backend, contract_address), fresh_cache_root);
-
-        finish_barrier.wait();
         worker.join().unwrap();
+
+        let (_fresh_root, fresh_staged) =
+            contract_trie_root_staged(&backend.db, &[], &[], &[], &sample_storage_diffs(Felt::from(3u64)), 2).unwrap();
+        fresh_staged.commit(2).unwrap();
     }
 }

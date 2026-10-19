@@ -11,7 +11,7 @@ use rocksdb::{Direction, IteratorMode};
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 use std::collections::BTreeMap;
 use std::fmt;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, LockResult, OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::Instant;
 
@@ -39,11 +39,22 @@ pub(crate) type LazySharedContractStorageTrie = OnceLock<SharedContractStorageTr
 pub(crate) struct ContractStorageTrieCache {
     trie: RwLock<GlobalTrie<Pedersen>>,
     generation: AtomicU64,
+    stage_active: AtomicBool,
+}
+
+pub(crate) struct ContractStorageTrieStageLease {
+    cache: SharedContractStorageTrie,
+}
+
+impl Drop for ContractStorageTrieStageLease {
+    fn drop(&mut self) {
+        self.cache.stage_active.store(false, Ordering::Release);
+    }
 }
 
 impl ContractStorageTrieCache {
     fn new(trie: GlobalTrie<Pedersen>) -> Self {
-        Self { trie: RwLock::new(trie), generation: AtomicU64::new(0) }
+        Self { trie: RwLock::new(trie), generation: AtomicU64::new(0), stage_active: AtomicBool::new(false) }
     }
 
     pub(crate) fn generation(&self) -> u64 {
@@ -56,6 +67,13 @@ impl ContractStorageTrieCache {
 
     pub(crate) fn write(&self) -> LockResult<RwLockWriteGuard<'_, GlobalTrie<Pedersen>>> {
         self.trie.write()
+    }
+
+    pub(crate) fn try_acquire_stage(self: &Arc<Self>) -> Option<ContractStorageTrieStageLease> {
+        self.stage_active
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .ok()
+            .map(|_| ContractStorageTrieStageLease { cache: self.clone() })
     }
 
     fn reset<F>(&self, fresh_trie: F) -> u64
