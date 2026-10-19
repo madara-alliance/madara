@@ -17,7 +17,7 @@ pub const RPC_DEFAULT_MAX_REQUEST_SIZE_MIB: u32 = 15;
 pub const RPC_DEFAULT_MAX_RESPONSE_SIZE_MIB: u32 = 15;
 /// The default number of connection..
 pub const RPC_DEFAULT_MAX_CONNECTIONS: u32 = 100;
-/// The default number of execution-heavy RPCs that may run concurrently.
+/// The default number of execution-heavy RPCs that may run concurrently per RPC server.
 pub const RPC_DEFAULT_MAX_CONCURRENT_EXECUTIONS: usize = 32;
 /// The default websocket peer inactivity timeout in seconds.
 pub const RPC_DEFAULT_WS_INACTIVE_TIMEOUT_SECS: u64 = 60 * 60;
@@ -151,7 +151,7 @@ pub struct RpcParams {
     #[arg(env = "MADARA_RPC_MAX_CONNECTIONS", long, value_name = "COUNT", default_value_t = RPC_DEFAULT_MAX_CONNECTIONS)]
     pub rpc_max_connections: u32,
 
-    /// Maximum number of execution-heavy RPC methods that may run concurrently.
+    /// Maximum number of execution-heavy RPC methods that may run concurrently per RPC server.
     #[arg(
         env = "MADARA_RPC_MAX_CONCURRENT_EXECUTIONS",
         long,

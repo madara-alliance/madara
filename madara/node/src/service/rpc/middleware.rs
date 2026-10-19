@@ -46,6 +46,7 @@ fn is_execution_method(method: &str) -> bool {
         "addDeclareTransaction",
         "addDeployAccountTransaction",
         "addDeclareV0Transaction",
+        "bypassAddDeclareTransaction",
     ];
 
     EXECUTION_METHODS.contains(&method.rsplit('_').next().unwrap_or(method))
@@ -277,6 +278,7 @@ mod tests {
             "starknet_traceBlockTransactions",
             "starknet_addInvokeTransaction",
             "madara_addDeclareV0Transaction",
+            "madara_V0_1_0_bypassAddDeclareTransaction",
         ] {
             assert!(is_execution_method(method), "{method} should be limited");
         }
