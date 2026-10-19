@@ -8,6 +8,7 @@ use crate::types::batch::{
 };
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
+use crate::types::jobs::metadata::JobMetadata;
 use crate::types::jobs::types::{JobStatus, JobType};
 use ::mongodb::bson::Document;
 use ::mongodb::options::FindOneAndUpdateOptions;
@@ -121,6 +122,15 @@ pub trait DatabaseClient: Send + Sync {
         version: i32,
         process_started_at: DateTime<Utc>,
     ) -> Result<(), DatabaseError>;
+
+    /// Reset a stale processing lock only if its lease timestamp is unchanged from the caller's
+    /// read. Returns `None` when another worker renewed or otherwise changed the lock first.
+    async fn try_reset_stale_processing_job(
+        &self,
+        current_job: &JobItem,
+        observed_process_started_at: Option<DateTime<Utc>>,
+        metadata: JobMetadata,
+    ) -> Result<Option<JobItem>, DatabaseError>;
 
     /// Get the latest job of a specific type
     ///

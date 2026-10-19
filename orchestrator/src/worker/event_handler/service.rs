@@ -42,6 +42,22 @@ pub struct JobHandlerService;
 
 const SHUTDOWN_RESTORE_MAX_ATTEMPTS: u8 = 3;
 const SHUTDOWN_RESTORE_RETRY_DELAY: Duration = Duration::from_millis(250);
+const SQS_MAX_MESSAGE_DELAY_SECONDS: u64 = 900;
+
+struct ProcessingLease {
+    stop: CancellationToken,
+    task: tokio::task::JoinHandle<()>,
+    _guard: tokio_util::sync::DropGuard,
+}
+
+impl ProcessingLease {
+    async fn stop(self, job_id: Uuid) {
+        self.stop.cancel();
+        if let Err(error) = self.task.await {
+            error!(job_id = ?job_id, error = ?error, "Processing lease heartbeat task failed");
+        }
+    }
+}
 
 impl JobHandlerService {
     /// Creates the job in the DB in the created state and adds it to the process queue
@@ -160,8 +176,8 @@ impl JobHandlerService {
     /// * Adds processing completion timestamp to metadata
     /// * Automatically adds the job to verification queue upon successful processing
     /// * For jobs stuck in LockedForProcessing, heals them if they're older than the configured
-    ///   timeout (stale); otherwise leaves the duplicate delivery pending while the active attempt
-    ///   refreshes its processing lease
+    ///   timeout (stale); otherwise replaces the duplicate delivery with one delayed message while
+    ///   the active attempt refreshes its processing lease
     ///
     /// # Failure handling
     /// Retryable SNOS processing errors restore the job to its pre-processing status and return an
@@ -180,7 +196,7 @@ impl JobHandlerService {
     /// cannot occupy every async worker and prevent the shutdown coordinator from running. On
     /// cancellation, the database lock is restored only after the handler future has yielded and
     /// been dropped. Until then a heartbeat keeps the `LockedForProcessing` lease fresh, and a
-    /// redelivery is left pending rather than ACKed or allowed to overlap. If the process-wide
+    /// redelivery is replaced with a delayed message rather than allowed to overlap. If the process-wide
     /// graceful-shutdown deadline expires first, the heartbeat stops with the process; the existing
     /// visibility-timeout and stale-job recovery path then owns recovery.
     pub(crate) async fn process_job_with_shutdown(
@@ -217,7 +233,8 @@ impl JobHandlerService {
                 // to process it normally. A live processor refreshes this timestamp, so a
                 // redelivery cannot heal and overlap an active attempt.
                 let timeout_seconds = config.service_config().get_job_timeout(&job.job_type);
-                let is_stale = match job.metadata.common.process_started_at {
+                let observed_process_started_at = job.metadata.common.process_started_at;
+                let is_stale = match observed_process_started_at {
                     // This field is persisted with second precision. Compare whole elapsed
                     // seconds so sub-second truncation cannot make a freshly heartbeated lease
                     // appear stale at the timeout boundary.
@@ -238,28 +255,33 @@ impl JobHandlerService {
                         "Found stale job in LockedForProcessing state, healing and reprocessing"
                     );
 
-                    // Record orphaned job metric
-                    MetricsRecorder::record_orphaned_job(&job);
                     let healing_workload = MetricsRecorder::start_healing_workload(&job.job_type);
 
                     // Reset process_started_at to allow fresh processing
                     job.metadata.common.process_started_at = None;
 
-                    // Update job status back to Created to allow normal processing flow
-                    job = config
+                    // Atomically reset only the exact lease timestamp observed above. The heartbeat
+                    // deliberately does not change the optimistic-lock version, so version alone
+                    // cannot protect this read/check/update sequence.
+                    let healed_job = config
                         .database()
-                        .update_job(
-                            &job,
-                            JobItemUpdates::new()
-                                .update_status(JobStatus::Created)
-                                .update_metadata(job.metadata.clone())
-                                .build(),
-                        )
+                        .try_reset_stale_processing_job(&job, observed_process_started_at, job.metadata.clone())
                         .await
                         .inspect_err(|e| {
                             error!(job_id = ?id, error = ?e, "Failed to heal stale job");
                         })?;
 
+                    let Some(healed_job) = healed_job else {
+                        healing_workload.finish_error();
+                        debug!(
+                            job_id = ?id,
+                            "Processing lease changed during stale recovery; deferring duplicate delivery"
+                        );
+                        return Self::defer_active_processing_job(&job, timeout_seconds, config).await;
+                    };
+                    job = healed_job;
+
+                    MetricsRecorder::record_orphaned_job(&job);
                     MetricsRecorder::record_healed_job(&job.job_type);
                     healing_workload.finish_success();
 
@@ -271,15 +293,14 @@ impl JobHandlerService {
                     );
                     // Continue with normal processing below
                 } else {
-                    // Job is not stale - another live attempt still owns it. Keep this delivery
-                    // pending rather than ACKing it: if the owner dies, this message is still the
-                    // recovery path once the processing lease becomes stale.
+                    // Job is not stale - another live attempt still owns it. Replace this delivery
+                    // with one delayed message so repeated receives cannot exhaust the DLQ budget.
                     debug!(
                         job_id = ?id,
                         status = ?job.status,
-                        "Job is {} with an active processing lease; leaving duplicate delivery pending.", JobStatus::LockedForProcessing
+                        "Job is {} with an active processing lease; deferring duplicate delivery.", JobStatus::LockedForProcessing
                     );
-                    return Err(JobError::ProcessingLeaseActive { id });
+                    return Self::defer_active_processing_job(&job, timeout_seconds, config).await;
                 }
             }
             JobStatus::PendingVerification | JobStatus::Completed => {
@@ -366,14 +387,17 @@ impl JobHandlerService {
         // exclusion mechanism after SQS visibility expires: another delivery sees a non-stale lock
         // and is left pending instead of starting overlapping work.
         let lease_stop = CancellationToken::new();
-        let lease_guard = lease_stop.clone().drop_guard();
-        let lease_heartbeat = tokio::spawn(Self::maintain_processing_lease(
-            job.id,
-            job.version,
-            job.job_type.clone(),
-            config.clone(),
-            lease_stop.clone(),
-        ));
+        let lease = ProcessingLease {
+            _guard: lease_stop.clone().drop_guard(),
+            task: tokio::spawn(Self::maintain_processing_lease(
+                job.id,
+                job.version,
+                job.job_type.clone(),
+                config.clone(),
+                lease_stop.clone(),
+            )),
+            stop: lease_stop,
+        };
 
         // Poll the handler on the blocking pool. Some handlers perform synchronous CPU work before
         // their next await; keeping that work off the async worker pool ensures the shutdown
@@ -407,11 +431,6 @@ impl JobHandlerService {
         });
 
         let processing = processing.await;
-        lease_stop.cancel();
-        if let Err(error) = lease_heartbeat.await {
-            error!(job_id = ?id, error = ?error, "Processing lease heartbeat task failed");
-        }
-        drop(lease_guard);
 
         let processing_result = match processing {
             Ok((ProcessingOutcome::Completed(result), processed_job)) => {
@@ -429,9 +448,10 @@ impl JobHandlerService {
                     "Shutdown stopped the processing handler; restoring job state for SQS retry"
                 );
                 workload.finish_error();
-                return Err(
-                    Self::restore_job_after_shutdown(&mut job, config, original_status, original_metadata).await
-                );
+                let error =
+                    Self::restore_job_after_shutdown(&mut job, config, original_status, original_metadata).await;
+                lease.stop(id).await;
+                return Err(error);
             }
         };
 
@@ -456,9 +476,10 @@ impl JobHandlerService {
                         "Processing failure detected, restoring job state for SQS retry"
                     );
                     workload.finish_error();
-                    return Err(
-                        Self::reset_job_for_sqs_retry(&mut job, config.clone(), original_status, reason, e).await
-                    );
+                    let error =
+                        Self::reset_job_for_sqs_retry(&mut job, config.clone(), original_status, reason, e).await;
+                    lease.stop(id).await;
+                    return Err(error);
                 }
 
                 error!(
@@ -475,7 +496,9 @@ impl JobHandlerService {
                     &job.job_type,
                 );
                 workload.finish_error();
-                return JobService::move_job_to_failed(&job, config.clone(), reason).await;
+                let result = JobService::move_job_to_failed(&job, config.clone(), reason).await;
+                lease.stop(id).await;
+                return result;
             }
             Err(panic) => {
                 let panic_msg = panic
@@ -496,19 +519,15 @@ impl JobHandlerService {
                     "Job handler panicked during processing, restoring job state for SQS retry"
                 );
                 workload.finish_error();
-                return Err(Self::reset_job_for_sqs_retry(
-                    &mut job,
-                    config.clone(),
-                    original_status,
-                    reason,
-                    panic_error,
-                )
-                .await);
+                let error =
+                    Self::reset_job_for_sqs_retry(&mut job, config.clone(), original_status, reason, panic_error).await;
+                lease.stop(id).await;
+                return Err(error);
             }
         };
 
         // Update job status and metadata
-        config
+        let durable_transition = config
             .database()
             .update_job(
                 &job,
@@ -522,7 +541,9 @@ impl JobHandlerService {
             .map_err(|e| {
                 error!(job_id = ?id, error = ?e, "Failed to update job status");
                 JobError::from(e)
-            })?;
+            });
+        lease.stop(id).await;
+        durable_transition?;
 
         info!(
             job_id = ?id,
@@ -575,6 +596,21 @@ impl JobHandlerService {
         workload.finish_success();
 
         Ok(())
+    }
+
+    async fn defer_active_processing_job(
+        job: &crate::types::jobs::job_item::JobItem,
+        timeout_seconds: u64,
+        config: Arc<Config>,
+    ) -> Result<(), JobError> {
+        let delay_seconds = timeout_seconds.clamp(1, SQS_MAX_MESSAGE_DELAY_SECONDS);
+        JobService::add_job_to_queue(
+            config,
+            job.id,
+            job.job_type.process_queue_name(),
+            Some(Duration::from_secs(delay_seconds)),
+        )
+        .await
     }
 
     async fn restore_job_after_shutdown(
