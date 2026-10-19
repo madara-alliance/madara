@@ -378,10 +378,9 @@ pub fn rocksdb_global_options(config: &RocksDBConfig) -> Result<Options> {
     options.set_max_background_jobs(cores);
 
     // WAL-backed WriteBatch operations are already consistent across column
-    // families. Atomic flush is intended for WAL-disabled databases and forces
-    // every column family to flush whenever any one memtable fills, creating
-    // unnecessary tiny SSTs for this write-heavy multi-CF workload.
-    options.set_atomic_flush(false);
+    // families. Without WAL, keep atomic flush enabled so related column
+    // families cannot reach disk independently after a crash.
+    options.set_atomic_flush(!config.write_mode.wal);
 
     // Allow compaction jobs to be split across multiple threads.
     // A single large compaction can use up to `cores` threads.
@@ -659,5 +658,26 @@ mod tests {
             options.contains(&format!("max_open_files={configured_max_open_files}")),
             "maximum open SST files should use the configured value"
         );
+    }
+
+    #[test]
+    fn atomic_flush_is_enabled_only_without_wal() {
+        for (wal, expected) in [(true, false), (false, true)] {
+            let directory = tempfile::tempdir().unwrap();
+            let config = RocksDBConfig { write_mode: DbWriteMode { wal, fsync: false }, ..RocksDBConfig::default() };
+            let _storage = RocksDBStorage::open(directory.path(), config).unwrap();
+
+            let options_path = fs::read_dir(directory.path())
+                .unwrap()
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .find(|path| {
+                    path.file_name().and_then(|name| name.to_str()).is_some_and(|name| name.starts_with("OPTIONS-"))
+                })
+                .expect("RocksDB should persist an OPTIONS file");
+            let options = fs::read_to_string(options_path).unwrap();
+
+            assert!(options.contains(&format!("atomic_flush={expected}")));
+        }
     }
 }
