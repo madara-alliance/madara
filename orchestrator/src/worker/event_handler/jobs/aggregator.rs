@@ -171,7 +171,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
                     )
                     .await?;
                 warn!(log_type = "rejected", job_id = %job.id, "{:?} job {} verification failed: {}", JobType::Aggregator, internal_id, err);
-                Ok(JobVerificationStatus::Rejected(format!("Aggregator job #{} failed: {}", internal_id, err)))
+                Ok(JobVerificationStatus::Rejected(format!("Prover aggregation task {} failed: {}", external_id, err)))
             }
         }
     }

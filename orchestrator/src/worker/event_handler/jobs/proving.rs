@@ -189,7 +189,7 @@ impl JobHandlerTrait for ProvingJobHandler {
             }
             TaskStatus::Failed(err) => {
                 warn!(log_type = "rejected", job_id = %job.id, "{:?} job {} verification failed", JobType::ProofCreation, internal_id);
-                Ok(JobVerificationStatus::Rejected(format!("Prover job #{} failed with error: {}", internal_id, err)))
+                Ok(JobVerificationStatus::Rejected(format!("Prover task {} failed: {}", task_id, err)))
             }
         }
     }

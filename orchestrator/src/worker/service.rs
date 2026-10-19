@@ -13,6 +13,7 @@ use crate::utils::metrics_recorder::MetricsRecorder;
 #[double]
 use crate::worker::event_handler::factory::factory;
 use crate::worker::parser::job_queue_message::JobQueueMessage;
+use crate::worker::utils::alerts::format_job_alert_context;
 
 pub struct JobService;
 
@@ -251,7 +252,7 @@ impl JobService {
                     String::new()
                 } else {
                     format!(
-                        "\n\nPrevious failures ({} total):\n{}",
+                        "\nPrevious attempt failures ({} total):\n{}",
                         previous_reasons_for_alert.len(),
                         previous_reasons_for_alert
                             .iter()
@@ -261,13 +262,18 @@ impl JobService {
                             .join("\n")
                     )
                 };
+                let alert_context = format_job_alert_context(job, &config).await;
                 let alert_message = format!(
                     "Job Failed Alert\n\
-                     Job ID: {}\n\
-                     Type: {:?}\n\
-                     Block: {}\n\
-                     Current failure: {}{}",
-                    job.id, job.job_type, internal_id, reason, history_summary
+                     {}\n\
+                     Current failure: {}\n\
+                     Process attempts: {}\n\
+                     Verification attempts: {}{}",
+                    alert_context,
+                    reason,
+                    job.metadata.common.process_attempt_no,
+                    job.metadata.common.verification_attempt_no,
+                    history_summary
                 );
 
                 if let Err(e) = config.alerts().send_message(alert_message).await {
