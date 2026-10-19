@@ -1,5 +1,6 @@
 //! Immutable Patricia datasets: sorted key/value pages and compact postorder branch pages.
 use super::*;
+use crate::storage::CommittedDataPageEntries;
 use blockifier::execution::syscalls::committed_data::{
     key_bit, leaf, CommittedDataBranch, CommittedDataSet, CommittedDataSibling, CommittedDataWitness,
     COMMITTED_DATA_TREE_HEIGHT, MAX_COMMITTED_DATA_VALUES,
@@ -281,7 +282,7 @@ impl RocksDBStorage {
     }
 
     /// Reads a bounded slice of raw values. Replicas authenticate the assembled dataset before import.
-    pub(super) fn read_committed_data_page(&self, root: Felt, start: u32) -> Result<Option<(u32, Vec<(Felt, Felt)>)>> {
+    pub(super) fn read_committed_data_page(&self, root: Felt, start: u32) -> Result<Option<CommittedDataPageEntries>> {
         anyhow::ensure!(
             (start as usize) % VALUES_PER_PAGE == 0 && (start as usize) < MAX_COMMITTED_DATA_VALUES,
             "Invalid committed-data page offset"
