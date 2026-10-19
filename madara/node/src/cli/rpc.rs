@@ -17,6 +17,8 @@ pub const RPC_DEFAULT_MAX_REQUEST_SIZE_MIB: u32 = 15;
 pub const RPC_DEFAULT_MAX_RESPONSE_SIZE_MIB: u32 = 15;
 /// The default number of connection..
 pub const RPC_DEFAULT_MAX_CONNECTIONS: u32 = 100;
+/// The default number of execution-heavy RPCs that may run concurrently per RPC server.
+pub const RPC_DEFAULT_MAX_CONCURRENT_EXECUTIONS: usize = 32;
 /// The default websocket peer inactivity timeout in seconds.
 pub const RPC_DEFAULT_WS_INACTIVE_TIMEOUT_SECS: u64 = 60 * 60;
 /// The default number of messages the RPC server
@@ -25,6 +27,22 @@ pub const RPC_DEFAULT_MESSAGE_CAPACITY_PER_CONN: u32 = 64;
 
 const fn default_rpc_ws_inactive_timeout_secs() -> u64 {
     RPC_DEFAULT_WS_INACTIVE_TIMEOUT_SECS
+}
+
+const fn default_rpc_max_concurrent_executions() -> usize {
+    RPC_DEFAULT_MAX_CONCURRENT_EXECUTIONS
+}
+
+fn deserialize_positive_usize<'de, D>(deserializer: D) -> Result<usize, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = usize::deserialize(deserializer)?;
+    if value == 0 {
+        return Err(serde::de::Error::custom("must be greater than zero"));
+    }
+
+    Ok(value)
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -132,6 +150,17 @@ pub struct RpcParams {
     /// Maximum number of RPC server connections at a given time.
     #[arg(env = "MADARA_RPC_MAX_CONNECTIONS", long, value_name = "COUNT", default_value_t = RPC_DEFAULT_MAX_CONNECTIONS)]
     pub rpc_max_connections: u32,
+
+    /// Maximum number of execution-heavy RPC methods that may run concurrently per RPC server.
+    #[arg(
+        env = "MADARA_RPC_MAX_CONCURRENT_EXECUTIONS",
+        long,
+        value_name = "COUNT",
+        default_value_t = RPC_DEFAULT_MAX_CONCURRENT_EXECUTIONS,
+        value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..)
+    )]
+    #[serde(default = "default_rpc_max_concurrent_executions", deserialize_with = "deserialize_positive_usize")]
+    pub rpc_max_concurrent_executions: usize,
 
     /// Close websocket peers that do not respond to ping/pong activity within this many seconds.
     #[arg(
