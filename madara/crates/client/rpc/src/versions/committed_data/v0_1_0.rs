@@ -13,10 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
     sync::{Arc, LazyLock},
-    time::Duration,
 };
-
-const CONFIRMED_EXECUTION_TIMEOUT: Duration = Duration::from_secs(60);
 
 const MAX_SIGNATURE_CHECKS: usize = 4;
 const MAX_SIGNATURES: usize = 32;
@@ -36,12 +33,6 @@ enum CommittedDataRpcError {
     InvalidDatasetCount,
     #[error("Query transactions cannot be submitted")]
     QueryTransaction,
-    #[error("Transaction outcome is still pending; check its receipt before retrying")]
-    ExecutionPending { transaction_hash: Felt },
-    #[error("Transaction executed and reverted")]
-    ExecutionReverted { transaction_hash: Felt, reason: String },
-    #[error("Unable to determine execution outcome; check the transaction receipt")]
-    ExecutionOutcomeUnavailable { transaction_hash: Felt },
 }
 
 impl From<CommittedDataRpcError> for ErrorObjectOwned {
@@ -50,22 +41,9 @@ impl From<CommittedDataRpcError> for ErrorObjectOwned {
             CommittedDataRpcError::UnauthorizedImport => -32001,
             CommittedDataRpcError::SignatureVerificationBusy => -32002,
             CommittedDataRpcError::LocalProductionRequired => -32003,
-            CommittedDataRpcError::ExecutionPending { .. } => -32004,
-            CommittedDataRpcError::ExecutionReverted { .. } => -32005,
-            CommittedDataRpcError::ExecutionOutcomeUnavailable { .. } => -32006,
             CommittedDataRpcError::InvalidDatasetCount | CommittedDataRpcError::QueryTransaction => -32602,
         };
-        let data = match &error {
-            CommittedDataRpcError::ExecutionPending { transaction_hash }
-            | CommittedDataRpcError::ExecutionOutcomeUnavailable { transaction_hash } => {
-                Some(serde_json::json!({"transaction_hash":transaction_hash}))
-            }
-            CommittedDataRpcError::ExecutionReverted { transaction_hash, reason } => {
-                Some(serde_json::json!({"transaction_hash":transaction_hash,"revert_reason":reason}))
-            }
-            _ => None,
-        };
-        Self::owned(code, error.to_string(), data)
+        Self::owned(code, error.to_string(), None::<()>)
     }
 }
 
@@ -174,12 +152,10 @@ impl<'de> Deserialize<'de> for CommittedDataImports {
     }
 }
 
-/// Confirmed L2 inclusion and successful execution. This does not imply proving or L1 settlement.
+/// Durable data and transaction admission. Poll normal receipts for execution and finality.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ImportAndSubmitResult {
     pub transaction_hash: Felt,
-    pub block_hash: Felt,
-    pub block_number: u64,
 }
 
 /// Canonical signing preimage: ASCII domain || chain-id felt (32 BE) || root (32 BE) || count (4 BE).
@@ -251,55 +227,6 @@ fn validate_signatures(allowed: &[Felt], message: Felt, signatures: &[ImportSign
     Ok(())
 }
 
-/// Wait for a confirmed receipt, not merely admission or speculative preconfirmed execution.
-/// Subscribe before the first lookup to avoid missing a block arriving between lookup and wait.
-/// Timeout/disconnection does not undo submission or stored data; callers reconcile by tx hash.
-async fn wait_for_confirmed_execution(
-    backend: Arc<mc_db::MadaraBackend>,
-    transaction_hash: Felt,
-    timeout: Duration,
-) -> RpcResult<ImportAndSubmitResult> {
-    let mut heads = backend.watch_chain_head_state();
-    let wait = async {
-        loop {
-            let reader = Arc::clone(&backend);
-            let outcome = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
-                let Some(transaction) = reader.view_on_latest().find_transaction_by_hash(&transaction_hash)? else {
-                    return Ok(None);
-                };
-                let Some(block) = transaction.block.as_confirmed() else { return Ok(None) };
-                let receipt = transaction.get_transaction()?.receipt;
-                anyhow::ensure!(*receipt.transaction_hash() == transaction_hash, "Receipt hash mismatch");
-                Ok(Some((
-                    ImportAndSubmitResult {
-                        transaction_hash,
-                        block_hash: block.get_block_info()?.block_hash,
-                        block_number: block.block_number(),
-                    },
-                    receipt.execution_result(),
-                )))
-            })
-            .await;
-            let outcome = match outcome {
-                Ok(Ok(outcome)) => outcome,
-                _ => return Err(CommittedDataRpcError::ExecutionOutcomeUnavailable { transaction_hash }.into()),
-            };
-            if let Some((included, execution)) = outcome {
-                return match execution {
-                    mp_receipt::ExecutionResult::Succeeded => Ok(included),
-                    mp_receipt::ExecutionResult::Reverted { reason } => {
-                        Err(CommittedDataRpcError::ExecutionReverted { transaction_hash, reason }.into())
-                    }
-                };
-            }
-            heads.recv().await;
-        }
-    };
-    tokio::time::timeout(timeout, wait)
-        .await
-        .map_err(|_| ErrorObjectOwned::from(CommittedDataRpcError::ExecutionPending { transaction_hash }))?
-}
-
 fn local_submission_ready(starknet: &Starknet) -> bool {
     starknet.committed_data_transaction_submission
         && starknet.ctx.service_status_actual(MadaraServiceId::BlockProduction).is_on()
@@ -333,8 +260,8 @@ pub trait CommittedDataRpcApi {
 
     /// Durably imports 1..=4 datasets, then submits any signed Starknet account transaction.
     /// A multicall is encoded inside one INVOKE transaction. Dataset imports are not rolled back
-    /// if a later import or transaction fails. Success requires confirmed L2 inclusion and successful
-    /// execution. After 60 seconds, return an outcome-pending error containing the transaction hash.
+    /// if a later import or transaction fails. Returns the transaction hash after admission;
+    /// callers poll normal transaction status/receipts for preconfirmed execution and finality.
     #[method(name = "importCommittedDataAndSubmitTransaction")]
     async fn import_committed_data_and_submit_transaction(
         &self,
@@ -451,7 +378,7 @@ impl CommittedDataRpcApiV0_1_0Server for Starknet {
                     .transaction_hash
             }
         };
-        wait_for_confirmed_execution(Arc::clone(&self.backend), transaction_hash, CONFIRMED_EXECUTION_TIMEOUT).await
+        Ok(ImportAndSubmitResult { transaction_hash })
     }
 }
 
@@ -495,30 +422,6 @@ mod committed_data_tests {
         let signature = account.secret.sign(&hash).unwrap();
         tx.signature = vec![signature.r, signature.s].into();
         serde_json::from_value(serde_json::to_value(OldTxn::Invoke(OldInvoke::V3(tx))).unwrap()).unwrap()
-    }
-
-    /// Receipt fixture only: exercises RPC waiting, not real transaction execution/proving.
-    fn confirm_receipt_fixture(backend: &Arc<MadaraBackend>, hash: Felt) {
-        let block_number = backend.latest_confirmed_block_n().map_or(0, |number| number + 1);
-        backend
-            .write_access()
-            .add_full_block_with_classes(
-                &mp_block::FullBlockWithoutCommitments {
-                    header: mp_block::header::PreconfirmedHeader { block_number, ..Default::default() },
-                    transactions: vec![mp_block::TransactionWithReceipt {
-                        transaction: mp_transactions::Transaction::Invoke(mp_transactions::InvokeTransaction::V0(
-                            Default::default(),
-                        )),
-                        receipt: mp_receipt::InvokeTransactionReceipt { transaction_hash: hash, ..Default::default() }
-                            .into(),
-                    }],
-                    state_diff: Default::default(),
-                    events: vec![],
-                },
-                &[],
-                false,
-            )
-            .unwrap();
     }
 
     struct RecordingSubmitter {
@@ -598,10 +501,12 @@ mod committed_data_tests {
         assert!(backend.committed_data_witness(funding_root, Felt::ZERO).unwrap().is_none());
         assert_eq!(submitter.attempts.load(Ordering::SeqCst), 0);
 
-        confirm_receipt_fixture(&backend, Felt::THREE);
         let (response, _) = module.raw_json_request(&call(funding_root, &tx), 1).await.unwrap();
         let response: serde_json::Value = serde_json::from_str(&response).unwrap();
         assert_eq!(response["result"]["transaction_hash"], serde_json::json!(Felt::THREE));
+        assert_eq!(response["result"], serde_json::json!({"transaction_hash": Felt::THREE}));
+        // No receipt was inserted: admission must return without waiting for a block.
+        assert!(backend.view_on_latest().find_transaction_by_hash(&Felt::THREE).unwrap().is_none());
         assert_eq!(submitter.attempts.load(Ordering::SeqCst), 1);
         assert!(backend.committed_data_witness(root, Felt::ZERO).unwrap().unwrap().verify());
         assert!(backend.committed_data_witness(funding_root, Felt::ZERO).unwrap().unwrap().verify());
@@ -797,36 +702,6 @@ mod committed_data_tests {
         let response: serde_json::Value = serde_json::from_str(&response).unwrap();
         assert!(response.get("error").is_none(), "{response}");
         assert_eq!(backend.db.list_committed_data_versions(None).unwrap().len(), 1);
-    }
-
-    #[tokio::test]
-    async fn committed_data_combined_response_requires_confirmed_success_and_reports_reverts_or_pending() {
-        let (backend, _) = crate::test_utils::rpc_test_setup();
-        let fixture = crate::test_utils::make_sample_chain_for_block_getters(&backend);
-        let success =
-            wait_for_confirmed_execution(backend.clone(), fixture.tx_hashes[0], Duration::from_secs(5)).await.unwrap();
-        assert_eq!(success.block_hash, fixture.block_hashes[0]);
-        assert_eq!(success.block_number, 0);
-        let reverted = wait_for_confirmed_execution(backend.clone(), fixture.tx_hashes[2], Duration::from_secs(5))
-            .await
-            .unwrap_err();
-        assert_eq!(reverted.code(), -32005);
-        let data: serde_json::Value = serde_json::from_str(reverted.data().unwrap().get()).unwrap();
-        assert_eq!(data["transaction_hash"], serde_json::json!(fixture.tx_hashes[2]));
-        assert_eq!(data["revert_reason"], "too bad");
-        for hash in [fixture.tx_hashes[3], Felt::MAX] {
-            // Preconfirmed success is still not enough.
-            let pending =
-                wait_for_confirmed_execution(backend.clone(), hash, Duration::from_millis(25)).await.unwrap_err();
-            assert_eq!(pending.code(), -32004);
-            let data: serde_json::Value = serde_json::from_str(pending.data().unwrap().get()).unwrap();
-            assert_eq!(data["transaction_hash"], serde_json::json!(hash));
-        }
-        let waiting = wait_for_confirmed_execution(backend.clone(), fixture.tx_hashes[3], Duration::from_secs(5));
-        tokio::pin!(waiting);
-        assert!(tokio::time::timeout(Duration::from_millis(25), &mut waiting).await.is_err());
-        confirm_receipt_fixture(&backend, fixture.tx_hashes[3]);
-        assert_eq!(waiting.await.unwrap().block_number, 3);
     }
 
     #[test]
