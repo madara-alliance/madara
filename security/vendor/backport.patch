@@ -1,3 +1,20 @@
+--- upstream/rustls-webpki-0.101.7/Cargo.toml
++++ vendor/rustls-webpki-0.101.7/Cargo.toml
+@@ -73,12 +73,10 @@
+ rpath = false
+ 
+ [lib]
++test = false
++doctest = false
+ name = "webpki"
+ 
+-[[bench]]
+-name = "benchmarks"
+-path = "benches/benchmark.rs"
+-harness = false
+ 
+ [dependencies.ring]
+ version = "0.17"
 --- upstream/rustls-webpki-0.101.7/src/lib.rs
 +++ vendor/rustls-webpki-0.101.7/src/lib.rs
 @@ -27,6 +27,8 @@
@@ -50,6 +67,59 @@
 +    include_bytes!("data/distrusted/EMOVCSCAG3B.spki.der"),
 +    include_bytes!("data/distrusted/EMOVCSCAG3C.spki.der"),
 +];
+--- upstream/rustls-webpki-0.102.8/Cargo.toml
++++ vendor/rustls-webpki-0.102.8/Cargo.toml
+@@ -89,48 +89,20 @@
+ rpath = false
+ 
+ [lib]
++test = false
++doctest = false
+ name = "webpki"
+ path = "src/lib.rs"
+ 
+-[[test]]
+-name = "better_tls"
+-path = "tests/better_tls.rs"
+ 
+-[[test]]
+-name = "cert_v1_unsupported"
+-path = "tests/cert_v1_unsupported.rs"
+ 
+-[[test]]
+-name = "cert_without_extensions"
+-path = "tests/cert_without_extensions.rs"
+ 
+-[[test]]
+-name = "client_auth"
+-path = "tests/client_auth.rs"
+ 
+-[[test]]
+-name = "client_auth_revocation"
+-path = "tests/client_auth_revocation.rs"
+ 
+-[[test]]
+-name = "crl_tests"
+-path = "tests/crl_tests.rs"
+ 
+-[[test]]
+-name = "custom_ekus"
+-path = "tests/custom_ekus.rs"
+ 
+-[[test]]
+-name = "integration"
+-path = "tests/integration.rs"
+ 
+-[[test]]
+-name = "signatures"
+-path = "tests/signatures.rs"
+ 
+-[[test]]
+-name = "tls_server_certs"
+-path = "tests/tls_server_certs.rs"
+ 
+ [dependencies.aws-lc-rs]
+ version = "1.9"
 --- upstream/rustls-webpki-0.102.8/src/lib.rs
 +++ vendor/rustls-webpki-0.102.8/src/lib.rs
 @@ -29,6 +29,8 @@
@@ -102,6 +172,16 @@
 +    include_bytes!("data/distrusted/EMOVCSCAG3B.spki.der"),
 +    include_bytes!("data/distrusted/EMOVCSCAG3C.spki.der"),
 +];
+--- upstream/webpki-roots-0.25.4/Cargo.toml
++++ vendor/webpki-roots-0.25.4/Cargo.toml
+@@ -69,3 +69,7 @@
+ 
+ [dev-dependencies.yasna]
+ version = "0.5.2"
++
++[lib]
++test = false
++doctest = false
 --- upstream/webpki-roots-0.25.4/src/lib.rs
 +++ vendor/webpki-roots-0.25.4/src/lib.rs
 @@ -2924,33 +2924,6 @@
