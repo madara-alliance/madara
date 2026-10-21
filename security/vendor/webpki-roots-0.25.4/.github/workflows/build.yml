@@ -1,0 +1,27 @@
+name: webpki-roots
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '0 18 * * *'
+
+jobs:
+  build:
+    name: Build+test
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: cargo build (debug; default features)
+        run: cargo build --all-targets
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: cargo test (debug; default features)
+        run: cargo test
