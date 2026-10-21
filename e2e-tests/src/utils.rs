@@ -15,7 +15,8 @@ pub fn get_repository_root() -> PathBuf {
 }
 
 pub async fn get_mongo_db_client(mongo_db: &MongoDbServer) -> ::mongodb::Client {
-    let mut client_options = ClientOptions::parse(mongo_db.endpoint()).await.expect("Failed to parse MongoDB Url");
+    let mut client_options =
+        ClientOptions::parse(mongo_db.endpoint().as_str()).await.expect("Failed to parse MongoDB Url");
     // Set the server_api field of the client_options object to set the version of the Stable API on the
     // client
     let server_api = ServerApi::builder().version(ServerApiVersion::V1).build();
@@ -23,7 +24,7 @@ pub async fn get_mongo_db_client(mongo_db: &MongoDbServer) -> ::mongodb::Client 
     // Get a handle to the cluster
     let client = ::mongodb::Client::with_options(client_options).expect("Failed to create MongoDB client");
     // Ping the server to see if you can connect to the cluster
-    client.database("admin").run_command(doc! {"ping": 1}, None).await.expect("Failed to ping MongoDB deployment");
+    client.database("admin").run_command(doc! {"ping": 1}).await.expect("Failed to ping MongoDB deployment");
 
     client
 }
