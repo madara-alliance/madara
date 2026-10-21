@@ -7,15 +7,15 @@ behavior. Rebuild and validate each deployed revision before promoting an image.
 
 ## Dependency changes
 
-| Dependency                       | Change                      | Reason                                                                                   |
-| -------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------- |
-| rustls-webpki                    | 0.103.16                    | Upstream compromised-key distrust, including explicitly trusted intermediates            |
-| webpki-roots / webpki-root-certs | 1.0.10                      | Published root-store removal; webpki-roots 0.26.11 delegates to 1.0.10                   |
-| aws-lc-rs / aws-lc-sys           | 1.18.2 / 0.46.0             | Required by the fixed verifier                                                           |
-| mongodb                          | 2.8.2 → 3.5.2               | Move the orchestrator onto the rustls 0.23 verifier already used by Madara's external DB |
-| testcontainers                   | 0.18.0 → 0.21.1             | Move test Docker connections to Bollard 0.17 / rustls 0.23                               |
-| omniqueue                        | SQS feature only            | Remove unused GCP, Redis and RabbitMQ clients, including the old gRPC TLS stack          |
-| jsonrpsee clients                | Disable unused TLS features | Production use is hardcoded local HTTP; WS clients are local tests only                  |
+| Dependency                       | Change               | Reason                                                      |
+| -------------------------------- | -------------------- | ----------------------------------------------------------- |
+| rustls-webpki                    | 0.103.16             | Reject compromised keys, including trusted intermediates    |
+| webpki-roots / webpki-root-certs | 1.0.10               | Remove affected roots                                       |
+| aws-lc-rs / aws-lc-sys           | 1.18.2 / 0.46.0      | Support the fixed verifier                                  |
+| mongodb                          | 2.8.2 → 3.5.2        | Move orchestrator DB TLS to rustls 0.23                     |
+| testcontainers                   | 0.18.0 → 0.21.1      | Use Bollard 0.17 and rustls 0.23                            |
+| omniqueue                        | SQS only             | Drop unused GCP, Redis, RabbitMQ and old gRPC TLS           |
+| jsonrpsee clients                | TLS off for loopback | Avoid the old TLS stack on local HTTP and WebSocket clients |
 
 The MongoDB driver upgrade uses its action-builder API. Filters, update documents,
 sorts, limits, indexes and BSON 2 serialization remain the same; chrono and UUID
