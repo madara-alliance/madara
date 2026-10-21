@@ -33,8 +33,9 @@ Rebuild and validate each deployed application revision before rolling it out.
 `vendor/provenance.json` records the original crates.io archive checksums.
 `vendor/backport.patch` is the small text diff from those exact published sources.
 The only added verifier data are the eight `src/data/distrusted/*.spki.der` files
-copied byte-for-byte from rustls-webpki 0.103.16. Existing licenses and upstream
-tests are preserved. A scoped lifetime-syntax lint allowance is necessary because
+copied byte-for-byte from rustls-webpki 0.103.16. Licenses and build-required library sources are preserved. Upstream test fixtures,
+CI files and benchmarks are omitted to keep this import reviewable; manifest test
+targets are disabled. The independent incident regression suite remains enabled. A scoped lifetime-syntax lint allowance is necessary because
 Cargo does not cap lints for local path dependencies on Rust 1.89.
 
 The older packages deliberately retain their API-compatible version numbers.
