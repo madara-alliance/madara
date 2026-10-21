@@ -1,0 +1,17 @@
+[
+  {
+    "package": "rustls-webpki",
+    "version": "0.101.7",
+    "archive_sha256": "8b6275d1ee7a1cd780b64aca7726599a1dbc893b1e64144529e55c3c2f745765"
+  },
+  {
+    "package": "rustls-webpki",
+    "version": "0.102.8",
+    "archive_sha256": "64ca1bc8749bd4cf37b5ce386cc146580777b4e8572c7b97baf22c83f444bee9"
+  },
+  {
+    "package": "webpki-roots",
+    "version": "0.25.4",
+    "archive_sha256": "5f20c57d8d7db6d3b86154206ae5d8fba62dd39573114de97c2cb0578251f8e1"
+  }
+]
