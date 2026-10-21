@@ -104,6 +104,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 FROM base-rust AS builder-rust
 
 COPY --from=planner /app/recipe.json recipe.json
+# Root workspace TLS patch paths must exist during dependency compilation.
 COPY --from=planner /app/sequencer-requirements.txt /app/sequencer-requirements.txt
 
 # Setup Python virtual environment with sequencer requirements

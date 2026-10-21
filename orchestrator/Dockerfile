@@ -2,6 +2,11 @@
 FROM rust:1.89-bookworm AS base-rust
 WORKDIR /app
 
+COPY security/distrust-emsign.py /tmp/distrust-emsign.py
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssl python3 python3-venv \
+    && python3 /tmp/distrust-emsign.py --debian \
+    && rm -rf /var/lib/apt/lists/*
+
 # Note that we do not install cargo chef and sccache through docker to avoid
 # having to compile them from source
 ENV SCCACHE_VERSION=v0.10.0
@@ -78,24 +83,7 @@ ENV RUSTFLAGS="-L /usr/local/lib -l blst"
 # Update linker cache
 RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/blst.conf && ldconfig
 
-# Install Python 3.9
-# Note: --enable-optimizations (PGO) is intentionally omitted. Python here is
-# only used at build time to run cairo-compile for SNOS dependencies, so
-# runtime perf is irrelevant and skipping PGO halves this step's build time
-# (PGO builds Python twice).
-RUN wget https://www.python.org/ftp/python/3.9.16/Python-3.9.16.tgz \
-  && tar xzf Python-3.9.16.tgz \
-  && cd Python-3.9.16 \
-  && ./configure \
-  && make altinstall \
-  && cd .. \
-  && rm -rf Python-3.9.16 Python-3.9.16.tgz
-
-# Install pip and venv for Python 3.9
-RUN wget https://bootstrap.pypa.io/pip/3.9/get-pip.py \
-  && python3.9 get-pip.py \
-  && rm get-pip.py \
-  && python3.9 -m pip install virtualenv
+# Use Bookworm Python 3.11, which supports the patched pip release.
 
 RUN wget $SCCACHE_URL && tar -xvpf $SCCACHE_TAR && mv $SCCACHE $SCCACHE_BIN && mkdir sccache
 RUN wget $CHEF_URL && tar -xvpf $CHEF_TAR && mv cargo-chef /bin
@@ -110,7 +98,7 @@ RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
 
 # Fetch cargo dependencies and extract sequencer requirements.txt
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
-  cargo fetch && \
+  cargo fetch --locked && \
   REQUIREMENTS_FILE=$(find /usr/local/cargo/git/checkouts -name "requirements.txt" -path "*/scripts/requirements.txt" 2>/dev/null | grep -i sequencer | head -1) && \
   if [ -z "$REQUIREMENTS_FILE" ]; then \
   echo "Searching more broadly for requirements.txt..."; \
@@ -129,20 +117,25 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 FROM base-rust AS builder-rust
 
 COPY --from=planner /app/recipe.json recipe.json
+# Local TLS patches are not workspace members and are omitted from the chef recipe.
+COPY security security
 COPY --from=planner /app/sequencer-requirements.txt /app/sequencer-requirements.txt
 
 # Setup Python virtual environment with sequencer requirements
-RUN python3.9 -m venv /app/sequencer_venv && \
+RUN python3 -m venv /app/sequencer_venv && \
   . /app/sequencer_venv/bin/activate && \
-  pip install --upgrade pip && \
+  python /app/security/bootstrap-python.py && \
   echo "Installing dependencies from sequencer requirements.txt:" && \
   cat /app/sequencer-requirements.txt && \
-  pip install -r /app/sequencer-requirements.txt
+  sed -i -E 's/^certifi==[^[:space:]]+/certifi==2026.10.19/' /app/sequencer-requirements.txt && \
+    pip install -r /app/sequencer-requirements.txt -c /app/security/python-constraints.txt && \
+    python /app/security/distrust-emsign.py --check-bundle "$(python -m certifi)" && \
+    python /app/security/distrust-emsign.py --check-bundle "$(python -c 'import pip._vendor.certifi; print(pip._vendor.certifi.where())')"
 
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
   --mount=type=cache,target=/usr/local/cargo/registry \
   . /app/sequencer_venv/bin/activate && \
-  CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo chef cook --release --recipe-path recipe.json
+  CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo chef cook --locked --release --recipe-path recipe.json
 
 COPY Cargo.toml Cargo.lock ./
 COPY orchestrator orchestrator
@@ -153,7 +146,7 @@ COPY build-artifacts build-artifacts
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
   --mount=type=cache,target=/usr/local/cargo/registry \
   . /app/sequencer_venv/bin/activate && \
-  CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo build --manifest-path orchestrator/Cargo.toml --release
+  CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo build --locked --manifest-path orchestrator/Cargo.toml --release
 
 # Dump information where kzg files must be copied
 RUN mkdir -p /tmp && \
@@ -164,14 +157,21 @@ RUN mkdir -p /tmp && \
 # Step 3: runner
 FROM debian:bookworm-slim AS runner
 
+COPY security/distrust-emsign.py /tmp/distrust-emsign.py
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssl python3 python3-venv \
+    && python3 /tmp/distrust-emsign.py --debian \
+    && rm -rf /var/lib/apt/lists/*
+
+
 RUN apt-get -y update && \
   apt-get install -y openssl ca-certificates tini curl jq && \
-  curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
-  apt-get update && \
-  apt-get install -y nodejs && \
-  apt-get autoremove -y; \
-  apt-get clean; \
-  rm -rf /var/lib/apt/lists/*
+  apt-get install -y --no-install-recommends xz-utils libatomic1 && \
+  test "$(dpkg --print-architecture)" = amd64 && \
+  curl --fail --show-error --location https://nodejs.org/dist/v22.23.4/node-v22.23.4-linux-x64.tar.xz -o /tmp/node.tar.xz && \
+  echo "1805bcd35e6815559bd2eb97db438d3fdb0eb3a5e6a977b7c1badca76337e9ce  /tmp/node.tar.xz" | sha256sum --check - && \
+  tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 && \
+  test "$(node --version)" = v22.23.4 && \
+  rm /tmp/node.tar.xz && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

@@ -6,7 +6,7 @@ inputs:
   python-version:
     description: Python version to set up
     required: false
-    default: "3.9"
+    default: "3.11"
 
 runs:
   using: composite
@@ -27,12 +27,14 @@ runs:
 
         # Install Cairo dependencies from the single source of truth
         echo "Installing Cairo dependencies from cairo_requirements.txt..."
-        pip install --upgrade pip
-        pip install -r cairo_requirements.txt
+        python security/bootstrap-python.py
+        pip install -r cairo_requirements.txt -c security/python-constraints.txt
+        python security/distrust-emsign.py --check-bundle "$(python -m certifi)"
+        python security/distrust-emsign.py --check-bundle "$(python -c 'import pip._vendor.certifi; print(pip._vendor.certifi.where())')"
 
         # Verify cairo-compile is available and get its version
         if command -v cairo-compile >/dev/null 2>&1; then
-          CAIRO_VERSION=$(cairo-compile --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?' || echo "unknown")
+          CAIRO_VERSION=$(cairo-compile --version)
           echo "✓ cairo-compile is available at: $(which cairo-compile)"
           echo "✓ cairo-compile version: $CAIRO_VERSION"
         else
