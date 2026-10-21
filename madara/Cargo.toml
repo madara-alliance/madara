@@ -90,6 +90,7 @@ hyper-tls.workspace = true
 hyper-util.workspace = true
 ip_network.workspace = true
 jsonrpsee.workspace = true
+jsonrpsee-http-client.workspace = true
 rand.workspace = true
 rayon.workspace = true
 regex.workspace = true

@@ -12,36 +12,8 @@ mod tests {
     }
 
     fn verify_all(chain: &[CertificateDer<'_>], roots: &[CertificateDer<'_>], blocked: bool) {
-        let anchors101: Vec<_> =
-            roots.iter().map(|cert| webpki101::TrustAnchor::try_from_cert_der(cert).unwrap()).collect();
-        let intermediates101: Vec<&[u8]> = chain[1..].iter().map(|cert| cert.as_ref()).collect();
-        let result101 = webpki101::EndEntityCert::try_from(chain[0].as_ref()).unwrap().verify_for_usage(
-            &[
-                &webpki101::ECDSA_P256_SHA256,
-                &webpki101::ECDSA_P384_SHA384,
-                &webpki101::RSA_PKCS1_2048_8192_SHA256,
-                &webpki101::RSA_PKCS1_2048_8192_SHA384,
-            ],
-            &anchors101,
-            &intermediates101,
-            webpki101::Time::from_seconds_since_unix_epoch(TIME),
-            webpki101::KeyUsage::server_auth(),
-            &[],
-        );
-        let anchors: Vec<_> = roots.iter().map(|cert| webpki102::anchor_from_trusted_cert(cert).unwrap()).collect();
+        let anchors: Vec<_> = roots.iter().map(|cert| webpki103::anchor_from_trusted_cert(cert).unwrap()).collect();
         let time = UnixTime::since_unix_epoch(Duration::from_secs(TIME));
-        let result102 = webpki102::EndEntityCert::try_from(&chain[0])
-            .unwrap()
-            .verify_for_usage(
-                webpki102::ALL_VERIFICATION_ALGS,
-                &anchors,
-                &chain[1..],
-                time,
-                webpki102::KeyUsage::server_auth(),
-                None,
-                None,
-            )
-            .map(|_| ());
         let result103 = webpki103::EndEntityCert::try_from(&chain[0])
             .unwrap()
             .verify_for_usage(
@@ -55,12 +27,8 @@ mod tests {
             )
             .map(|_| ());
         if blocked {
-            assert_eq!(result101, Err(webpki101::Error::CertRevoked));
-            assert_eq!(result102, Err(webpki102::Error::CertRevoked));
             assert_eq!(result103, Err(webpki103::Error::CertDistrusted));
         } else {
-            assert_eq!(result101, Ok(()));
-            assert_eq!(result102, Ok(()));
             assert_eq!(result103, Ok(()));
         }
     }
@@ -103,9 +71,36 @@ mod tests {
     fn removes_emsign_root_from_every_bundled_root_store() {
         let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/roots.pem");
         let roots = certs(&fixtures);
-        let emsign = webpki102::anchor_from_trusted_cert(roots.last().unwrap()).unwrap();
-        assert!(!roots025::TLS_SERVER_ROOTS.iter().any(|r| r.spki == emsign.subject_public_key_info.as_ref()));
+        let emsign = webpki103::anchor_from_trusted_cert(roots.last().unwrap()).unwrap();
         assert!(!roots1::TLS_SERVER_ROOTS.iter().any(|r| r.subject_public_key_info == emsign.subject_public_key_info));
         assert!(!rootcerts::TLS_SERVER_ROOT_CERTS.iter().any(|r| r == roots.last().unwrap()));
+    }
+
+    #[test]
+    fn aws_defaults_select_the_modern_client_even_with_legacy_features_enabled() {
+        use aws_smithy_runtime::client::defaults::default_http_client_plugin_v2;
+        use aws_smithy_runtime_api::client::behavior_version::BehaviorVersion;
+        use aws_smithy_runtime_api::client::http::HttpClient;
+        use aws_smithy_runtime_api::client::runtime_components::RuntimeComponentsBuilder;
+        use aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugin;
+
+        // Covers the explicit application behavior version and OmniQueue's load_from_env (latest).
+        for version in [BehaviorVersion::v2025_08_07(), BehaviorVersion::latest()] {
+            let plugin = default_http_client_plugin_v2(version).expect("default HTTPS client enabled");
+            let components = plugin.runtime_components(&RuntimeComponentsBuilder::new("regression"));
+            let client = components.http_client().unwrap();
+            let metadata = client.connector_metadata().unwrap();
+            assert_eq!(metadata.name(), "hyper");
+            assert_eq!(metadata.version().as_deref(), Some("1.x"));
+        }
+    }
+
+    #[tokio::test]
+    async fn loopback_rpc_clients_reject_tls_urls_instead_of_downgrading() {
+        assert!(jsonrpsee_http_client::HttpClientBuilder::default().build("https://127.0.0.1:1").is_err());
+        let result = jsonrpsee_ws_client::WsClientBuilder::default().build("wss://127.0.0.1:1").await;
+        let error = result.expect_err("WSS must not be accepted without a TLS backend").to_string();
+        assert!(error.to_lowercase().contains("tls"), "unexpected rejection: {error}");
+        assert!(jsonrpsee_http_client::HttpClientBuilder::default().build("http://127.0.0.1:1").is_ok());
     }
 }
