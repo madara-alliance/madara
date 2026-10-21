@@ -1,5 +1,0 @@
-
-# Collapse unchanged third-party TLS sources in review; inspect the backport diff.
-security/vendor/** linguist-vendored linguist-generated
-security/vendor/backport.patch linguist-vendored=false linguist-generated=false
-security/vendor/provenance.json linguist-vendored=false linguist-generated=false

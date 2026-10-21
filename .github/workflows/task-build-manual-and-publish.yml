@@ -82,7 +82,9 @@ jobs:
 
       - name: Run cargo check
         if: ${{ !inputs.skip-cargo-check }}
-        run: cargo check --locked
+        run: |
+          cargo check --locked
+          cargo check --locked --tests -p orchestrator -p mc-rpc -p mc-external-db -p e2e-tests -p e2e
 
       - name: Tags
         id: tag

@@ -91,6 +91,7 @@ hyper-util.workspace = true
 ip_network.workspace = true
 jemallocator = "0.5.4"
 jsonrpsee.workspace = true
+jsonrpsee-http-client.workspace = true
 rand.workspace = true
 rayon.workspace = true
 regex.workspace = true
