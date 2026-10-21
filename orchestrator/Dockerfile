@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && python3 /tmp/distrust-emsign.py --debian \
     && rm -rf /var/lib/apt/lists/*
 
-# Note that we do not install sccache through cargo to avoid
+# Note that we do not install cargo chef and sccache through docker to avoid
 # having to compile them from source
 ENV SCCACHE_VERSION=v0.10.0
 ENV SCCACHE_URL=https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz
@@ -15,6 +15,10 @@ ENV SCCACHE_TAR=sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz
 ENV SCCACHE_BIN=/bin/sccache
 ENV SCCACHE_DIR=/sccache
 ENV SCCACHE=sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl/sccache
+
+ENV CHEF_VERSION=v0.1.71
+ENV CHEF_URL=https://github.com/LukeMathWalker/cargo-chef/releases/download/${CHEF_VERSION}/cargo-chef-x86_64-unknown-linux-gnu.tar.gz
+ENV CHEF_TAR=cargo-chef-x86_64-unknown-linux-gnu.tar.gz
 
 ENV RUSTC_WRAPPER=/bin/sccache
 
@@ -82,11 +86,15 @@ RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/blst.conf && ldconfig
 # Use Bookworm Python 3.11, which supports the patched pip release.
 
 RUN wget $SCCACHE_URL && tar -xvpf $SCCACHE_TAR && mv $SCCACHE $SCCACHE_BIN && mkdir sccache
+RUN wget $CHEF_URL && tar -xvpf $CHEF_TAR && mv cargo-chef /bin
 
 # Step 1: Cache dependencies
 FROM base-rust AS planner
 
 COPY . .
+RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
+  --mount=type=cache,target=/usr/local/cargo/registry \
+  RUST_BUILD_DOCKER=1 cargo chef prepare --recipe-path recipe.json
 
 # Fetch cargo dependencies and extract sequencer requirements.txt
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
@@ -108,7 +116,9 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 # Step 2: Build crate
 FROM base-rust AS builder-rust
 
-COPY . .
+COPY --from=planner /app/recipe.json recipe.json
+# Local TLS patches are not workspace members and are omitted from the chef recipe.
+COPY security security
 COPY --from=planner /app/sequencer-requirements.txt /app/sequencer-requirements.txt
 
 # Setup Python virtual environment with sequencer requirements
@@ -121,7 +131,17 @@ RUN python3 -m venv /app/sequencer_venv && \
     python /app/security/distrust-emsign.py --check-bundle "$(python -m certifi)" && \
     python /app/security/distrust-emsign.py --check-bundle "$(python -c 'import pip._vendor.certifi; print(pip._vendor.certifi.where())')"
 
-# Compile the actual vendored verifier sources; cargo-chef skeletons must not replace them.
+RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
+  --mount=type=cache,target=/usr/local/cargo/registry \
+  . /app/sequencer_venv/bin/activate && \
+  CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo chef cook --locked --release --recipe-path recipe.json
+
+COPY Cargo.toml Cargo.lock ./
+COPY orchestrator orchestrator
+COPY test_utils test_utils
+COPY build-artifacts build-artifacts
+
+# Run cargo build with venv activateed
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
   --mount=type=cache,target=/usr/local/cargo/registry \
   . /app/sequencer_venv/bin/activate && \

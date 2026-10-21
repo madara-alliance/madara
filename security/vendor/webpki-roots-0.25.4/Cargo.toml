@@ -69,3 +69,7 @@ version = "0.15.1"
 
 [dev-dependencies.yasna]
 version = "0.5.2"
+
+[lib]
+test = false
+doctest = false
