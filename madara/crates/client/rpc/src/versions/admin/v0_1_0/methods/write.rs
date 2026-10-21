@@ -99,12 +99,13 @@ fn schedule_global_cancel(ctx: mp_utils::service::ServiceContext) {
 }
 
 // Only include services controlled by ServiceMonitor.
-fn services_to_stop_for_revert() -> [MadaraServiceId; 6] {
+fn services_to_stop_for_revert() -> [MadaraServiceId; 7] {
     [
         MadaraServiceId::L1Sync,
         MadaraServiceId::L2Sync,
         MadaraServiceId::BlockProduction,
         MadaraServiceId::RpcUser,
+        MadaraServiceId::RpcCommittedData,
         MadaraServiceId::Gateway,
         MadaraServiceId::Mempool,
     ]
@@ -493,8 +494,7 @@ mod tests {
         InvokeTransaction, InvokeTransactionV1, L1HandlerTransaction, Transaction,
     };
     use mp_utils::service::{MadaraServiceMask, MadaraServiceStatus, ServiceContext};
-    use std::sync::Arc;
-    use std::time::Duration;
+    use std::{sync::Arc, time::Duration};
 
     fn make_starknet(backend: Arc<MadaraBackend>, ctx: ServiceContext) -> Starknet {
         let provider = Arc::new(TestTransactionProvider);

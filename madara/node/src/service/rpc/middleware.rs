@@ -8,6 +8,10 @@ use std::time::Instant;
 
 pub use super::metrics::Metrics;
 
+fn trace_rpc_body(method: &str) -> bool {
+    !method.contains("CommittedData")
+}
+
 #[derive(Debug, Clone)]
 pub struct RpcMiddlewareLayerMetrics {
     metrics: Metrics,
@@ -57,11 +61,13 @@ where
         async move {
             let now = std::time::Instant::now();
 
-            tracing::trace!(
-                target: "rpc_raw_request",
-                "{:?}",
-                req.params().as_str()
-            );
+            // Private datasets and witness requests must not enter raw RPC parameter logs.
+            // Both import methods carry raw dataset values, including the combined
+            // import-and-submit method. Skip traces for every committed-data RPC.
+            let trace_body = trace_rpc_body(&req.method);
+            if trace_body {
+                tracing::trace!(target: "rpc_raw_request", "{:?}", req.params().as_str());
+            }
 
             metrics.on_call(&req);
             let rp = inner.call(req.clone()).await;
@@ -80,17 +86,28 @@ where
                 "{method} {status} {res_len} - {response_time} micros"
             );
 
-            tracing::trace!(
-                target: "rpc_raw_response",
-                "{:?}",
-                rp.as_result()
-            );
+            if trace_body {
+                tracing::trace!(target: "rpc_raw_response", "{:?}", rp.as_result());
+            }
 
             metrics.on_response(&req, &rp, now);
 
             rp
         }
         .boxed()
+    }
+}
+
+#[cfg(test)]
+mod committed_data_tests {
+    use super::trace_rpc_body;
+
+    #[test]
+    fn raw_traces_exclude_both_dataset_import_methods() {
+        assert!(!trace_rpc_body("madara_V0_1_0_importCommittedDataSet"));
+        assert!(!trace_rpc_body("madara_V0_1_0_importCommittedDataAndSubmitTransaction"));
+        assert!(!trace_rpc_body("madara_V0_1_0_getCommittedDataWitness"));
+        assert!(trace_rpc_body("starknet_V0_10_2_getBlockWithTxHashes"));
     }
 }
 

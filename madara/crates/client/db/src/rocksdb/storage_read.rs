@@ -2,8 +2,40 @@
 //! Individual method semantics are documented by [`MadaraStorageRead`].
 
 use super::*;
+use crate::storage::CommittedDataPageEntries;
 
 impl MadaraStorageRead for RocksDBStorage {
+    fn list_committed_data_versions(
+        &self,
+        after: Option<mp_gateway::committed_data::CommittedDataVersion>,
+    ) -> Result<Vec<mp_gateway::committed_data::CommittedDataVersion>> {
+        self.read_committed_data_versions(after)
+    }
+
+    fn has_committed_data_version(&self, version: mp_gateway::committed_data::CommittedDataVersion) -> Result<bool> {
+        self.contains_committed_data_version(version)
+    }
+
+    fn get_committed_data_witness(
+        &self,
+        root: Felt,
+        index: Felt,
+    ) -> Result<Option<blockifier::execution::syscalls::committed_data::CommittedDataWitness>> {
+        self.read_committed_data_witness(root, index)
+    }
+
+    fn list_committed_data_roots(&self, after: Option<Felt>) -> Result<Vec<Felt>> {
+        self.read_committed_data_roots(after)
+    }
+
+    fn get_committed_data_count(&self, root: Felt) -> Result<Option<u32>> {
+        self.read_committed_data_count(root)
+    }
+
+    fn get_committed_data_page(&self, root: Felt, start: u32) -> Result<Option<CommittedDataPageEntries>> {
+        self.read_committed_data_page(root, start)
+    }
+
     // Blocks
 
     fn find_block_hash(&self, block_hash: &Felt) -> Result<Option<u64>> {

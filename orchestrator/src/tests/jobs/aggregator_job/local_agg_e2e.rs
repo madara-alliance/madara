@@ -57,11 +57,10 @@ const SEPOLIA_STRK_FEE_TOKEN: &str = "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd6
 const SNOS_PIE_FILES: [&str; 4] =
     ["snos_sepolia_8059997.zip", "snos_sepolia_8059998.zip", "snos_sepolia_8059999.zip", "snos_sepolia_8060000.zip"];
 
-/// Expected aggregator fact hash when the four SNOS PIEs above are aggregated.
-/// Pinning this value turns any drift in `run_local_aggregator` or `get_fact_info` into
-/// a loud test failure.
-/// State update transaction with this fact - https://sepolia.etherscan.io/tx/0x210ce8de99bfc31ddf1d6c62665210bb23c9ec975fd1a6ff7ce0c7124c8e6140
-const EXPECTED_AGG_FACT: &str = "0x567583b3f11c269a52e29622b95e7be9b0a1a195c0df9ad3e052b4c82163a6dc";
+/// Expected fact for these historical outputs under the currently pinned committed-data OS hash.
+/// This checks the local aggregator's fact calculation; it does not establish that these
+/// historical blocks were proved under the committed-data OS.
+const EXPECTED_AGG_FACT: &str = "0xfc22d84114ae631d65cd3b9beeb26d67f31a3e9576a756d7476dd6f3214919dc";
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]

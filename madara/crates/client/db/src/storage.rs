@@ -13,6 +13,9 @@ use mp_state_update::StateDiff;
 use mp_transactions::{validated::ValidatedTransaction, L1HandlerTransactionWithFee};
 use starknet_api::core::ChainId;
 
+/// Total dataset entry count and one bounded page of sorted felt key/value pairs.
+pub type CommittedDataPageEntries = (u32, Vec<(Felt, Felt)>);
+
 #[derive(Debug, Clone)]
 pub struct EventFilter {
     pub start_block: u64,
@@ -106,6 +109,43 @@ pub struct StoredChainInfo {
 
 /// Trait abstracting over the storage interface.
 pub trait MadaraStorageRead: Send + Sync + 'static {
+    /// Lists at most 64 namespace/root labels strictly after a lexical cursor. Rescan each pass.
+    fn list_committed_data_versions(
+        &self,
+        _after: Option<mp_gateway::committed_data::CommittedDataVersion>,
+    ) -> Result<Vec<mp_gateway::committed_data::CommittedDataVersion>> {
+        anyhow::bail!("Committed-data version storage is unsupported by this backend")
+    }
+
+    /// Tests membership in a namespace; this is not evidence of on-chain publication.
+    fn has_committed_data_version(&self, _version: mp_gateway::committed_data::CommittedDataVersion) -> Result<bool> {
+        anyhow::bail!("Committed-data version storage is unsupported by this backend")
+    }
+
+    /// Immutable private data; reads must be bounded by the proof path, not dataset size.
+    fn get_committed_data_witness(
+        &self,
+        _root: Felt,
+        _index: Felt,
+    ) -> Result<Option<blockifier::execution::syscalls::committed_data::CommittedDataWitness>> {
+        anyhow::bail!("Committed-data storage is unsupported by this backend")
+    }
+
+    /// Lists at most 64 complete root-keyed datasets strictly after the cursor.
+    fn list_committed_data_roots(&self, _after: Option<Felt>) -> Result<Vec<Felt>> {
+        anyhow::bail!("Committed-data storage is unsupported by this backend")
+    }
+
+    /// Returns the durable occupied count without reading value pages.
+    fn get_committed_data_count(&self, _root: Felt) -> Result<Option<u32>> {
+        anyhow::bail!("Committed-data storage is unsupported by this backend")
+    }
+
+    /// Returns the occupied count and up to 4096 values at an aligned offset.
+    fn get_committed_data_page(&self, _root: Felt, _start: u32) -> Result<Option<CommittedDataPageEntries>> {
+        anyhow::bail!("Committed-data storage is unsupported by this backend")
+    }
+
     // Blocks
 
     fn find_block_hash(&self, block_hash: &Felt) -> Result<Option<u64>>;
@@ -192,6 +232,29 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
 
 /// Trait abstracting over the storage interface.
 pub trait MadaraStorageWrite: Send + Sync + 'static {
+    /// Durably registers a namespace/root label only after its complete dataset is present.
+    /// A crash before this write may leave an unused dataset; replay is idempotent.
+    /// Initialization may only create an empty namespace or repeat an existing root.
+    /// Replication and explicit-base updates pass `initializing = false`.
+    fn write_committed_data_version(
+        &self,
+        _version: mp_gateway::committed_data::CommittedDataVersion,
+        _initializing: bool,
+    ) -> Result<()> {
+        anyhow::bail!("Committed-data version storage is unsupported by this backend")
+    }
+
+    /// Durably persists an authenticated immutable dataset, including the local confirmed-head
+    /// checkpoint observed at import admission. This does not establish on-chain publication.
+    /// Re-importing the same dataset must be idempotent; unsupported backends return an error.
+    fn write_committed_data_dataset(
+        &self,
+        _dataset: &blockifier::execution::syscalls::committed_data::CommittedDataSet,
+        _imported_after_block: Option<u64>,
+    ) -> Result<()> {
+        anyhow::bail!("Committed-data storage is unsupported by this backend")
+    }
+
     fn write_header(&self, header: BlockHeaderWithSignatures) -> Result<()>;
     fn write_transactions(&self, block_n: u64, txs: &[TransactionWithReceipt]) -> Result<()>;
     /// Mark L1 handler transactions in a fully confirmed block as consumed.

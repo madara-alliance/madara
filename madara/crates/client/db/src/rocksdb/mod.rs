@@ -45,6 +45,7 @@ mod backup;
 mod blocks;
 mod classes;
 mod column;
+mod committed_data;
 mod events;
 mod events_bloom_filter;
 pub(crate) mod external_outbox;
@@ -100,6 +101,8 @@ fn deserialize<T: serde::de::DeserializeOwned>(bytes: impl AsRef<[u8]>) -> Resul
 pub(crate) struct RocksDBStorageInner {
     db: DB,
     global_opts: RocksDBOptions,
+    // Serializes first-import metadata and repairs across cloned storage handles.
+    committed_data_write: std::sync::Mutex<()>,
     writeopts: WriteOptions,
     config: RocksDBConfig,
 }

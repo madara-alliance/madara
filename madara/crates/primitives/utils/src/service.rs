@@ -379,6 +379,7 @@ pub enum MadaraServiceId {
     Telemetry,
     Mempool,
     ExternalDb,
+    RpcCommittedData,
 }
 
 impl ServiceId for MadaraServiceId {
@@ -396,6 +397,7 @@ impl ServiceId for MadaraServiceId {
             MadaraServiceId::Telemetry => PowerOfTwo::P7,
             MadaraServiceId::Mempool => PowerOfTwo::P8,
             MadaraServiceId::ExternalDb => PowerOfTwo::P9,
+            MadaraServiceId::RpcCommittedData => PowerOfTwo::P10,
         }
     }
 }
@@ -417,6 +419,7 @@ impl Display for MadaraServiceId {
                 Self::Telemetry => "telemetry",
                 Self::Mempool => "mempool",
                 Self::ExternalDb => "external db",
+                Self::RpcCommittedData => "rpc committed data",
             }
         )
     }
@@ -452,6 +455,7 @@ impl From<PowerOfTwo> for MadaraServiceId {
             PowerOfTwo::P7 => Self::Telemetry,
             PowerOfTwo::P8 => Self::Mempool,
             PowerOfTwo::P9 => Self::ExternalDb,
+            PowerOfTwo::P10 => Self::RpcCommittedData,
             _ => Self::Monitor, // Default fallback for unknown values
         }
     }
@@ -596,11 +600,11 @@ impl MadaraServiceMask {
 
     fn active_set(&self) -> Vec<MadaraServiceId> {
         // NOTE: keep this cursor in sync with the highest `MadaraServiceId`
-        // variant. Any new variant added after `ExternalDb` MUST update this
+        // variant. Any new variant added after `RpcCommittedData` MUST update this
         // start value, otherwise it will be silently omitted from the iteration
         // (only used by `tracing::debug!` so the impact is incomplete debug
         // output, but the bug is easy to miss).
-        let mut i = MadaraServiceId::ExternalDb.svc_id() as u64;
+        let mut i = MadaraServiceId::RpcCommittedData.svc_id() as u64;
         let state = self.value();
         let mut set = Vec::with_capacity(SERVICE_COUNT_MAX);
 

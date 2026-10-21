@@ -90,6 +90,11 @@ impl From<StatsLevel> for mc_db::rocksdb::StatsLevel {
 
 #[derive(Clone, Debug, clap::Args, Deserialize, Serialize)]
 pub struct BackendParams {
+    /// Permit committed-data reads in account execution. Must match the replay/prover setting.
+    #[arg(long, env = "MADARA_USE_COMMITTED_DATA", default_value_t = false)]
+    #[serde(default)]
+    pub use_committed_data: bool,
+
     /// The path where madara will store the database. You should probably change it.
     #[clap(env = "MADARA_BASE_PATH", long, default_value = "/tmp/madara", value_name = "PATH")]
     pub base_path: PathBuf,
@@ -394,6 +399,7 @@ impl BackendParams {
         let max_memory_bytes = self.exec_read_cache_max_memory_mib.saturating_mul(MiB);
 
         MadaraBackendConfig {
+            use_committed_data: self.use_committed_data,
             flush_every_n_blocks: self.flush_every_n_blocks,
             save_preconfirmed: !self.no_save_preconfirmed,
             unsafe_starting_block: self.unsafe_starting_block,
@@ -430,5 +436,31 @@ impl BackendParams {
             soft_pending_compaction_bytes_limit: self.db_soft_pending_compaction_gib * GiB,
             hard_pending_compaction_bytes_limit: self.db_hard_pending_compaction_gib * GiB,
         }
+    }
+}
+
+#[cfg(test)]
+mod committed_data_tests {
+    use super::*;
+    use clap::Parser;
+
+    #[derive(Parser)]
+    struct Args {
+        #[command(flatten)]
+        backend: BackendParams,
+    }
+
+    #[test]
+    fn committed_data_settings_are_node_local_and_opt_in() {
+        let defaults = Args::try_parse_from(["test"]).unwrap().backend;
+        let config = defaults.backend_config();
+        assert!(!config.use_committed_data);
+        let enabled = Args::try_parse_from(["test", "--use-committed-data"]).unwrap().backend;
+        let config = enabled.backend_config();
+        assert!(config.use_committed_data);
+        let mut old = serde_json::to_value(defaults).unwrap();
+        old.as_object_mut().unwrap().remove("use_committed_data");
+        let restored = serde_json::from_value::<BackendParams>(old).unwrap().backend_config();
+        assert!(!restored.use_committed_data);
     }
 }

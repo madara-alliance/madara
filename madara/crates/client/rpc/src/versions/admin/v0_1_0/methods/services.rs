@@ -9,11 +9,12 @@ use crate::{
 };
 
 const RESTART_INTERVAL: Duration = Duration::from_secs(5);
-const DEFAULT_EXTERNALLY_CONTROLLABLE_SERVICES: [MadaraServiceId; 6] = [
+const DEFAULT_EXTERNALLY_CONTROLLABLE_SERVICES: [MadaraServiceId; 7] = [
     MadaraServiceId::L1Sync,
     MadaraServiceId::L2Sync,
     MadaraServiceId::BlockProduction,
     MadaraServiceId::RpcUser,
+    MadaraServiceId::RpcCommittedData,
     MadaraServiceId::Gateway,
     MadaraServiceId::Mempool,
 ];

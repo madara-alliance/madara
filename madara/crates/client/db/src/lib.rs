@@ -408,6 +408,9 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     #[cfg(any(test, feature = "testing"))]
     _temp_dir: Option<tempfile::TempDir>,
 
+    /// Bounded cache of authenticated immutable datasets; empty until import.
+    committed_data_cache: committed_data::SnapshotCache,
+
     /// Custom headers used during block replay to ensure deterministic execution.
     ///
     /// When replaying a block, we must match the exact timestamp and gas configuration
@@ -444,6 +447,10 @@ pub struct ExecutionReadCacheConfig {
 
 #[derive(Debug, Default)]
 pub struct MadaraBackendConfig {
+    /// Permit committed reads during account execution, independently of dataset ingestion.
+    /// L1 handlers must not read committed data, directly or through another contract;
+    /// their availability-failure semantics are unsupported.
+    pub use_committed_data: bool,
     pub flush_every_n_blocks: Option<u64>,
     /// When false, the preconfirmed block is never saved to database.
     pub save_preconfirmed: bool,
@@ -476,4 +483,5 @@ mod head_projection;
 mod writer;
 pub use writer::MadaraBackendWriter;
 
+mod committed_data;
 mod service_storage;
