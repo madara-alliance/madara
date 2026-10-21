@@ -14,5 +14,5 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.89.0
       - name: Check workspace dependency coverage
         run: python3 security/check-lock.py
-      - name: Check all Rust verifier generations and root stores
+      - name: Check upstream TLS fixes and client selection
         run: cargo test --locked --manifest-path security/tls-regression/Cargo.toml
