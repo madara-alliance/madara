@@ -137,10 +137,8 @@ RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
   . /app/sequencer_venv/bin/activate && \
   CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo chef cook --locked --release --recipe-path recipe.json
 
-COPY Cargo.toml Cargo.lock ./
-COPY orchestrator orchestrator
-COPY test_utils test_utils
-COPY build-artifacts build-artifacts
+COPY Cargo.toml Cargo.lock .db-versions.yml ./
+COPY madara orchestrator e2e e2e-tests build-artifacts test_utils ./
 
 # Run cargo build with venv activateed
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
