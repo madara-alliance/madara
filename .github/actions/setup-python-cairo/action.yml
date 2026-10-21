@@ -11,6 +11,10 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Remove compromised CA roots
+      shell: bash
+      run: sudo python3 security/distrust-emsign.py --debian
+
     - name: Setup Python
       uses: actions/setup-python@v6
       with:
