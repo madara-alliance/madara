@@ -340,6 +340,10 @@ time = "0.3"
 zip = "4.3.0"
 
 [patch.crates-io]
+# Legacy TLS clients: narrowly scoped emSign distrust backports (see security/README.md).
+rustls-webpki-0101 = { package = "rustls-webpki", path = "security/vendor/rustls-webpki-0.101.7" }
+rustls-webpki-0102 = { package = "rustls-webpki", path = "security/vendor/rustls-webpki-0.102.8" }
+webpki-roots-025 = { package = "webpki-roots", path = "security/vendor/webpki-roots-0.25.4" }
 cairo-native = { git = "https://github.com/karnotxyz/cairo_native", rev = "eb59cc0af7d854e60451fe6c6696ead71d2fada7" }
 jsonrpsee-core = { git = "https://github.com/madara-alliance/jsonrpsee", rev = "52c76441b922b9d1c6b260fcb29d62e94a8ca57c" }
 jsonrpsee-types = { git = "https://github.com/madara-alliance/jsonrpsee", rev = "52c76441b922b9d1c6b260fcb29d62e94a8ca57c" }
