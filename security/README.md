@@ -20,8 +20,9 @@ Rebuild and validate each deployed application revision before rolling it out.
   legitimate services still dependent on that legacy root. Test required
   upstream endpoints before promotion; do not bypass certificate validation.
 - Build with Python 3.11, pip 26.2.2 and certifi 2026.10.19. Check both certifi
-  bundles after Cairo dependency installation. The initial pip upgrade uses
-  only the sanitized system CA file.
+  bundles after Cairo dependency installation. Bootstrap the patched pip/certifi wheels with the sanitized system CA file and
+  pinned SHA256 hashes, then install them offline. This works with both old pip
+  and versions that removed the legacy-certs option.
 - Install Node 22.23.4 from the official x64 archive, checking its pinned SHA256
   against the published release checksum. Preserve existing migration behavior.
 - Use locked Cargo dependencies and fresh manual Docker builds. Copy the vendored
