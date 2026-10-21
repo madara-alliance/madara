@@ -47,6 +47,9 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Distrust compromised CA roots before downloading build tools
+        run: sudo python3 security/distrust-emsign.py --debian
+
       - name: Load env
         uses: ./.github/actions/load-env
 
@@ -64,11 +67,18 @@ jobs:
         with:
           python-version: ${{ env.BUILD_PYTHON_VERSION }}
 
+      - name: Verify compromised TLS keys are rejected
+        run: |
+          python3 security/check-lock.py
+          cargo test --locked --manifest-path security/tls-regression/Cargo.toml
+
       - name: Run make artifacts
         run: yes | make artifacts
 
       - name: Run cargo check
-        run: cargo check
+        run: |
+          cargo check --locked
+          cargo check --locked --tests -p orchestrator -p mc-rpc -p mc-external-db -p e2e-tests -p e2e
 
       - name: Tags
         id: tag
@@ -112,5 +122,7 @@ jobs:
         with:
           context: .
           push: true
+          pull: true
+          no-cache: true
           file: ${{ inputs.image-file }}
           tags: ${{ steps.tag.outputs.tags }}
