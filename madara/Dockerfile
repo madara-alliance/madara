@@ -97,6 +97,7 @@ RUN python3 -m venv /app/sequencer_venv && \
     python /app/security/bootstrap-python.py && \
     echo "Installing dependencies from sequencer requirements.txt:" && \
     cat /app/sequencer-requirements.txt && \
+    sed -i -E 's/^certifi==[^[:space:]]+/certifi==2026.10.19/' /app/sequencer-requirements.txt && \
     pip install -r /app/sequencer-requirements.txt -c /app/security/python-constraints.txt && \
     python /app/security/distrust-emsign.py --check-bundle "$(python -m certifi)" && \
     python /app/security/distrust-emsign.py --check-bundle "$(python -c 'import pip._vendor.certifi; print(pip._vendor.certifi.where())')"
