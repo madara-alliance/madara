@@ -8,10 +8,8 @@ use crate::{
     Starknet,
 };
 use assert_matches::assert_matches;
-use jsonrpsee::{
-    core::{client::SubscriptionClientT, params::ObjectParams},
-    ws_client::WsClientBuilder,
-};
+use jsonrpsee::core::{client::SubscriptionClientT, params::ObjectParams};
+use jsonrpsee_ws_client::WsClientBuilder;
 use mc_db::preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction};
 use mp_block::{header::PreconfirmedHeader, FullBlockWithoutCommitments, TransactionWithReceipt};
 use mp_chain_config::StarknetVersion;
@@ -110,7 +108,7 @@ async fn start_server_v0_10_0(starknet: Starknet) -> (jsonrpsee::server::ServerH
 }
 
 async fn raw_subscribe_new_heads(
-    client: &jsonrpsee::ws_client::WsClient,
+    client: &jsonrpsee_ws_client::WsClient,
     block_id: BlockId,
 ) -> jsonrpsee::core::client::Subscription<Value> {
     let mut params = ObjectParams::new();
@@ -119,7 +117,7 @@ async fn raw_subscribe_new_heads(
 }
 
 async fn raw_subscribe_transaction_status(
-    client: &jsonrpsee::ws_client::WsClient,
+    client: &jsonrpsee_ws_client::WsClient,
     transaction_hash: Felt,
 ) -> jsonrpsee::core::client::Subscription<Value> {
     let mut params = ObjectParams::new();
@@ -128,20 +126,20 @@ async fn raw_subscribe_transaction_status(
 }
 
 async fn raw_subscribe_new_transaction_receipts(
-    client: &jsonrpsee::ws_client::WsClient,
+    client: &jsonrpsee_ws_client::WsClient,
 ) -> jsonrpsee::core::client::Subscription<Value> {
     raw_subscribe_new_transaction_receipts_with_params(client, ObjectParams::new()).await
 }
 
 async fn raw_subscribe_new_transaction_receipts_with_params(
-    client: &jsonrpsee::ws_client::WsClient,
+    client: &jsonrpsee_ws_client::WsClient,
     params: ObjectParams,
 ) -> jsonrpsee::core::client::Subscription<Value> {
     raw_subscribe(client, "starknet_V0_10_2_subscribeNewTransactionReceipts", params).await
 }
 
 async fn raw_subscribe(
-    client: &jsonrpsee::ws_client::WsClient,
+    client: &jsonrpsee_ws_client::WsClient,
     method: &'static str,
     params: ObjectParams,
 ) -> jsonrpsee::core::client::Subscription<Value> {
