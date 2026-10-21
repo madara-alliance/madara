@@ -24,9 +24,9 @@ Rebuild and validate each deployed application revision before rolling it out.
   only the sanitized system CA file.
 - Install Node 22.23.4 from the official x64 archive, checking its pinned SHA256
   against the published release checksum. Preserve existing migration behavior.
-- Use locked Cargo dependencies and fresh manual Docker builds. Compile actual
-  vendored sources directly; cargo-chef skeleton generation must not substitute
-  the local TLS backports. Existing sccache compilation caching remains available.
+- Use locked Cargo dependencies and fresh manual Docker builds. Copy the vendored
+  sources into dependency build stages: non-workspace patch crates are omitted
+  from cargo-chef recipes. Preserve existing compilation caching and build profiles.
 
 ## Review the vendored backport
 
