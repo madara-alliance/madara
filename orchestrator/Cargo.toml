@@ -37,6 +37,7 @@ bincode = { workspace = true }
 blockifier = { git = "https://github.com/madara-alliance/sequencer", rev = "9a919da83014beec95d5e1f24ad2b1eaabbf3de1", features = [
   "node_api",
 ] }
+bson = { workspace = true, optional = true }
 bytes.workspace = true
 cairo-vm = { workspace = true }
 chrono = { workspace = true }
@@ -53,7 +54,7 @@ majin-blob-core = { workspace = true }
 majin-blob-types = { workspace = true }
 mockall = { workspace = true }
 mockall_double = { workspace = true }
-mongodb = { workspace = true, features = ["bson-uuid-1"], optional = true }
+mongodb = { workspace = true, optional = true }
 num-bigint = { workspace = true }
 num-traits = { workspace = true }
 omniqueue = { workspace = true, optional = true }
@@ -134,7 +135,7 @@ tracing-test = "0.2.5"
 default = ["ethereum", "with_mongodb", "with_sqs", "starknet"]
 ethereum = ["orchestrator-ethereum-da-client"]
 starknet = ["orchestrator-starknet-da-client"]
-with_mongodb = ["mongodb"]
+with_mongodb = ["mongodb", "bson"]
 with_sqs = ["omniqueue"]
 testing = ["orchestrator-ethereum-settlement-client/testing"]
 

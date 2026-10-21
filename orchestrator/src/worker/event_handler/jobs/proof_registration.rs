@@ -124,10 +124,7 @@ impl JobHandlerTrait for RegisterProofJobHandler {
             }
             TaskStatus::Failed(err) => {
                 warn!(log_type = "rejected", job_id = %job.id, "{:?} job {} verification failed", JobType::ProofRegistration, internal_id);
-                Ok(JobVerificationStatus::Rejected(format!(
-                    "Proof registration job #{} failed with error: {}",
-                    internal_id, err
-                )))
+                Ok(JobVerificationStatus::Rejected(format!("Proof registration task {} failed: {}", task_id, err)))
             }
         }
     }

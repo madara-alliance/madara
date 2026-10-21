@@ -13,6 +13,7 @@ pub(crate) use orchestrator_ethereum_settlement_client::conversion::hex_string_t
 // use starknet_os::io::output::StarknetOsOutput;
 use starknet_core::types::Felt;
 
+pub mod alerts;
 pub mod conversion;
 pub mod encrypted_blob;
 pub mod fact_info;
