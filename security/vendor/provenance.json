@@ -2,16 +2,41 @@
   {
     "package": "rustls-webpki",
     "version": "0.101.7",
-    "archive_sha256": "8b6275d1ee7a1cd780b64aca7726599a1dbc893b1e64144529e55c3c2f745765"
+    "archive_sha256": "8b6275d1ee7a1cd780b64aca7726599a1dbc893b1e64144529e55c3c2f745765",
+    "import_scope": "Cargo manifests, licenses, README, src; test/benchmark targets disabled",
+    "distrust_source": "rustls-webpki 0.103.16, crates.io archive sha256 4443b1b6d39d7c663139942cc4558262562d2c84123bb6282ef177009ca8b281",
+    "distrusted_spki_sha256": {
+      "EMDVTLSCAG3B.spki.der": "2d5f988ee3ceaf696845a34299ca3e05816429cdb5de92427889533175f97b95",
+      "EMDVTLSCAG3C.spki.der": "616e9a92539c40f454813f7fb8ae4a6db719498495215774f02d8b8b5a615d36",
+      "EMEVTLSCAG3B.spki.der": "bdf5ab18303069ebc3e3ddbb0fc0613693acef01b2fb7be1a0624aab60fbff0d",
+      "EMEVTLSCAG3C.spki.der": "b941c7577b918f7b9a9374aff3b02d8eda92545c86adb5b5268d1e121fe58ce2",
+      "EMOVCSCAG3B.spki.der": "e8263cea915a92109a29fb497105dceeeb58fa099c2552c4082aff1e1a9a33b2",
+      "EMOVCSCAG3C.spki.der": "09f75d128061fcdc6d31d8317ce3fe0aea4dab2c66777ce548858dd23f763ce7",
+      "EMOVTLSCAG3B.spki.der": "7f09de2d155cc9fbc2dc4585f2c134ea3fc04ea9d9b3e31fa2d6bf9fdc0a02a2",
+      "EMOVTLSCAG3C.spki.der": "6fc13706463e00b2cd2ae357f86de2441e59d501e322c7a02a531a9871e450f6"
+    }
   },
   {
     "package": "rustls-webpki",
     "version": "0.102.8",
-    "archive_sha256": "64ca1bc8749bd4cf37b5ce386cc146580777b4e8572c7b97baf22c83f444bee9"
+    "archive_sha256": "64ca1bc8749bd4cf37b5ce386cc146580777b4e8572c7b97baf22c83f444bee9",
+    "import_scope": "Cargo manifests, licenses, README, src; test/benchmark targets disabled",
+    "distrust_source": "rustls-webpki 0.103.16, crates.io archive sha256 4443b1b6d39d7c663139942cc4558262562d2c84123bb6282ef177009ca8b281",
+    "distrusted_spki_sha256": {
+      "EMDVTLSCAG3B.spki.der": "2d5f988ee3ceaf696845a34299ca3e05816429cdb5de92427889533175f97b95",
+      "EMDVTLSCAG3C.spki.der": "616e9a92539c40f454813f7fb8ae4a6db719498495215774f02d8b8b5a615d36",
+      "EMEVTLSCAG3B.spki.der": "bdf5ab18303069ebc3e3ddbb0fc0613693acef01b2fb7be1a0624aab60fbff0d",
+      "EMEVTLSCAG3C.spki.der": "b941c7577b918f7b9a9374aff3b02d8eda92545c86adb5b5268d1e121fe58ce2",
+      "EMOVCSCAG3B.spki.der": "e8263cea915a92109a29fb497105dceeeb58fa099c2552c4082aff1e1a9a33b2",
+      "EMOVCSCAG3C.spki.der": "09f75d128061fcdc6d31d8317ce3fe0aea4dab2c66777ce548858dd23f763ce7",
+      "EMOVTLSCAG3B.spki.der": "7f09de2d155cc9fbc2dc4585f2c134ea3fc04ea9d9b3e31fa2d6bf9fdc0a02a2",
+      "EMOVTLSCAG3C.spki.der": "6fc13706463e00b2cd2ae357f86de2441e59d501e322c7a02a531a9871e450f6"
+    }
   },
   {
     "package": "webpki-roots",
     "version": "0.25.4",
-    "archive_sha256": "5f20c57d8d7db6d3b86154206ae5d8fba62dd39573114de97c2cb0578251f8e1"
+    "archive_sha256": "5f20c57d8d7db6d3b86154206ae5d8fba62dd39573114de97c2cb0578251f8e1",
+    "import_scope": "Cargo manifests, licenses, README, src; test/benchmark targets disabled"
   }
 ]
