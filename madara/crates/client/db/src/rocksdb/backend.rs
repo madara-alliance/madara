@@ -156,6 +156,7 @@ impl RocksDBStorage {
 
     /// Opens Madara's RocksDB while preserving unknown legacy column families.
     pub fn open(path: &Path, config: RocksDBConfig) -> Result<Self> {
+        config.write_mode.validate()?;
         let opts = rocksdb_global_options(&config)?;
         tracing::debug!("Opening db at {:?}", path.display());
         let descriptors = Self::column_family_descriptors(path, &opts, &config)?;

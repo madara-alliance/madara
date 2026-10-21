@@ -39,7 +39,7 @@ impl RocksDBStorageInner {
     #[tracing::instrument(skip(self, tx), fields(module = "MempoolDB"))]
     pub(super) fn write_mempool_transaction(&self, tx: &ValidatedTransaction) -> Result<()> {
         let col = self.get_column(MEMPOOL_TRANSACTIONS_COLUMN);
-        self.db.put_cf(&col, super::serialize(&tx.hash)?, super::serialize(&tx)?)?;
+        self.db.put_cf_opt(&col, super::serialize(&tx.hash)?, super::serialize(&tx)?, &self.writeopts)?;
         Ok(())
     }
 }

@@ -195,7 +195,7 @@ impl RocksDBStorageInner {
             }
 
             self.db
-                .write(batch)
+                .write_opt(batch, &self.writeopts)
                 .with_context(|| format!("Committing changes removing block_n={block_n} from database"))?;
         }
 

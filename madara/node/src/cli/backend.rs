@@ -212,6 +212,7 @@ pub struct BackendParams {
     /// Fsync forces data to disk before acknowledging writes, surviving power failures.
     /// Disabling relies on OS buffering (faster, survives crashes but not power loss).
     /// Recommended: false for production (good balance), true for maximum durability.
+    /// Requires WAL: the node refuses to open the database with fsync enabled and WAL disabled.
     #[clap(env = "MADARA_DB_FSYNC", long, default_value = "false")]
     pub db_fsync: bool,
 

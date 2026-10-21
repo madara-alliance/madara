@@ -312,9 +312,7 @@ impl RocksDBStorageInner {
         let mut batch = WriteBatchWithTransaction::default();
         self.replace_head_projection_in_batch(head_projection, &mut batch)?;
 
-        // Write head projection atomically
-        // Note: Using regular write opts (no fsync) for performance
-        // The head projection will be synced on next flush or graceful shutdown
+        // Write head projection atomically, with the configured durability like every other write.
         self.db.write_opt(batch, &self.writeopts)?;
         Ok(())
     }
