@@ -24,17 +24,18 @@ Rebuild and validate each deployed application revision before rolling it out.
   only the sanitized system CA file.
 - Install Node 22.23.4 from the official x64 archive, checking its pinned SHA256
   against the published release checksum. Preserve existing migration behavior.
-- Use locked Cargo dependencies and fresh manual Docker builds. Compile actual
-  vendored sources directly; cargo-chef skeleton generation must not substitute
-  the local TLS backports. Existing sccache compilation caching remains available.
+- Use locked Cargo dependencies and fresh manual Docker builds. Copy the vendored
+  sources into dependency build stages: non-workspace patch crates are omitted
+  from cargo-chef recipes. Preserve existing compilation caching and build profiles.
 
 ## Review the vendored backport
 
 `vendor/provenance.json` records the original crates.io archive checksums.
 `vendor/backport.patch` is the small text diff from those exact published sources.
 The only added verifier data are the eight `src/data/distrusted/*.spki.der` files
-copied byte-for-byte from rustls-webpki 0.103.16. Existing licenses and upstream
-tests are preserved. A scoped lifetime-syntax lint allowance is necessary because
+copied byte-for-byte from rustls-webpki 0.103.16. Licenses and build-required library sources are preserved. Upstream test fixtures,
+CI files and benchmarks are omitted to keep this import reviewable; manifest test
+targets are disabled. The independent incident regression suite remains enabled. A scoped lifetime-syntax lint allowance is necessary because
 Cargo does not cap lints for local path dependencies on Rust 1.89.
 
 The older packages deliberately retain their API-compatible version numbers.
