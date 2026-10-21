@@ -169,8 +169,11 @@ tracing-opentelemetry = "0.31.0"
 # Networking
 jsonrpsee = { version = "0.22", default-features = false, features = [
   "server",
-  "client",
+  "client-core",
 ] }
+# These clients only connect to local HTTP/WS endpoints; no TLS backend is enabled.
+jsonrpsee-http-client = { version = "0.22.5", default-features = false }
+jsonrpsee-ws-client = { version = "0.22.5", default-features = false }
 tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.4", features = ["cors"] }
 governor = "0.6"
@@ -189,7 +192,7 @@ reqwest = { version = "0.12.7", features = [
   "stream",
 ] }
 url = { version = "2.4", features = ["serde"] }
-bson = "2"
+bson = { version = "2", features = ["chrono-0_4", "uuid-1"] }
 
 # Async
 tokio = { version = "1.47", features = ["signal", "rt", "macros"] }
@@ -300,14 +303,14 @@ chrono = { version = "0.4", features = ["serde"] }
 c-kzg = "2.1.5"
 dotenvy = "0.15.7"
 log = "0.4.21"
-mongodb = { version = "2.8.1", features = ["bson-chrono-0_4"] }
-omniqueue = { git = "https://github.com/itsparser/omniqueue-rs", branch = "branch-from-0.2.0" }
+mongodb = "3.5.2"
+omniqueue = { git = "https://github.com/itsparser/omniqueue-rs", branch = "branch-from-0.2.0", default-features = false, features = ["sqs"] }
 tokio-stream = "0.1.15"
 uuid = { version = "1.20.0", features = ["v4", "serde"] }
 swiftness_proof_parser = "0.1.0"
 hex = "0.4"
 mockall_double = "0.3.1"
-testcontainers = "0.18.0"
+testcontainers = "0.21.1"
 env_logger = "0.11.5"
 strum_macros = "0.26.4"
 strum = "0.26.3"

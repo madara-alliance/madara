@@ -405,10 +405,8 @@ mod test {
         Starknet,
     };
     use assert_matches::assert_matches;
-    use jsonrpsee::{
-        core::{client::SubscriptionClientT, params::ObjectParams},
-        ws_client::WsClientBuilder,
-    };
+    use jsonrpsee::core::{client::SubscriptionClientT, params::ObjectParams};
+    use jsonrpsee_ws_client::WsClientBuilder;
     use mc_db::preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction};
     use mp_block::{header::PreconfirmedHeader, FullBlockWithoutCommitments, TransactionWithReceipt};
     use mp_chain_config::StarknetVersion;
@@ -486,7 +484,7 @@ mod test {
     }
 
     async fn raw_subscribe_events(
-        client: &jsonrpsee::ws_client::WsClient,
+        client: &jsonrpsee_ws_client::WsClient,
         block_id: Option<BlockId>,
     ) -> jsonrpsee::core::client::Subscription<Value> {
         let mut params = ObjectParams::new();

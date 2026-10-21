@@ -96,7 +96,7 @@ impl Service for SyncService {
                 deferred_service_stop,
             }) = this.warp_update
             {
-                let client = jsonrpsee::http_client::HttpClientBuilder::default()
+                let client = jsonrpsee_http_client::HttpClientBuilder::default()
                     .build(format!("http://localhost:{warp_update_port_rpc}"))
                     .expect("Building client");
 
