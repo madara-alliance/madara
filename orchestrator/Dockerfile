@@ -138,7 +138,12 @@ RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
   CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo chef cook --locked --release --recipe-path recipe.json
 
 COPY Cargo.toml Cargo.lock .db-versions.yml ./
-COPY madara orchestrator e2e e2e-tests build-artifacts test_utils ./
+COPY madara madara
+COPY orchestrator orchestrator
+COPY e2e e2e
+COPY e2e-tests e2e-tests
+COPY build-artifacts build-artifacts
+COPY test_utils test_utils
 
 # Run cargo build with venv activateed
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
