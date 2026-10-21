@@ -73,12 +73,10 @@ debug-assertions = false
 rpath = false
 
 [lib]
+test = false
+doctest = false
 name = "webpki"
 
-[[bench]]
-name = "benchmarks"
-path = "benches/benchmark.rs"
-harness = false
 
 [dependencies.ring]
 version = "0.17"
