@@ -124,7 +124,7 @@ COPY --from=planner /app/sequencer-requirements.txt /app/sequencer-requirements.
 # Setup Python virtual environment with sequencer requirements
 RUN python3 -m venv /app/sequencer_venv && \
   . /app/sequencer_venv/bin/activate && \
-  pip --use-deprecated=legacy-certs --cert /etc/ssl/certs/ca-certificates.crt install --upgrade pip==26.2.2 certifi==2026.10.19 && \
+  python /app/security/bootstrap-python.py && \
   echo "Installing dependencies from sequencer requirements.txt:" && \
   cat /app/sequencer-requirements.txt && \
   pip install -r /app/sequencer-requirements.txt -c /app/security/python-constraints.txt && \
