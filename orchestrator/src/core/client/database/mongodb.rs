@@ -102,7 +102,7 @@ impl MongoDbClient {
             IndexModel::builder().keys(doc! { "internal_id": 1 }).build(),
         ];
 
-        jobs_collection.create_indexes(jobs_indexes, None).await?;
+        jobs_collection.create_indexes(jobs_indexes).await?;
         info!("Created indexes for jobs collection");
 
         // Create indexes for aggregator batch collection
@@ -132,7 +132,7 @@ impl MongoDbClient {
                 .build(),
         ];
 
-        aggregator_collection.create_indexes(aggregator_indexes, None).await?;
+        aggregator_collection.create_indexes(aggregator_indexes).await?;
         info!("Created indexes for aggregator batch collection");
 
         // Create indexes for SNOS batch collection
@@ -164,7 +164,7 @@ impl MongoDbClient {
                 .build(),
         ];
 
-        snos_collection.create_indexes(snos_indexes, None).await?;
+        snos_collection.create_indexes(snos_indexes).await?;
         info!("Created indexes for SNOS batch collection");
 
         // Create indexes for per-block batch lookup collection
@@ -179,7 +179,7 @@ impl MongoDbClient {
             IndexModel::builder().keys(doc! { "aggregator_batch_index": 1 }).build(),
         ];
 
-        block_lookup_collection.create_indexes(block_lookup_indexes, None).await?;
+        block_lookup_collection.create_indexes(block_lookup_indexes).await?;
         info!("Created indexes for block batch lookup collection");
 
         Ok(())
@@ -215,7 +215,7 @@ impl MongoDbClient {
         self.database.collection(BLOCK_BATCH_LOOKUPS_COLLECTION)
     }
 
-    pub fn get_collection<T>(&self, name: &str) -> Collection<T> {
+    pub fn get_collection<T: Send + Sync>(&self, name: &str) -> Collection<T> {
         self.database.collection(name)
     }
 
@@ -265,14 +265,11 @@ impl MongoDbClient {
 
             let command_result = self
                 .database
-                .run_command(
-                    doc! {
-                        "update": BLOCK_BATCH_LOOKUPS_COLLECTION,
-                        "updates": Bson::Array(updates),
-                        "ordered": false,
-                    },
-                    None,
-                )
+                .run_command(doc! {
+                    "update": BLOCK_BATCH_LOOKUPS_COLLECTION,
+                    "updates": Bson::Array(updates),
+                    "ordered": false,
+                })
                 .await?;
 
             Self::ensure_bulk_update_command_succeeded(&command_result)?;
@@ -356,7 +353,6 @@ impl MongoDbClient {
                     "$unset": unset_doc,
                     "$set": { "updated_at": Bson::DateTime(Utc::now().round_subsecs(0).into()) },
                 },
-                None,
             )
             .await?;
 
@@ -469,7 +465,7 @@ impl MongoDbClient {
     where
         T: DeserializeOwned + Unpin + Send + Sync + Sized,
     {
-        Ok(collection.find_one(filter, None).await?)
+        Ok(collection.find_one(filter).await?)
     }
 
     /// update_one - Update one document in a collection
@@ -488,9 +484,9 @@ impl MongoDbClient {
         options: Option<UpdateOptions>,
     ) -> Result<UpdateResult, DatabaseError>
     where
-        T: Serialize + Sized,
+        T: Serialize + Send + Sync + Sized,
     {
-        let result = collection.update_one(filter, update, options).await?;
+        let result = collection.update_one(filter, update).with_options(options).await?;
         Ok(UpdateResult { matched_count: result.matched_count, modified_count: result.modified_count })
     }
 
@@ -506,9 +502,9 @@ impl MongoDbClient {
         filter: Document,
     ) -> Result<DeleteResult, DatabaseError>
     where
-        T: Serialize + Sized,
+        T: Serialize + Send + Sync + Sized,
     {
-        let result = collection.delete_one(filter, None).await?;
+        let result = collection.delete_one(filter).await?;
         Ok(DeleteResult { deleted_count: result.deleted_count })
     }
 
@@ -558,7 +554,7 @@ impl MongoDbClient {
             });
         }
 
-        let cursor = collection.aggregate(pipeline, None).await?;
+        let cursor = collection.aggregate(pipeline).await?;
         let vec_items: Vec<T> = cursor
             .map_err(|e| {
                 error!(error = %e, "Error retrieving document");
@@ -600,7 +596,7 @@ impl MongoDbClient {
 
         debug!("Executing aggregation pipeline");
 
-        let cursor = collection.aggregate(pipeline, options).await?;
+        let cursor = collection.aggregate(pipeline).with_options(options).await?;
         let vec_items: Vec<R> = cursor
             .map_err(|e| {
                 error!(error = %e, "Error executing pipeline");
@@ -662,7 +658,7 @@ impl DatabaseClient for MongoDbClient {
             "$setOnInsert": updates
         };
 
-        let result = self.get_job_collection().update_one(filter, updates, options).await?;
+        let result = self.get_job_collection().update_one(filter, updates).with_options(options).await?;
 
         if result.matched_count == 0 {
             let duration = start.elapsed();
@@ -688,7 +684,7 @@ impl DatabaseClient for MongoDbClient {
         let attributes = [KeyValue::new("db_operation_name", "get_job_by_id")];
         let duration = start.elapsed();
         MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
-        Ok(self.get_job_collection().find_one(filter, None).await?)
+        Ok(self.get_job_collection().find_one(filter).await?)
     }
 
     async fn get_job_by_internal_id_and_type(
@@ -706,7 +702,7 @@ impl DatabaseClient for MongoDbClient {
         let attributes = [KeyValue::new("db_operation_name", "get_job_by_internal_id_and_type")];
         let duration = start.elapsed();
         MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
-        Ok(self.get_job_collection().find_one(filter, None).await?)
+        Ok(self.get_job_collection().find_one(filter).await?)
     }
 
     async fn get_jobs_by_internal_ids_and_type(
@@ -727,7 +723,8 @@ impl DatabaseClient for MongoDbClient {
         };
         let options = FindOptions::builder().sort(doc! { "internal_id": 1 }).build();
 
-        let jobs = self.get_job_collection().find(filter, options).await?.try_collect::<Vec<JobItem>>().await?;
+        let jobs =
+            self.get_job_collection().find(filter).with_options(options).await?.try_collect::<Vec<JobItem>>().await?;
 
         let attributes = [KeyValue::new("db_operation_name", "get_jobs_by_internal_ids_and_type")];
         let duration = start.elapsed();
@@ -767,7 +764,7 @@ impl DatabaseClient for MongoDbClient {
             "$set": non_null_updates
         };
 
-        let result = self.get_job_collection().find_one_and_update(filter, update, options).await?;
+        let result = self.get_job_collection().find_one_and_update(filter, update).with_options(options).await?;
         match result {
             Some(job) => {
                 debug!("Job updated successfully");
@@ -985,7 +982,7 @@ impl DatabaseClient for MongoDbClient {
         if let Some(version) = &orchestrator_version {
             filter.insert("metadata.common.orchestrator_version", version.as_str());
         }
-        let jobs: Vec<JobItem> = self.get_job_collection().find(filter, None).await?.try_collect().await?;
+        let jobs: Vec<JobItem> = self.get_job_collection().find(filter).await?.try_collect().await?;
         debug!("Fetched jobs after internal ID by job type");
         let attributes = [KeyValue::new("db_operation_name", "get_jobs_after_internal_id_by_job_type")];
         let duration = start.elapsed();
@@ -1022,7 +1019,8 @@ impl DatabaseClient for MongoDbClient {
 
         let find_options = limit.map(|val| FindOptions::builder().limit(Some(val)).build());
 
-        let jobs: Vec<JobItem> = self.get_job_collection().find(filter, find_options).await?.try_collect().await?;
+        let jobs: Vec<JobItem> =
+            self.get_job_collection().find(filter).with_options(find_options).await?.try_collect().await?;
         debug!(job_count = jobs.len(), "Retrieved jobs by type and statuses");
         let attributes = [KeyValue::new("db_operation_name", "get_jobs_by_types_and_status")];
         let duration = start.elapsed();
@@ -1046,7 +1044,8 @@ impl DatabaseClient for MongoDbClient {
 
         let find_options = limit.map(|val| FindOptions::builder().limit(Some(val)).build());
 
-        let jobs: Vec<JobItem> = self.get_job_collection().find(filter, find_options).await?.try_collect().await?;
+        let jobs: Vec<JobItem> =
+            self.get_job_collection().find(filter).with_options(find_options).await?.try_collect().await?;
         debug!(job_count = jobs.len(), "Retrieved jobs without storage artifacts tagged");
         let attributes = [KeyValue::new("db_operation_name", "get_jobs_without_storage_artifacts_tagged")];
         let duration = start.elapsed();
@@ -1058,7 +1057,7 @@ impl DatabaseClient for MongoDbClient {
         let start = Instant::now();
         let options = FindOptions::builder().sort(doc! { "index": -1 }).limit(1).build();
 
-        let mut cursor = self.get_aggregator_batch_collection().find(doc! {}, options).await?;
+        let mut cursor = self.get_aggregator_batch_collection().find(doc! {}).with_options(options).await?;
         let batch = cursor.try_next().await?;
 
         debug!(has_batch = batch.is_some(), category = "db_call", "Retrieved latest aggregator batch");
@@ -1083,7 +1082,7 @@ impl DatabaseClient for MongoDbClient {
             filter.insert("orchestrator_version", version.as_str());
         }
 
-        let mut cursor = self.get_aggregator_batch_collection().find(filter, options).await?;
+        let mut cursor = self.get_aggregator_batch_collection().find(filter).with_options(options).await?;
         let batch = cursor.try_next().await?;
 
         debug!(has_batch = batch.is_some(), category = "db_call", "Retrieved oldest aggregator batch");
@@ -1099,7 +1098,7 @@ impl DatabaseClient for MongoDbClient {
         let start = Instant::now();
         let options = FindOptions::builder().sort(doc! { "index": -1 }).limit(1).build();
 
-        let mut cursor = self.get_snos_batch_collection().find(doc! {}, options).await?;
+        let mut cursor = self.get_snos_batch_collection().find(doc! {}).with_options(options).await?;
         let batch = cursor.try_next().await?;
 
         debug!(has_batch = batch.is_some(), category = "db_call", "Retrieved latest SNOS batch");
@@ -1132,7 +1131,7 @@ impl DatabaseClient for MongoDbClient {
         let find_options = FindOptions::builder().sort(doc! { "index": sort_direction }).limit(query.limit).build();
 
         let batches: Vec<SnosBatch> =
-            self.get_snos_batch_collection().find(filter, find_options).await?.try_collect().await?;
+            self.get_snos_batch_collection().find(filter).with_options(find_options).await?.try_collect().await?;
 
         debug!(batch_count = batches.len(), sort = ?query.sort, category = "db_call", "Retrieved SNOS batches");
         let attributes = [KeyValue::new("db_operation_name", "get_snos_batches")];
@@ -1186,7 +1185,7 @@ impl DatabaseClient for MongoDbClient {
         let find_options = FindOptions::builder().sort(doc! { "index": sort_direction }).limit(query.limit).build();
 
         let batches: Vec<AggregatorBatch> =
-            self.get_aggregator_batch_collection().find(filter, find_options).await?.try_collect().await?;
+            self.get_aggregator_batch_collection().find(filter).with_options(find_options).await?.try_collect().await?;
 
         debug!(batch_count = batches.len(), sort = ?query.sort, category = "db_call", "Retrieved aggregator batches");
         let attributes = [KeyValue::new("db_operation_name", "get_aggregator_batches")];
@@ -1226,7 +1225,7 @@ impl DatabaseClient for MongoDbClient {
         update: &AggregatorBatchUpdates,
     ) -> Result<AggregatorBatch, DatabaseError> {
         let start = Instant::now();
-        let previous_batch = self.get_aggregator_batch_collection().find_one(doc! { "_id": batch.id }, None).await?;
+        let previous_batch = self.get_aggregator_batch_collection().find_one(doc! { "_id": batch.id }).await?;
         let filter = doc! {
             "_id": batch.id,
         };
@@ -1277,7 +1276,8 @@ impl DatabaseClient for MongoDbClient {
         index: u64,
     ) -> Result<AggregatorBatch, DatabaseError> {
         // Find a batch and update it
-        let result = self.get_aggregator_batch_collection().find_one_and_update(filter, update, options).await?;
+        let result =
+            self.get_aggregator_batch_collection().find_one_and_update(filter, update).with_options(options).await?;
         match result {
             Some(updated_batch) => {
                 // Update done
@@ -1303,7 +1303,7 @@ impl DatabaseClient for MongoDbClient {
         index: u64,
     ) -> Result<SnosBatch, DatabaseError> {
         // Find a batch and update it
-        let result = self.get_snos_batch_collection().find_one_and_update(filter, update, options).await?;
+        let result = self.get_snos_batch_collection().find_one_and_update(filter, update).with_options(options).await?;
         match result {
             Some(updated_batch) => {
                 // Update done
@@ -1325,7 +1325,8 @@ impl DatabaseClient for MongoDbClient {
 
         match self
             .get_aggregator_batch_collection()
-            .insert_one(batch.clone(), InsertOneOptions::builder().build())
+            .insert_one(batch.clone())
+            .with_options(InsertOneOptions::builder().build())
             .await
         {
             Ok(_) => {
@@ -1350,7 +1351,7 @@ impl DatabaseClient for MongoDbClient {
     async fn create_snos_batch(&self, batch: SnosBatch) -> Result<SnosBatch, DatabaseError> {
         let start = Instant::now();
         let collection: Collection<SnosBatch> = self.get_snos_batch_collection();
-        match collection.insert_one(batch.clone(), InsertOneOptions::builder().build()).await {
+        match collection.insert_one(batch.clone()).with_options(InsertOneOptions::builder().build()).await {
             Ok(_) => {
                 let duration = start.elapsed();
                 tracing::debug!(duration = %duration.as_millis(), "Batch created in MongoDB successfully");
@@ -1373,7 +1374,7 @@ impl DatabaseClient for MongoDbClient {
         update: &SnosBatchUpdates,
     ) -> Result<SnosBatch, DatabaseError> {
         let start = Instant::now();
-        let previous_batch = self.get_snos_batch_collection().find_one(doc! { "_id": batch.id }, None).await?;
+        let previous_batch = self.get_snos_batch_collection().find_one(doc! { "_id": batch.id }).await?;
         let filter = doc! {
             "_id": batch.id,
         };
@@ -1410,7 +1411,7 @@ impl DatabaseClient for MongoDbClient {
         };
 
         let collection: Collection<SnosBatch> = self.get_snos_batch_collection();
-        let result = collection.find_one_and_update(filter, update, options).await?;
+        let result = collection.find_one_and_update(filter, update).with_options(options).await?;
         match result {
             Some(updated_batch) => {
                 let attributes = [KeyValue::new("db_operation_name", "update_or_create_snos_batch")];
@@ -1436,7 +1437,7 @@ impl DatabaseClient for MongoDbClient {
             Some(lookup) => match lookup.aggregator_batch_index {
                 Some(aggregator_batch_index) => {
                     self.get_aggregator_batch_collection()
-                        .find_one(doc! { "index": aggregator_batch_index as i64 }, None)
+                        .find_one(doc! { "index": aggregator_batch_index as i64 })
                         .await?
                 }
                 None => {
@@ -1445,7 +1446,7 @@ impl DatabaseClient for MongoDbClient {
                         "end_block": { "$gte": block_number as i64 }
                     };
 
-                    self.get_aggregator_batch_collection().find_one(filter, None).await?
+                    self.get_aggregator_batch_collection().find_one(filter).await?
                 }
             },
             None => {
@@ -1454,7 +1455,7 @@ impl DatabaseClient for MongoDbClient {
                     "end_block": { "$gte": block_number as i64 }
                 };
 
-                self.get_aggregator_batch_collection().find_one(filter, None).await?
+                self.get_aggregator_batch_collection().find_one(filter).await?
             }
         };
 
@@ -1468,10 +1469,8 @@ impl DatabaseClient for MongoDbClient {
 
     async fn get_block_batch_lookup(&self, block_number: u64) -> Result<Option<BlockBatchLookup>, DatabaseError> {
         let start = Instant::now();
-        let lookup = self
-            .get_block_batch_lookup_collection()
-            .find_one(doc! { "block_number": block_number as i64 }, None)
-            .await?;
+        let lookup =
+            self.get_block_batch_lookup_collection().find_one(doc! { "block_number": block_number as i64 }).await?;
 
         let attributes = [KeyValue::new("db_operation_name", "get_block_batch_lookup")];
         let duration = start.elapsed();
@@ -1633,7 +1632,8 @@ impl DatabaseClient for MongoDbClient {
 
         let find_options = FindOptions::builder().sort(doc! { "internal_id": 1 }).build();
 
-        let jobs: Vec<JobItem> = self.get_job_collection().find(filter, find_options).await?.try_collect().await?;
+        let jobs: Vec<JobItem> =
+            self.get_job_collection().find(filter).with_options(find_options).await?.try_collect().await?;
 
         debug!(
             job_type = ?job_type,
@@ -1734,15 +1734,15 @@ impl DatabaseClient for MongoDbClient {
         let job_collection = self.get_job_collection();
 
         // Execute query for all jobs
-        let cursor_all = job_collection.find(query_all, None).await?;
+        let cursor_all = job_collection.find(query_all).await?;
         results.extend(cursor_all.try_collect::<Vec<JobItem>>().await?);
 
         // Execute query for state transition jobs
-        let cursor_state_transition = job_collection.find(query_state_transition, None).await?;
+        let cursor_state_transition = job_collection.find(query_state_transition).await?;
         results.extend(cursor_state_transition.try_collect::<Vec<JobItem>>().await?);
 
         // Execute query for snos and aggregator jobs
-        let cursor_snos_and_aggregator = job_collection.find(query_snos_and_aggregator, None).await?;
+        let cursor_snos_and_aggregator = job_collection.find(query_snos_and_aggregator).await?;
         results.extend(cursor_snos_and_aggregator.try_collect::<Vec<JobItem>>().await?);
 
         debug!(count = results.len(), "Fetched jobs by block number");
@@ -1760,7 +1760,7 @@ impl DatabaseClient for MongoDbClient {
             "status": bson::to_bson(&status)?,
         };
 
-        let jobs: Vec<JobItem> = self.get_job_collection().find(filter, None).await?.try_collect().await?;
+        let jobs: Vec<JobItem> = self.get_job_collection().find(filter).await?.try_collect().await?;
 
         debug!(job_count = jobs.len(), "Fetched jobs by status");
 
@@ -1789,7 +1789,7 @@ impl DatabaseClient for MongoDbClient {
         };
 
         let batches: Vec<SnosBatch> =
-            self.get_snos_batch_collection().find(filter, find_options).await?.try_collect().await?;
+            self.get_snos_batch_collection().find(filter).with_options(find_options).await?.try_collect().await?;
 
         tracing::debug!(
             aggregator_index = aggregator_index,
@@ -1809,7 +1809,7 @@ impl DatabaseClient for MongoDbClient {
 
         // Perform a simple ping operation to verify connectivity
         // This is a lightweight operation that checks if the database is accessible
-        self.database.run_command(doc! { "ping": 1 }, None).await?;
+        self.database.run_command(doc! { "ping": 1 }).await?;
 
         let attributes = [KeyValue::new("db_operation_name", "health_check")];
         let duration = start.elapsed();
@@ -1860,9 +1860,9 @@ mod tests {
     async fn test_find_one_insert_and_delete() {
         let (client, db, collection) = get_test_handles().await;
         // Clean up before test
-        let _ = collection.delete_many(doc! {}, None).await;
+        let _ = collection.delete_many(doc! {}).await;
         let test_doc = TestDoc { _id: 1, name: "Alice".to_string() };
-        collection.insert_one(&test_doc, None).await.unwrap();
+        collection.insert_one(&test_doc).await.unwrap();
 
         let client = MongoDbClient { client, database: Arc::new(db) };
 

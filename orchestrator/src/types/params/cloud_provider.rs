@@ -1,5 +1,5 @@
 use crate::cli::provider::aws::AWSConfigCliArgs;
-use aws_config::SdkConfig;
+use aws_config::{BehaviorVersion, SdkConfig};
 
 #[derive(Debug, Clone)]
 pub struct AWSCredentials {
@@ -8,7 +8,9 @@ pub struct AWSCredentials {
 
 impl AWSCredentials {
     pub async fn get_aws_config(&self) -> SdkConfig {
-        aws_config::from_env().load().await
+        // This behavior version selects the Hyper 1 / rustls 0.23 HTTPS client.
+        // Older behavior versions can select the SDK's legacy TLS compatibility client.
+        aws_config::defaults(BehaviorVersion::v2025_08_07()).load().await
     }
 }
 
