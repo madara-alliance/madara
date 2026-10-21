@@ -1,48 +1,66 @@
 # October 2026 emSign trust remediation
 
-This patch addresses CVE-2026-111943 in the Madara and orchestrator build/runtime
-paths. It is not a claim that a cluster, host, or third-party image is safe.
-Rebuild and validate each deployed application revision before rolling it out.
+This change uses published upstream TLS fixes. There are no local copies or
+custom patches of rustls-webpki or webpki-roots. The existing Cairo, RocksDB,
+JSON-RPC and OmniQueue forks predate this remediation and retain their application
+behavior. Rebuild and validate each deployed revision before promoting an image.
 
-## What changes
+## Dependency changes
 
-- Upgrade rustls-webpki 0.103 to 0.103.16 and the 1.x bundled root packages to
-  1.0.10. The verifier upgrade also requires aws-lc-rs 1.18 / aws-lc-sys 0.46.
-- Backport the upstream eight-SPKI distrust list to rustls-webpki 0.101.7 and
-  0.102.8. These are live dependencies of older HTTP, MongoDB and gRPC clients;
-  changing only 0.103 is insufficient. Check every candidate certificate and
-  trust anchor during path construction, preserving alternative valid paths.
-  Return the existing `CertRevoked` error to retain the legacy public API.
-- Remove the emSign ECC G3 root from the independent webpki-roots 0.25.4 store.
-  The 0.26.11 wrapper resolves the patched 1.0.10 parent.
-- Disable four incident-related roots in Debian build/runtime CA stores before
-  downloading tools. This includes AAA Certificate Services and can break
-  legitimate services still dependent on that legacy root. Test required
-  upstream endpoints before promotion; do not bypass certificate validation.
-- Build with Python 3.11, pip 26.2.2 and certifi 2026.10.19. Check both certifi
-  bundles after Cairo dependency installation. Bootstrap the patched pip/certifi wheels with the sanitized system CA file and
-  pinned SHA256 hashes, then install them offline. This works with both old pip
-  and versions that removed the legacy-certs option.
-- Install Node 22.23.4 from the official x64 archive, checking its pinned SHA256
-  against the published release checksum. Preserve existing migration behavior.
-- Use locked Cargo dependencies and fresh manual Docker builds. Copy the vendored
-  sources into dependency build stages: non-workspace patch crates are omitted
-  from cargo-chef recipes. Preserve existing compilation caching and build profiles.
+| Dependency | Change | Reason |
+| --- | --- | --- |
+| rustls-webpki | 0.103.16 | Upstream compromised-key distrust, including explicitly trusted intermediates |
+| webpki-roots / webpki-root-certs | 1.0.10 | Published root-store removal; webpki-roots 0.26.11 delegates to 1.0.10 |
+| aws-lc-rs / aws-lc-sys | 1.18.2 / 0.46.0 | Required by the fixed verifier |
+| mongodb | 2.8.2 → 3.5.2 | Move the orchestrator onto the rustls 0.23 verifier already used by Madara's external DB |
+| testcontainers | 0.18.0 → 0.21.1 | Move test Docker connections to Bollard 0.17 / rustls 0.23 |
+| omniqueue | SQS feature only | Remove unused GCP, Redis and RabbitMQ clients, including the old gRPC TLS stack |
+| jsonrpsee clients | Disable unused TLS features | Production use is hardcoded local HTTP; WS clients are local tests only |
 
-## Review the vendored backport
+The MongoDB driver upgrade uses its action-builder API. Filters, update documents,
+sorts, limits, indexes and BSON 2 serialization remain the same; chrono and UUID
+features move from the driver manifest to the BSON dependency. MongoDB integration
+and locking tests are promotion gates, because this is a major driver upgrade.
 
-`vendor/provenance.json` records the original crates.io archive checksums.
-`vendor/backport.patch` is the small text diff from those exact published sources.
-The only added verifier data are the eight `src/data/distrusted/*.spki.der` files
-copied byte-for-byte from rustls-webpki 0.103.16. Licenses and build-required library sources are preserved. Upstream test fixtures,
-CI files and benchmarks are omitted to keep this import reviewable; manifest test
-targets are disabled. The independent incident regression suite remains enabled. A scoped lifetime-syntax lint allowance is necessary because
-Cargo does not cap lints for local path dependencies on Rust 1.89.
+The JSON-RPC server and its existing Starknet subscription-message fork stay at
+the current revision. Direct HTTP/WS client dependencies disable default TLS
+features. HTTPS/WSS URLs are rejected, never downgraded. External HTTPS clients
+continue to use TLS. Do not enable these old client TLS features for a new remote
+endpoint; upgrade that client first.
 
-The older packages deliberately retain their API-compatible version numbers.
-A scanner may still report their upstream versions: review the backport and the
-test evidence, rather than suppressing the advisory for unpatched registry copies.
-Remove these backports when all parent clients can use a supported verifier.
+## AWS compatibility dependency: explicit limitation
+
+The published AWS SDK still includes an optional Hyper 0.14 / rustls 0.21 client,
+which brings **unpatched rustls-webpki 0.101.7** into Cargo.lock. This change does
+not claim that this crate is fixed or suppress its advisory. A simple upgrade to
+the latest SDK does not remove that compatibility dependency.
+
+The orchestrator explicitly selects AWS behavior version 2025-08-07. With
+`default-https-client`, that selects Hyper 1 / rustls 0.23 and the patched
+rustls-webpki 0.103.16. OmniQueue's existing `load_from_env()` selects the latest
+behavior and therefore the same modern connector. The regression suite checks
+both selections with the legacy feature also enabled, and checks exactly the
+application's locked AWS transport versions. `check-lock.py` rejects any non-AWS
+consumer of the old verifier or a reintroduced 0.102 verifier/0.25 root store.
+
+This is a reviewed runtime mitigation with a remaining compatibility dependency,
+not an advisory-free dependency graph. Do not choose an older AWS behavior version
+or instantiate `hyper_014` clients. Removing the compatibility dependency completely
+requires parent libraries to stop enabling it; it does not justify another local
+TLS fork.
+
+## Image and tool changes
+
+- Sanitize Debian builder and runtime CA stores before tool downloads. This also
+  removes AAA Certificate Services and can affect legitimate chains; validate
+  required endpoints before promotion.
+- Use Python 3.11, pip 26.2.2 and certifi 2026.10.19. Bootstrap pinned, hash-checked
+  wheels with the sanitized system store and install them offline. Replace the
+  sequencer requirements file's older certifi pin before resolving with the fixed
+  constraints, then check both Python and pip CA bundles.
+- Install Node 22.23.4 from the official x64 archive with its pinned SHA256.
+- Keep locked Cargo builds and fresh manual Docker builds, preserving the existing
+  application build profiles.
 
 ## Validation
 
@@ -51,19 +69,20 @@ python3.11 security/check-lock.py
 cargo test --locked --manifest-path security/tls-regression/Cargo.toml
 cargo metadata --locked --no-deps --format-version 1 >/dev/null
 cargo fmt --all -- --check
+cargo check --locked
 ```
 
-The isolated test crate avoids Cairo/LLVM and tests all three verifier versions:
-12 public chains, the same 12 with their compromised intermediate directly trusted,
-an unrelated generated private-CA chain, and all bundled root stores. The fixed
-verification date is 2026-10-20; tests require explicit distrust errors, so expiry
-or network outages cannot produce a false success. Fixtures contain only public
-certificates, downloaded from the incident diagnostic service on 2026-10-21.
+The isolated suite tests the published verifier against 12 public incident chains,
+the same chains with compromised intermediates explicitly trusted, an unrelated
+private CA, and the bundled root stores. A fixed verification date (2026-10-20)
+and explicit distrust-error assertions prevent expiry from causing false passes.
+It also checks AWS modern-client selection and loopback clients' rejection of TLS
+URLs. Fixtures are public certificates captured on 2026-10-21, not library source.
 
-The PR workflow runs these checks on any base branch, including revision-specific
-backports. The manual image workflow repeats the regression before publication.
-Full application compilation, required endpoint connectivity, migration compatibility,
-and runtime image checks are additional promotion gates, not implied by this suite.
+These checks run on PRs and before manual image publication. Full application and
+integration tests, required endpoint connectivity, and runtime image checks remain
+promotion gates. No test here establishes that a host, cluster or third-party image
+is fully remediated.
 
 ## Build a candidate without deploying
 
@@ -87,7 +106,7 @@ credentials as a smoke test: it can execute database migrations.
 
 - [Mozilla incident](https://bugzilla.mozilla.org/show_bug.cgi?id=2083449)
 - [Public certificate fixtures](https://emudhra.we-have-a-problem.com/)
-- [Upstream verifier backport](https://github.com/rustls/webpki/pull/546)
+- [Upstream verifier fix](https://github.com/rustls/webpki/pull/546)
 - [RustSec verifier advisory](https://rustsec.org/advisories/RUSTSEC-2026-0382.html)
 - [RustSec roots advisory](https://rustsec.org/advisories/RUSTSEC-2026-0381.html)
 - [RustSec root-certs advisory](https://rustsec.org/advisories/RUSTSEC-2026-0383.html)
