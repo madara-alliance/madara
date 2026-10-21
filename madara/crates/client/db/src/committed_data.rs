@@ -1,7 +1,8 @@
 //! Durable root-keyed datasets with bounded memory and bounded cold proof reads.
 use super::*;
 use blockifier::execution::syscalls::committed_data::{
-    CommittedDataError, CommittedDataProvider, CommittedDataSet, CommittedDataWitness, MAX_COMMITTED_DATA_VALUES,
+    CommittedDataBatchProof, CommittedDataError, CommittedDataProvider, CommittedDataSet, CommittedDataWitness,
+    MAX_COMMITTED_DATA_VALUES,
 };
 use mp_gateway::committed_data::{CommittedDataUpdate, CommittedDataVersion, VALUES_PER_PAGE};
 use std::{
@@ -182,6 +183,19 @@ impl<D> std::fmt::Debug for BackendCommittedData<D> {
     }
 }
 impl<D: MadaraStorageRead> CommittedDataProvider for BackendCommittedData<D> {
+    fn batch(&self, root: Felt, keys: &[Felt]) -> std::result::Result<CommittedDataBatchProof, CommittedDataError> {
+        let tree =
+            self.0.committed_data_cache.get(root).map_err(|error| CommittedDataError::Provider(error.to_string()))?;
+        match tree {
+            Some(tree) => CommittedDataBatchProof::from_dataset(&tree, keys),
+            None => CommittedDataBatchProof::new(root, keys, |key| {
+                self.0
+                    .committed_data_witness(root, key)
+                    .map_err(|error| CommittedDataError::Provider(error.to_string()))
+            }),
+        }
+    }
+
     fn value(&self, root: Felt, index: Felt) -> std::result::Result<Option<(Felt, usize)>, CommittedDataError> {
         let read = || -> Result<Option<(Felt, usize)>> {
             let value = if let Some(tree) = self.0.committed_data_cache.get(root)? {
@@ -358,7 +372,10 @@ mod tests {
         let directory = tempfile::TempDir::new().unwrap();
         let values: Vec<_> =
             vec![(Felt::ZERO, Felt::from(123_u32)), (Felt::ONE, Felt::from(456_u32)), (Felt::from(2_u32), Felt::MAX)];
-        let root = CommittedDataSet::new(values.clone()).unwrap().root();
+        let tree = CommittedDataSet::new(values.clone()).unwrap();
+        let root = tree.root();
+        let keys = [Felt::TWO, Felt::ZERO, Felt::TWO];
+        let batch = CommittedDataBatchProof::from_dataset(&tree, &keys).unwrap();
         let open = || {
             MadaraBackend::open_rocksdb(
                 directory.path(),
@@ -375,12 +392,15 @@ mod tests {
             let witness = backend.committed_data_witness(root, Felt::ONE).unwrap().unwrap();
             assert!(witness.verify());
             assert_eq!(witness.value, Felt::from(456_u32));
+            assert_eq!(BackendCommittedData(Arc::clone(&backend)).batch(root, &keys).unwrap(), batch);
         }
         {
             let backend = open();
             // Cold reads must not need the import gate or reconstruct a whole tree.
             let importing = backend.committed_data_cache.import.try_acquire().unwrap();
             assert!(backend.committed_data_witness(root, Felt::from(2_u32)).unwrap().unwrap().verify());
+            assert_eq!(BackendCommittedData(Arc::clone(&backend)).batch(root, &keys).unwrap(), batch);
+            assert!(backend.committed_data_cache.get(root).unwrap().is_none());
             drop(importing);
             assert!(backend.committed_data_witness(root, Felt::from(3_u32)).unwrap().is_none());
             assert!(backend.committed_data_witness(root + Felt::ONE, Felt::ONE).unwrap().is_none());
