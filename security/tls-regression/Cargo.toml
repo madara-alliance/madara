@@ -8,16 +8,23 @@ publish = false
 [workspace]
 
 [dependencies]
-webpki103 = { package = "rustls-webpki", version = "=0.103.16", features = ["ring"] }
-roots1 = { package = "webpki-roots", version = "=1.0.10" }
+rcgen = "=0.13.2"
 rootcerts = { package = "webpki-root-certs", version = "=1.0.10" }
+roots1 = { package = "webpki-roots", version = "=1.0.10" }
 rustls-pemfile = "2.2"
 rustls-pki-types = "1.12"
-rcgen = "=0.13.2"
 time = "=0.3.44"
+webpki103 = { package = "rustls-webpki", version = "=0.103.16", features = [
+  "ring",
+] }
 
 # Exercise the same AWS default-client selection, including its legacy compatibility feature.
-aws-smithy-runtime = { version = "=1.9.5", features = ["client", "default-https-client", "tls-rustls", "rt-tokio"] }
+aws-smithy-runtime = { version = "=1.9.5", features = [
+  "client",
+  "default-https-client",
+  "tls-rustls",
+  "rt-tokio",
+] }
 aws-smithy-runtime-api = { version = "=1.9.3", features = ["client"] }
 aws-smithy-types = "=1.3.5"
 jsonrpsee-http-client = { version = "=0.22.5", default-features = false }

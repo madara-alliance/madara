@@ -304,7 +304,9 @@ c-kzg = "2.1.5"
 dotenvy = "0.15.7"
 log = "0.4.21"
 mongodb = "3.5.2"
-omniqueue = { git = "https://github.com/itsparser/omniqueue-rs", branch = "branch-from-0.2.0", default-features = false, features = ["sqs"] }
+omniqueue = { git = "https://github.com/itsparser/omniqueue-rs", branch = "branch-from-0.2.0", default-features = false, features = [
+  "sqs",
+] }
 tokio-stream = "0.1.15"
 uuid = { version = "1.20.0", features = ["v4", "serde"] }
 swiftness_proof_parser = "0.1.0"
