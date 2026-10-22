@@ -1096,7 +1096,7 @@ checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 [[package]]
 name = "apollo_compilation_utils"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=c8271d59fd234596224b1f27a64c659bfccce28f#c8271d59fd234596224b1f27a64c659bfccce28f"
+source = "git+https://github.com/madara-alliance/sequencer?rev=a6d5c35924b28782ba5121404720635ce8e2a31f#a6d5c35924b28782ba5121404720635ce8e2a31f"
 dependencies = [
  "apollo_infra_utils",
  "cairo-lang-sierra 2.17.0",
@@ -1114,7 +1114,7 @@ dependencies = [
 [[package]]
 name = "apollo_compile_to_native"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=c8271d59fd234596224b1f27a64c659bfccce28f#c8271d59fd234596224b1f27a64c659bfccce28f"
+source = "git+https://github.com/madara-alliance/sequencer?rev=a6d5c35924b28782ba5121404720635ce8e2a31f#a6d5c35924b28782ba5121404720635ce8e2a31f"
 dependencies = [
  "apollo_compilation_utils",
  "apollo_compile_to_native_types",
@@ -1127,9 +1127,9 @@ dependencies = [
 [[package]]
 name = "apollo_compile_to_native_types"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=c8271d59fd234596224b1f27a64c659bfccce28f#c8271d59fd234596224b1f27a64c659bfccce28f"
+source = "git+https://github.com/madara-alliance/sequencer?rev=a6d5c35924b28782ba5121404720635ce8e2a31f#a6d5c35924b28782ba5121404720635ce8e2a31f"
 dependencies = [
- "apollo_config 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c8271d59fd234596224b1f27a64c659bfccce28f)",
+ "apollo_config 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=a6d5c35924b28782ba5121404720635ce8e2a31f)",
  "serde",
  "validator",
 ]
@@ -1155,7 +1155,7 @@ dependencies = [
 [[package]]
 name = "apollo_config"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=c8271d59fd234596224b1f27a64c659bfccce28f#c8271d59fd234596224b1f27a64c659bfccce28f"
+source = "git+https://github.com/madara-alliance/sequencer?rev=a6d5c35924b28782ba5121404720635ce8e2a31f#a6d5c35924b28782ba5121404720635ce8e2a31f"
 dependencies = [
  "apollo_infra_utils",
  "clap",
@@ -1173,7 +1173,7 @@ dependencies = [
 [[package]]
 name = "apollo_infra_utils"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=c8271d59fd234596224b1f27a64c659bfccce28f#c8271d59fd234596224b1f27a64c659bfccce28f"
+source = "git+https://github.com/madara-alliance/sequencer?rev=a6d5c35924b28782ba5121404720635ce8e2a31f#a6d5c35924b28782ba5121404720635ce8e2a31f"
 dependencies = [
  "apollo_proc_macros",
  "assert-json-diff",
@@ -1195,7 +1195,7 @@ dependencies = [
 [[package]]
 name = "apollo_metrics"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=c8271d59fd234596224b1f27a64c659bfccce28f#c8271d59fd234596224b1f27a64c659bfccce28f"
+source = "git+https://github.com/madara-alliance/sequencer?rev=a6d5c35924b28782ba5121404720635ce8e2a31f#a6d5c35924b28782ba5121404720635ce8e2a31f"
 dependencies = [
  "apollo_time",
  "indexmap 2.13.1",
@@ -1209,7 +1209,7 @@ dependencies = [
 [[package]]
 name = "apollo_proc_macros"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=c8271d59fd234596224b1f27a64c659bfccce28f#c8271d59fd234596224b1f27a64c659bfccce28f"
+source = "git+https://github.com/madara-alliance/sequencer?rev=a6d5c35924b28782ba5121404720635ce8e2a31f#a6d5c35924b28782ba5121404720635ce8e2a31f"
 dependencies = [
  "lazy_static",
  "proc-macro2",
@@ -1220,7 +1220,7 @@ dependencies = [
 [[package]]
 name = "apollo_sizeof"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=c8271d59fd234596224b1f27a64c659bfccce28f#c8271d59fd234596224b1f27a64c659bfccce28f"
+source = "git+https://github.com/madara-alliance/sequencer?rev=a6d5c35924b28782ba5121404720635ce8e2a31f#a6d5c35924b28782ba5121404720635ce8e2a31f"
 dependencies = [
  "apollo_sizeof_macros",
  "starknet-types-core 0.2.4",
@@ -1229,7 +1229,7 @@ dependencies = [
 [[package]]
 name = "apollo_sizeof_macros"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=c8271d59fd234596224b1f27a64c659bfccce28f#c8271d59fd234596224b1f27a64c659bfccce28f"
+source = "git+https://github.com/madara-alliance/sequencer?rev=a6d5c35924b28782ba5121404720635ce8e2a31f#a6d5c35924b28782ba5121404720635ce8e2a31f"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1254,7 +1254,7 @@ dependencies = [
 [[package]]
 name = "apollo_time"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=c8271d59fd234596224b1f27a64c659bfccce28f#c8271d59fd234596224b1f27a64c659bfccce28f"
+source = "git+https://github.com/madara-alliance/sequencer?rev=a6d5c35924b28782ba5121404720635ce8e2a31f#a6d5c35924b28782ba5121404720635ce8e2a31f"
 dependencies = [
  "chrono",
 ]
@@ -2790,7 +2790,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.12.1",
+ "itertools 0.11.0",
  "lazy_static",
  "lazycell",
  "proc-macro2",
@@ -2810,7 +2810,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.11.0",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -2830,7 +2830,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.11.0",
  "proc-macro2",
  "quote",
  "regex",
@@ -2948,13 +2948,13 @@ dependencies = [
 [[package]]
 name = "blockifier"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=c8271d59fd234596224b1f27a64c659bfccce28f#c8271d59fd234596224b1f27a64c659bfccce28f"
+source = "git+https://github.com/madara-alliance/sequencer?rev=a6d5c35924b28782ba5121404720635ce8e2a31f#a6d5c35924b28782ba5121404720635ce8e2a31f"
 dependencies = [
  "anyhow",
  "apollo_compilation_utils",
  "apollo_compile_to_native",
  "apollo_compile_to_native_types",
- "apollo_config 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c8271d59fd234596224b1f27a64c659bfccce28f)",
+ "apollo_config 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=a6d5c35924b28782ba5121404720635ce8e2a31f)",
  "apollo_infra_utils",
  "apollo_metrics",
  "ark-ec",
@@ -2999,7 +2999,7 @@ dependencies = [
 [[package]]
 name = "blockifier_test_utils"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=c8271d59fd234596224b1f27a64c659bfccce28f#c8271d59fd234596224b1f27a64c659bfccce28f"
+source = "git+https://github.com/madara-alliance/sequencer?rev=a6d5c35924b28782ba5121404720635ce8e2a31f#a6d5c35924b28782ba5121404720635ce8e2a31f"
 dependencies = [
  "apollo_infra_utils",
  "cairo-lang-starknet-classes",
@@ -5324,7 +5324,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
 dependencies = [
  "lazy_static",
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -5333,7 +5333,7 @@ version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fde0e0ec90c9dfb3b4b1a0891a7dcd0e2bffde2f7efed5fe7c9bb00e5bfb915e"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -12488,7 +12488,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81bddcdb20abf9501610992b6759a4c888aef7d1a7247ef75e2404275ac24af1"
 dependencies = [
  "anyhow",
- "itertools 0.12.1",
+ "itertools 0.11.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -12501,7 +12501,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.11.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -14827,7 +14827,7 @@ dependencies = [
 [[package]]
 name = "starknet_api"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=c8271d59fd234596224b1f27a64c659bfccce28f#c8271d59fd234596224b1f27a64c659bfccce28f"
+source = "git+https://github.com/madara-alliance/sequencer?rev=a6d5c35924b28782ba5121404720635ce8e2a31f#a6d5c35924b28782ba5121404720635ce8e2a31f"
 dependencies = [
  "apollo_infra_utils",
  "apollo_sizeof",
@@ -16721,7 +16721,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
