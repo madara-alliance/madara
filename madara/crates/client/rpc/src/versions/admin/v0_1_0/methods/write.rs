@@ -638,6 +638,7 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         }
 
         let block_n = replay_block_request.custom_header.block_n;
+        let replay_started_at = Instant::now();
         let latest_confirmed = self.backend.latest_confirmed_block_n();
         let first_unconfirmed = latest_confirmed.map_or(0, |tip| tip.saturating_add(1));
         let pipeline_depth = block_n.saturating_sub(first_unconfirmed).saturating_add(1);
@@ -770,6 +771,7 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         }
 
         wait_for_internal_preconfirmed_block(&self.backend, block_n).await.map_err(StarknetRpcApiError::from)?;
+        let primary_execution_ns = replay_started_at.elapsed().as_nanos();
         let head = self.backend.chain_head_state();
         tracing::info!(
             target: "rpc::admin",
@@ -777,16 +779,20 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             confirmed_tip = ?head.confirmed_tip,
             external_preconfirmed_tip = ?head.external_preconfirmed_tip,
             internal_preconfirmed_tip = ?head.internal_preconfirmed_tip,
+            primary_execution_ns,
             "replay_block_primary_execution_completed"
         );
         drop(ingestion_guard);
 
         let block_hash = wait_for_confirmed_block(&self.backend, block_n).await.map_err(StarknetRpcApiError::from)?;
+        let confirmed_total_ns = replay_started_at.elapsed().as_nanos();
 
         tracing::info!(
             target: "rpc::admin",
             block_number = block_n,
             block_hash = %format_args!("{block_hash:#x}"),
+            primary_execution_ns,
+            confirmed_total_ns,
             "replay_block_confirmed"
         );
 
