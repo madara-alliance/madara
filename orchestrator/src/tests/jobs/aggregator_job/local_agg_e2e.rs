@@ -60,7 +60,7 @@ const SNOS_PIE_FILES: [&str; 4] =
 /// Expected fact for these historical outputs under the currently pinned committed-data OS hash.
 /// This checks the local aggregator's fact calculation; it does not establish that these
 /// historical blocks were proved under the committed-data OS.
-const EXPECTED_AGG_FACT: &str = "0xfc22d84114ae631d65cd3b9beeb26d67f31a3e9576a756d7476dd6f3214919dc";
+const EXPECTED_AGG_FACT: &str = "0x0aa00b41a34b25ee7732c8251fb53b1f4c0220a24854b7928aae30a641689088";
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
