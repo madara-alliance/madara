@@ -29,21 +29,26 @@
 // interference between tests when they set expectations for the same JobType. The lock is held for
 // the entire test duration, which is safe because it's test-scoped and won't block production code.
 
-use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{mpsc, Arc, Mutex as StdMutex};
 use std::time::Duration;
 
+use async_trait::async_trait;
 use generate_pie::error::{BlockProcessingError, PieGenerationError};
 use mockall::predicate::eq;
 use mongodb::bson::doc;
 use rstest::rstest;
 use starknet::providers::ProviderError;
+use tokio::sync::{oneshot, Mutex as TokioMutex};
 use tokio::time::sleep;
+use tokio_util::sync::CancellationToken;
 
 use crate::core::client::alert::MockAlertClient;
 use crate::error::job::snos::SnosError;
 use crate::tests::common::MessagePayloadType;
 use crate::tests::config::{ConfigType, MockType, TestConfigBuilder};
 use crate::tests::utils::{build_job_item, build_snos_batch};
+use crate::types::jobs::job_item::JobItem;
 
 #[cfg(test)]
 pub mod da_job;
@@ -60,6 +65,7 @@ pub mod snos_job;
 #[cfg(test)]
 mod aggregator_job;
 
+use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::queue::{MockQueueClient, QueueError};
 use crate::error::job::JobError;
 use crate::tests::common::constants::{QUEUE_CONSUME_MAX_RETRIES, QUEUE_CONSUME_RETRY_DELAY_SECS};
@@ -77,6 +83,101 @@ use crate::worker::event_handler::jobs::{JobHandlerTrait, MockJobHandlerTrait};
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::service::JobService;
 use assert_matches::assert_matches;
+
+struct ShutdownBlockingJobHandler {
+    started: TokioMutex<Option<oneshot::Sender<()>>>,
+    release: TokioMutex<Option<oneshot::Receiver<()>>>,
+}
+
+struct NonYieldingShutdownBlockingJobHandler {
+    started: StdMutex<Option<oneshot::Sender<()>>>,
+    release: StdMutex<mpsc::Receiver<()>>,
+    invocations: Arc<AtomicUsize>,
+}
+
+#[async_trait]
+impl JobHandlerTrait for NonYieldingShutdownBlockingJobHandler {
+    async fn create_job(&self, _internal_id: u64, _metadata: JobMetadata) -> Result<JobItem, JobError> {
+        Err(JobError::Other("not implemented for test".to_string().into()))
+    }
+
+    async fn process_job(
+        &self,
+        _config: Arc<crate::core::config::Config>,
+        _job: &mut JobItem,
+    ) -> Result<String, JobError> {
+        self.invocations.fetch_add(1, Ordering::SeqCst);
+        if let Some(started) = self.started.lock().unwrap().take() {
+            let _ = started.send(());
+        }
+
+        self.release.lock().unwrap().recv().expect("test should release synchronous handler");
+        std::future::pending().await
+    }
+
+    async fn verify_job(
+        &self,
+        _config: Arc<crate::core::config::Config>,
+        _job: &mut JobItem,
+    ) -> Result<JobVerificationStatus, JobError> {
+        Ok(JobVerificationStatus::Verified)
+    }
+
+    fn max_process_attempts(&self) -> u64 {
+        1
+    }
+
+    fn max_verification_attempts(&self) -> u64 {
+        1
+    }
+
+    fn verification_polling_delay_seconds(&self) -> u64 {
+        1
+    }
+}
+
+#[async_trait]
+impl JobHandlerTrait for ShutdownBlockingJobHandler {
+    async fn create_job(&self, _internal_id: u64, _metadata: JobMetadata) -> Result<JobItem, JobError> {
+        Err(JobError::Other("not implemented for test".to_string().into()))
+    }
+
+    async fn process_job(
+        &self,
+        _config: Arc<crate::core::config::Config>,
+        _job: &mut JobItem,
+    ) -> Result<String, JobError> {
+        if let Some(started) = self.started.lock().await.take() {
+            let _ = started.send(());
+        }
+
+        if let Some(release) = self.release.lock().await.take() {
+            let _ = release.await;
+        }
+
+        Ok("0xbeef".to_string())
+    }
+
+    async fn verify_job(
+        &self,
+        _config: Arc<crate::core::config::Config>,
+        _job: &mut JobItem,
+    ) -> Result<JobVerificationStatus, JobError> {
+        Ok(JobVerificationStatus::Verified)
+    }
+
+    fn max_process_attempts(&self) -> u64 {
+        1
+    }
+
+    fn max_verification_attempts(&self) -> u64 {
+        1
+    }
+
+    fn verification_polling_delay_seconds(&self) -> u64 {
+        1
+    }
+}
 
 /// Tests `create_job` function when job is not existing in the db.
 #[rstest]
@@ -379,6 +480,316 @@ async fn manual_verification_requeue_uses_expected_delay(
     ctx.expect().times(1).with(eq(job_type)).returning(move |_| Arc::clone(&job_handler));
 
     JobService::queue_job_for_verification(job.id, services.config, priority).await.unwrap();
+}
+
+/// Tests that graceful shutdown restores an active processing job so SQS can retry it.
+#[rstest]
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn process_job_shutdown_restores_locked_job_for_sqs_retry() {
+    let _test_lock = acquire_test_lock();
+
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Actual)
+        .build()
+        .await;
+    let db_client = services.config.database();
+
+    let job_item = build_job_item(JobType::SnosRun, JobStatus::Created, 1);
+    db_client.create_job(job_item.clone()).await.unwrap();
+
+    let (started_tx, started_rx) = oneshot::channel();
+    let (_release_tx, release_rx) = oneshot::channel();
+    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(ShutdownBlockingJobHandler {
+        started: TokioMutex::new(Some(started_tx)),
+        release: TokioMutex::new(Some(release_rx)),
+    }));
+
+    let ctx = get_job_handler_context_safe();
+    ctx.expect().times(1).with(eq(JobType::SnosRun)).return_once(move |_| Arc::clone(&job_handler));
+
+    let shutdown_token = CancellationToken::new();
+    let process_handle = tokio::spawn(JobHandlerService::process_job_with_shutdown(
+        job_item.id,
+        services.config.clone(),
+        shutdown_token.clone(),
+    ));
+
+    started_rx.await.expect("handler should start after job is locked");
+
+    let locked_job = db_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
+    assert_eq!(locked_job.status, JobStatus::LockedForProcessing);
+
+    shutdown_token.cancel();
+
+    let result = process_handle.await.unwrap();
+    assert!(result.is_err(), "shutdown during processing should return Err so the message is NACKed");
+
+    let restored_job = db_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
+    assert_eq!(restored_job.status, JobStatus::Created);
+    assert_eq!(restored_job.metadata, job_item.metadata, "shutdown must not consume the job retry budget");
+    assert_eq!(restored_job.metadata.common.process_attempt_no, 0);
+    assert_eq!(restored_job.metadata.common.process_retry_attempt_no, 0);
+    assert!(restored_job.metadata.common.process_started_at.is_none());
+    assert!(restored_job.metadata.common.process_completed_at.is_none());
+}
+
+/// Tests that synchronous work does not consume Tokio's only async worker and that the processing
+/// lock remains owned until the handler future can actually stop.
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[allow(clippy::await_holding_lock)]
+async fn process_job_shutdown_retains_lock_until_non_yielding_processing_stops() {
+    let _test_lock = acquire_test_lock();
+
+    let mut queue = MockQueueClient::new();
+    queue
+        .expect_send_message()
+        .withf(|queue, _, delay| *queue == QueueType::SnosJobProcessing && *delay == Some(Duration::from_secs(1)))
+        .times(1)
+        .returning(|_, _, _| Ok(()));
+
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Mock(MockType::Queue(Box::new(queue))))
+        .configure_snos_job_timeout_seconds(1)
+        .build()
+        .await;
+    let db_client = services.config.database();
+
+    let job_item = build_job_item(JobType::SnosRun, JobStatus::Created, 1);
+    db_client.create_job(job_item.clone()).await.unwrap();
+
+    let (started_tx, started_rx) = oneshot::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let invocations = Arc::new(AtomicUsize::new(0));
+    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(NonYieldingShutdownBlockingJobHandler {
+        started: StdMutex::new(Some(started_tx)),
+        release: StdMutex::new(release_rx),
+        invocations: Arc::clone(&invocations),
+    }));
+
+    let ctx = get_job_handler_context_safe();
+    ctx.expect().times(1).with(eq(JobType::SnosRun)).return_once(move |_| Arc::clone(&job_handler));
+
+    let shutdown_token = CancellationToken::new();
+    let mut process_handle = tokio::spawn(JobHandlerService::process_job_with_shutdown(
+        job_item.id,
+        services.config.clone(),
+        shutdown_token.clone(),
+    ));
+
+    started_rx.await.expect("handler should start after job is locked");
+    let initially_locked_job = db_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
+    let initial_lease = initially_locked_job.metadata.common.process_started_at.unwrap();
+    shutdown_token.cancel();
+
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), &mut process_handle).await.is_err(),
+        "shutdown must not restore a lock while synchronous handler code is still executing"
+    );
+
+    sleep(Duration::from_millis(1500)).await;
+
+    let locked_job = db_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
+    assert_eq!(locked_job.status, JobStatus::LockedForProcessing);
+    assert!(
+        locked_job.metadata.common.process_started_at.unwrap() > initial_lease,
+        "the active attempt must refresh its lease past the original stale deadline"
+    );
+
+    assert!(JobHandlerService::process_job(job_item.id, services.config.clone()).await.is_ok());
+    assert_eq!(invocations.load(Ordering::SeqCst), 1, "redelivery must not start an overlapping handler");
+
+    release_tx.send(()).expect("test should release synchronous handler");
+
+    let result = process_handle.await.unwrap();
+    assert_matches!(result, Err(JobError::ShutdownInterrupted { id }) if id == job_item.id);
+
+    let restored_job = db_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
+    assert_eq!(restored_job.status, JobStatus::Created);
+    assert_eq!(restored_job.metadata, job_item.metadata);
+}
+
+/// A heartbeat that lands after the stale read must prevent that reader from resetting the lock.
+#[rstest]
+#[tokio::test]
+async fn stale_recovery_does_not_reset_a_renewed_processing_lease() {
+    let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
+    let db_client = services.config.database();
+
+    let mut job_item = build_job_item(JobType::SnosRun, JobStatus::LockedForProcessing, 1);
+    job_item.metadata.common.process_started_at = Some(chrono::Utc::now() - chrono::Duration::seconds(10));
+    db_client.create_job(job_item.clone()).await.unwrap();
+
+    let observed_job = db_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
+    let observed_lease = observed_job.metadata.common.process_started_at;
+    db_client.refresh_job_processing_lease(observed_job.id, observed_job.version, chrono::Utc::now()).await.unwrap();
+
+    let mut reset_metadata = observed_job.metadata.clone();
+    reset_metadata.common.process_started_at = None;
+    let reset = db_client.try_reset_stale_processing_job(&observed_job, observed_lease, reset_metadata).await.unwrap();
+
+    assert!(reset.is_none(), "stale recovery must lose when the observed lease was renewed");
+    let renewed_job = db_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
+    assert_eq!(renewed_job.status, JobStatus::LockedForProcessing);
+    assert!(renewed_job.metadata.common.process_started_at > observed_lease);
+}
+
+/// Active-lock redeliveries are ACK-safe successes after scheduling one delayed replacement, so
+/// they cannot burn through SQS's five-receive DLQ limit while the owner is still working.
+#[rstest]
+#[tokio::test]
+async fn repeated_active_lease_deliveries_are_replaced_with_delayed_messages() {
+    let mut queue = MockQueueClient::new();
+    queue
+        .expect_send_message()
+        .withf(|queue, _, delay| *queue == QueueType::SnosJobProcessing && *delay == Some(Duration::from_secs(1)))
+        .times(6)
+        .returning(|_, _, _| Ok(()));
+
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Mock(MockType::Queue(Box::new(queue))))
+        .configure_snos_job_timeout_seconds(1)
+        .build()
+        .await;
+
+    let mut job_item = build_job_item(JobType::SnosRun, JobStatus::LockedForProcessing, 1);
+    job_item.metadata.common.process_started_at = Some(chrono::Utc::now());
+    services.config.database().create_job(job_item.clone()).await.unwrap();
+
+    for _ in 0..6 {
+        assert!(JobHandlerService::process_job(job_item.id, services.config.clone()).await.is_ok());
+    }
+}
+
+/// The lease must continue to heartbeat after the handler returns until PendingVerification is
+/// durably written.
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+#[allow(clippy::await_holding_lock)]
+async fn successful_processing_keeps_lease_alive_through_durable_transition() {
+    let _test_lock = acquire_test_lock();
+    let job_item = build_job_item(JobType::SnosRun, JobStatus::Created, 1);
+
+    let final_update_started = Arc::new(tokio::sync::Notify::new());
+    let heartbeat_observed = Arc::new(tokio::sync::Notify::new());
+    let (release_update_tx, release_update_rx) = mpsc::channel();
+    let release_update_rx = Arc::new(StdMutex::new(release_update_rx));
+
+    let mut database = MockDatabaseClient::new();
+    let fetched_job = job_item.clone();
+    database.expect_get_job_by_id().times(1).returning(move |_| Ok(Some(fetched_job.clone())));
+
+    let locked_job = job_item.clone();
+    database
+        .expect_update_job()
+        .withf(|_, update| update.status == Some(JobStatus::LockedForProcessing))
+        .times(1)
+        .returning(move |_, update| {
+            let mut job = locked_job.clone();
+            job.status = JobStatus::LockedForProcessing;
+            job.version += 1;
+            job.metadata = update.metadata.clone().unwrap();
+            Ok(job)
+        });
+
+    let final_update_started_for_db = Arc::clone(&final_update_started);
+    let release_update_rx_for_db = Arc::clone(&release_update_rx);
+    database
+        .expect_update_job()
+        .withf(|_, update| update.status == Some(JobStatus::PendingVerification))
+        .times(1)
+        .returning(move |job, update| {
+            final_update_started_for_db.notify_one();
+            release_update_rx_for_db.lock().unwrap().recv().unwrap();
+            let mut updated_job = job.clone();
+            updated_job.status = JobStatus::PendingVerification;
+            updated_job.metadata = update.metadata.clone().unwrap();
+            Ok(updated_job)
+        });
+
+    let heartbeat_observed_for_db = Arc::clone(&heartbeat_observed);
+    database.expect_refresh_job_processing_lease().times(1..=2).returning(move |_, _, _| {
+        heartbeat_observed_for_db.notify_one();
+        Ok(())
+    });
+    database.expect_get_snos_batches().times(1).returning(|_| Ok(Vec::new()));
+
+    let mut queue = MockQueueClient::new();
+    queue
+        .expect_send_message()
+        .withf(|queue, _, _| *queue == QueueType::SnosJobVerification)
+        .times(1)
+        .returning(|_, _, _| Ok(()));
+
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Mock(MockType::Database(Box::new(database))))
+        .configure_queue_client(ConfigType::Mock(MockType::Queue(Box::new(queue))))
+        .configure_snos_job_timeout_seconds(1)
+        .build()
+        .await;
+
+    let mut job_handler = MockJobHandlerTrait::new();
+    job_handler.expect_check_ready_to_process().times(1).returning(|_, _| Ok(()));
+    job_handler.expect_process_job().times(1).returning(|_, _| Ok("0xbeef".to_string()));
+    job_handler.expect_verification_polling_delay_seconds().times(1).return_const(1u64);
+    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
+    let ctx = get_job_handler_context_safe();
+    ctx.expect().times(1).with(eq(JobType::SnosRun)).return_once(move |_| Arc::clone(&job_handler));
+
+    let process_handle = tokio::spawn(JobHandlerService::process_job(job_item.id, services.config));
+    final_update_started.notified().await;
+    tokio::time::timeout(Duration::from_millis(1500), heartbeat_observed.notified())
+        .await
+        .expect("lease should refresh while the durable state transition is blocked");
+    release_update_tx.send(()).unwrap();
+
+    assert!(process_handle.await.unwrap().is_ok());
+}
+
+/// Tests that successful processing is not restored by a later shutdown signal.
+#[rstest]
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn process_job_shutdown_does_not_restore_completed_processing() {
+    let _test_lock = acquire_test_lock();
+
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Actual)
+        .build()
+        .await;
+    let db_client = services.config.database();
+
+    let job_item = build_job_item(JobType::SnosRun, JobStatus::Created, 1);
+    db_client.create_job(job_item.clone()).await.unwrap();
+
+    let shutdown_token = CancellationToken::new();
+    let completion_shutdown_token = shutdown_token.clone();
+    let mut job_handler = MockJobHandlerTrait::new();
+    job_handler.expect_check_ready_to_process().times(1).returning(|_, _| Ok(()));
+    job_handler.expect_process_job().times(1).returning(move |_, _| {
+        completion_shutdown_token.cancel();
+        Ok("0xbeef".to_string())
+    });
+    job_handler.expect_verification_polling_delay_seconds().return_const(1u64);
+
+    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
+    let ctx = get_job_handler_context_safe();
+    ctx.expect().times(1).with(eq(JobType::SnosRun)).return_once(move |_| Arc::clone(&job_handler));
+
+    let result =
+        JobHandlerService::process_job_with_shutdown(job_item.id, services.config.clone(), shutdown_token.clone())
+            .await;
+    assert!(result.is_ok());
+
+    let completed_processing_job = db_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
+    assert_eq!(completed_processing_job.status, JobStatus::PendingVerification);
+    assert_eq!(completed_processing_job.external_id, ExternalId::String(Box::from("0xbeef")));
+    assert_eq!(completed_processing_job.metadata.common.process_retry_attempt_no, 0);
 }
 
 /// Tests that SNOS panics restore the original job status and rely on SQS/DLQ retries.

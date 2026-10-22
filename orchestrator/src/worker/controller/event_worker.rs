@@ -212,7 +212,12 @@ impl EventWorker {
     async fn handle_job_queue(&self, queue_message: &JobQueueMessage, job_state: JobState) -> EventSystemResult<()> {
         match job_state {
             JobState::Processing => {
-                JobHandlerService::process_job(queue_message.id, self.config.clone()).await?;
+                JobHandlerService::process_job_with_shutdown(
+                    queue_message.id,
+                    self.config.clone(),
+                    self.cancellation_token.clone(),
+                )
+                .await?;
             }
             JobState::Verification => {
                 JobHandlerService::verify_job(queue_message.id, self.config.clone()).await?;
@@ -308,7 +313,11 @@ impl EventWorker {
                 }
             }
 
-            nack_delivery_with_retry(message).await?;
+            if error.should_nack_delivery() {
+                nack_delivery_with_retry(message).await?;
+            } else {
+                warn!("Leaving delivery pending to preserve processing ownership and safe retry");
+            }
 
             // TODO: Since we are using SNS, we need to send the error message to the DLQ in future
             // self.config.alerts().send_message(error_context).await?;
@@ -403,9 +412,13 @@ impl EventWorker {
                                     error!("Failed to ACK priority message: {:?}", e);
                                 }
                             }
-                            Err(_) => {
-                                if let Err(e) = nack_delivery_with_retry(delivery).await {
-                                    error!("Failed to NACK priority message: {:?}", e);
+                            Err(error) => {
+                                if error.should_nack_delivery() {
+                                    if let Err(e) = nack_delivery_with_retry(delivery).await {
+                                        error!("Failed to NACK priority message: {:?}", e);
+                                    }
+                                } else {
+                                    warn!("Leaving priority delivery pending to preserve processing ownership and safe retry");
                                 }
                             }
                         }
