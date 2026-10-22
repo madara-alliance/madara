@@ -319,7 +319,7 @@ strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-generate-pie = { git = "https://github.com/karnotxyz/snos", rev = "c3e918af6e59c7f21258cdac17a86a7330768aab" }
+generate-pie = { git = "https://github.com/karnotxyz/snos", rev = "4d51503266094a504f5f03715ba6f3c4a0999759" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
@@ -329,8 +329,8 @@ orchestrator-ethereum-settlement-client = { path = "orchestrator/crates/settleme
 orchestrator-starknet-settlement-client = { path = "orchestrator/crates/settlement-clients/starknet" }
 orchestrator-utils = { path = "orchestrator/crates/utils" }
 orchestrator-aggregator-runner = { path = "orchestrator/crates/aggregator-runner" }
-apollo_starknet_os_program = { git = "https://github.com/karnotxyz/sequencer", rev = "6a7b06f0fb8916c9cb66e4b23f23d1d7234abbd6" }
-starknet_os = { git = "https://github.com/karnotxyz/sequencer", rev = "6a7b06f0fb8916c9cb66e4b23f23d1d7234abbd6" }
+apollo_starknet_os_program = { git = "https://github.com/karnotxyz/sequencer", rev = "0da981c861f9078c13f7cddb89804c388ec9451d" }
+starknet_os = { git = "https://github.com/karnotxyz/sequencer", rev = "0da981c861f9078c13f7cddb89804c388ec9451d" }
 orchestrator-prover-client-interface = { path = "orchestrator/crates/prover-clients/prover-client-interface" }
 orchestrator-gps-fact-checker = { path = "orchestrator/crates/prover-clients/gps-fact-checker" }
 orchestrator-sharp-service = { path = "orchestrator/crates/prover-clients/sharp-service" }
@@ -352,9 +352,9 @@ rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", rev = "75f1
 librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", rev = "75f13c78fdf970b0afd2f21f52caf3317341341c" }
 
 [patch."https://github.com/starkware-libs/sequencer"]
-apollo_infra_utils = { git = "https://github.com/karnotxyz/sequencer", rev = "6a7b06f0fb8916c9cb66e4b23f23d1d7234abbd6" }
-apollo_proc_macros = { git = "https://github.com/karnotxyz/sequencer", rev = "6a7b06f0fb8916c9cb66e4b23f23d1d7234abbd6" }
-apollo_sizeof = { git = "https://github.com/karnotxyz/sequencer", rev = "6a7b06f0fb8916c9cb66e4b23f23d1d7234abbd6" }
-apollo_sizeof_macros = { git = "https://github.com/karnotxyz/sequencer", rev = "6a7b06f0fb8916c9cb66e4b23f23d1d7234abbd6" }
-blockifier = { git = "https://github.com/karnotxyz/sequencer", rev = "6a7b06f0fb8916c9cb66e4b23f23d1d7234abbd6" }
-starknet_api = { git = "https://github.com/karnotxyz/sequencer", rev = "6a7b06f0fb8916c9cb66e4b23f23d1d7234abbd6" }
+apollo_infra_utils = { git = "https://github.com/karnotxyz/sequencer", rev = "0da981c861f9078c13f7cddb89804c388ec9451d" }
+apollo_proc_macros = { git = "https://github.com/karnotxyz/sequencer", rev = "0da981c861f9078c13f7cddb89804c388ec9451d" }
+apollo_sizeof = { git = "https://github.com/karnotxyz/sequencer", rev = "0da981c861f9078c13f7cddb89804c388ec9451d" }
+apollo_sizeof_macros = { git = "https://github.com/karnotxyz/sequencer", rev = "0da981c861f9078c13f7cddb89804c388ec9451d" }
+blockifier = { git = "https://github.com/karnotxyz/sequencer", rev = "0da981c861f9078c13f7cddb89804c388ec9451d" }
+starknet_api = { git = "https://github.com/karnotxyz/sequencer", rev = "0da981c861f9078c13f7cddb89804c388ec9451d" }
