@@ -150,10 +150,12 @@ impl RocksDBStorageInner {
         seeks.sort_unstable_by(|(_, left), (_, right)| left.cmp(right));
 
         let column = self.get_column(CONTRACT_STORAGE_COLUMN);
+        let mut read_options = ReadOptions::default();
+        read_options.set_prefix_same_as_start(true);
         let mut iterator = DBIterator::new_cf(
             &self.db,
             &column,
-            ReadOptions::default(),
+            read_options,
             IteratorMode::From(&seeks[0].1, rocksdb::Direction::Forward),
         );
         let mut values = vec![None; keys.len()];
