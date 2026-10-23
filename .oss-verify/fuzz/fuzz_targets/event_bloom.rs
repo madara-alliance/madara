@@ -30,10 +30,12 @@ fuzz_target!(|data: &[u8]| {
     let filter = filter.finalize();
     for item in items {
         // An inserted key must never be absent, with either query method.
+        // Removing `!` below aborts on input [0xff, 0x01, b'Z'].
         if !filter.might_contain(&item) {
             std::process::abort();
         }
         let hashes = PreCalculatedHashes::new::<SipHasher, _>(HASH_COUNT, &item);
+        // Removing `!` below aborts on the same input.
         if !filter.might_contain_hashes(&hashes) {
             std::process::abort();
         }
