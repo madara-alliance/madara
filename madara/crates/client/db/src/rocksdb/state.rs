@@ -172,7 +172,7 @@ impl RocksDBStorageInner {
             values[index] = result?
                 .map(|value| {
                     let bytes: [u8; 32] = value.as_ref().try_into().context("Invalid Bonsai flat Felt length")?;
-                    Ok(Felt::from_bytes_be(&bytes))
+                    anyhow::Ok(Felt::from_bytes_be(&bytes))
                 })
                 .transpose()?;
         }
