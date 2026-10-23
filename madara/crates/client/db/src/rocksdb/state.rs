@@ -1,4 +1,3 @@
-use crate::rocksdb::trie::BONSAI_CONTRACT_STORAGE_FLAT_COLUMN;
 use crate::{
     prelude::*,
     rocksdb::{
@@ -73,7 +72,6 @@ pub(crate) const CONTRACT_CLASS_HASH_COLUMN: Column = Column::new("contract_clas
 
 // prefix [<contract_address 32 bytes> | <storage_key 32 bytes>] | <block_n 4 bytes>
 const STORAGE_KEY_LEN: usize = 32 * 2 + size_of::<u32>();
-const BONSAI_FLAT_STORAGE_KEY_LEN: usize = 32 + 1 + 32;
 fn make_storage_column_key(contract_address: &Felt, storage_key: &Felt, block_n: u32) -> [u8; STORAGE_KEY_LEN] {
     let mut key = [0u8; STORAGE_KEY_LEN];
     key[..32].copy_from_slice(&contract_address.to_bytes_be());
@@ -143,40 +141,6 @@ impl RocksDBStorageInner {
 
     pub(super) fn get_storage_at_many(&self, block_n: u64, keys: &[(Felt, Felt)]) -> Result<Vec<Option<Felt>>> {
         keys.par_iter().map(|(contract_address, key)| self.get_storage_at(block_n, contract_address, key)).collect()
-    }
-
-    /// Reads current contract-storage leaves with one native RocksDB batch lookup.
-    pub(super) fn get_current_storage_at_many(&self, keys: &[(Felt, Felt)]) -> Result<Vec<Option<Felt>>> {
-        let flat_keys = keys
-            .iter()
-            .map(|(contract_address, key)| {
-                // Bonsai's flat key is identifier || encoded bit-length || key bits. Starknet
-                // keys are 251 bits, and removing their five leading zero bits preserves the
-                // remaining 32 raw bytes in Msb0 order.
-                let mut flat_key = [0_u8; BONSAI_FLAT_STORAGE_KEY_LEN];
-                flat_key[..32].copy_from_slice(&contract_address.to_bytes_be());
-                flat_key[32] = 251;
-                flat_key[33..].copy_from_slice(&key.to_bytes_be());
-                flat_key
-            })
-            .collect::<Vec<_>>();
-        let column = self.get_column(BONSAI_CONTRACT_STORAGE_FLAT_COLUMN);
-        let possible =
-            flat_keys.iter().enumerate().filter(|(_, key)| self.db.key_may_exist_cf(&column, key)).collect::<Vec<_>>();
-        let mut values = vec![None; keys.len()];
-        for ((index, _), result) in possible.iter().copied().zip(self.db.batched_multi_get_cf(
-            &column,
-            possible.iter().map(|(_, key)| *key),
-            false,
-        )) {
-            values[index] = result?
-                .map(|value| {
-                    let bytes: [u8; 32] = value.as_ref().try_into().context("Invalid Bonsai flat Felt length")?;
-                    anyhow::Ok(Felt::from_bytes_be(&bytes))
-                })
-                .transpose()?;
-        }
-        Ok(values)
     }
 
     #[tracing::instrument(skip(self))]

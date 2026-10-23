@@ -53,13 +53,6 @@ impl MadaraStorageRead for RocksDBStorage {
         })
     }
     fn get_storage_at_many(&self, block_n: u64, keys: &[(Felt, Felt)]) -> Result<Vec<Option<Felt>>> {
-        // Execution reads target the durable head. Its contract-storage trie already contains a
-        // point-lookup-optimized flat index, so avoid one historical iterator seek per key. Keep
-        // the history path for RPC and snapshot reads of older blocks.
-        if self.snapshots.inventory().head_block_n == Some(block_n) {
-            return self.inner.get_current_storage_at_many(keys);
-        }
-
         self.inner
             .get_storage_at_many(block_n, keys)
             .with_context(|| format!("Getting {} storage values for block_n={block_n}", keys.len()))

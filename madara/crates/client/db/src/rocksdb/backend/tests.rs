@@ -116,26 +116,6 @@ fn bulk_storage_read_preserves_order_history_and_missing_values() {
 }
 
 #[test]
-fn bulk_storage_read_at_head_uses_current_trie_values() {
-    let temp_dir = tempfile::TempDir::new().unwrap();
-    let storage = RocksDBStorage::open(temp_dir.path(), RocksDBConfig::default()).unwrap();
-    let address = Felt::from(2_u64);
-    let first_key = Felt::from(10_u64);
-    let second_key = Felt::from(20_u64);
-    let missing_key = Felt::from(30_u64);
-
-    let mut trie = storage.contract_storage_trie();
-    trie.insert(&address.to_bytes_be(), &contract_trie_key(first_key), &Felt::from(11_u64)).unwrap();
-    trie.insert(&address.to_bytes_be(), &contract_trie_key(second_key), &Felt::from(22_u64)).unwrap();
-    trie.commit(BasicId::new(7)).unwrap();
-    storage.snapshots.set_new_head(7);
-
-    let values =
-        storage.get_storage_at_many(7, &[(address, second_key), (address, first_key), (address, missing_key)]).unwrap();
-    assert_eq!(values, vec![Some(Felt::from(22_u64)), Some(Felt::from(11_u64)), None]);
-}
-
-#[test]
 fn revert_single_trie_reverts_and_commits_on_the_same_handle() {
     let temp_dir = tempfile::TempDir::new().unwrap();
     let storage = RocksDBStorage::open(temp_dir.path(), RocksDBConfig::default()).unwrap();
