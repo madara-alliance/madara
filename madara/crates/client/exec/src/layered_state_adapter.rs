@@ -193,6 +193,72 @@ impl<D: MadaraStorageRead> StateReader for LayeredStateAdapter<D> {
             |read_cache, value| read_cache.insert_storage_value(contract_address, key, value),
         )
     }
+
+    fn get_storage_many(&self, keys: &[(ContractAddress, StorageKey)]) -> StateResult<Vec<Felt>> {
+        if keys.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut values = vec![None; keys.len()];
+        let mut unresolved = Vec::new();
+        for (index, key) in keys.iter().copied().enumerate() {
+            if let Some(value) =
+                self.cached_states_by_block_n.iter().find_map(|state| state.state_diff.storage.get(&key).copied())
+            {
+                values[index] = Some(value);
+            } else {
+                unresolved.push((index, key));
+            }
+        }
+
+        if let Some(read_cache) = &self.read_cache {
+            let mut cache_indices = Vec::new();
+            let mut cache_keys = Vec::new();
+            let mut bypassed = Vec::new();
+            for (index, key @ (contract_address, _)) in unresolved {
+                if read_cache.is_contract_enabled(contract_address) {
+                    cache_indices.push(index);
+                    cache_keys.push(key);
+                } else {
+                    bypassed.push((index, key));
+                }
+            }
+
+            let mut misses = Vec::new();
+            let mut hit_count = 0;
+            for ((index, key), cached) in
+                cache_indices.into_iter().zip(cache_keys.iter().copied()).zip(read_cache.get_storage_many(&cache_keys))
+            {
+                if let Some(value) = cached {
+                    values[index] = Some(value);
+                    hit_count += 1;
+                } else {
+                    misses.push((index, key));
+                }
+            }
+            exec_metrics().record_read_cache_hits(read_cache_kind::STORAGE, hit_count);
+            exec_metrics().record_read_cache_misses(read_cache_kind::STORAGE, misses.len() as u64);
+            unresolved = misses;
+            unresolved.extend(bypassed);
+        }
+
+        if !unresolved.is_empty() {
+            let db_keys = unresolved.iter().map(|(_, key)| *key).collect::<Vec<_>>();
+            let db_values = self.inner.get_storage_many(&db_keys)?;
+            assert_eq!(db_values.len(), unresolved.len(), "DB bulk result length mismatch");
+            let mut backfill = Vec::with_capacity(unresolved.len());
+            for ((index, (contract_address, key)), value) in unresolved.into_iter().zip(db_values) {
+                values[index] = Some(value);
+                backfill.push((contract_address, key, value));
+            }
+            if let Some(read_cache) = &self.read_cache {
+                read_cache.insert_storage_values(&backfill);
+            }
+        }
+
+        Ok(values.into_iter().map(|value| value.expect("Every bulk storage read must be populated")).collect())
+    }
+
     fn get_nonce_at(&self, contract_address: ContractAddress) -> StateResult<Nonce> {
         self.get_contract_scoped_with_cache(
             contract_address,
@@ -392,6 +458,16 @@ mod tests {
         assert_eq!(
             adaptor.get_storage_at(Felt::THREE.try_into().unwrap(), Felt::TWO.try_into().unwrap()).unwrap(),
             Felt::ZERO
+        );
+        assert_eq!(
+            adaptor
+                .get_storage_many(&[
+                    (Felt::ONE.try_into().unwrap(), Felt::TWO.try_into().unwrap()),
+                    (Felt::ONE.try_into().unwrap(), Felt::ONE.try_into().unwrap()),
+                    (Felt::THREE.try_into().unwrap(), Felt::TWO.try_into().unwrap()),
+                ])
+                .unwrap(),
+            vec![Felt::TWO, Felt::THREE, Felt::ZERO]
         );
     }
 

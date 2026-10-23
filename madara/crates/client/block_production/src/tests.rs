@@ -170,7 +170,11 @@ pub async fn devnet_setup(
 
         Arc::new(ChainConfig {
             block_time,
-            bouncer_config: BouncerConfig { block_max_capacity: bouncer_weights, builtin_weights: Default::default() },
+            bouncer_config: BouncerConfig {
+                block_max_capacity: bouncer_weights,
+                builtin_weights: Default::default(),
+                ..Default::default()
+            },
             no_empty_blocks,
             ..ChainConfig::madara_devnet()
         })

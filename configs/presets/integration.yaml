@@ -11,6 +11,7 @@ block_time: "30s"
 pending_block_update_time: "2s"
 execution_batch_size: 16
 bouncer_config:
+  max_snos_full_output_cells: 49000
   block_max_capacity:
     sierra_gas: 5000000000
     message_segment_length: 3700

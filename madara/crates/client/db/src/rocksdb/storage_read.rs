@@ -52,6 +52,11 @@ impl MadaraStorageRead for RocksDBStorage {
             format!("Getting storage value for block_n={block_n} contract_address={contract_address:#x} key={key:#x}")
         })
     }
+    fn get_storage_at_many(&self, block_n: u64, keys: &[(Felt, Felt)]) -> Result<Vec<Option<Felt>>> {
+        self.inner
+            .get_storage_at_many(block_n, keys)
+            .with_context(|| format!("Getting {} storage values for block_n={block_n}", keys.len()))
+    }
     fn get_contract_nonce_at(&self, block_n: u64, contract_address: &Felt) -> Result<Option<Felt>> {
         self.inner
             .get_contract_nonce_at(block_n, contract_address)
