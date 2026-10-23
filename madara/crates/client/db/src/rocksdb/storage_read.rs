@@ -2,6 +2,7 @@
 //! Individual method semantics are documented by [`MadaraStorageRead`].
 
 use super::*;
+use bitvec::{order::Msb0, vec::BitVec, view::AsBits};
 
 impl MadaraStorageRead for RocksDBStorage {
     // Blocks
@@ -53,6 +54,23 @@ impl MadaraStorageRead for RocksDBStorage {
         })
     }
     fn get_storage_at_many(&self, block_n: u64, keys: &[(Felt, Felt)]) -> Result<Vec<Option<Felt>>> {
+        // Execution reads target the durable head. Its contract-storage trie already contains a
+        // point-lookup-optimized flat index, so avoid one historical iterator seek per key. Keep
+        // the history path for RPC and snapshot reads of older blocks.
+        if self.snapshots.inventory().head_block_n == Some(block_n) {
+            let trie = self.contract_storage_trie();
+            return keys
+                .iter()
+                .map(|(contract_address, key)| {
+                    let bytes = key.to_bytes_be();
+                    let key_bits: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
+                    trie.get(&contract_address.to_bytes_be(), &key_bits)
+                        .map_err(trie::WrappedBonsaiError)
+                        .map_err(Into::into)
+                })
+                .collect();
+        }
+
         self.inner
             .get_storage_at_many(block_n, keys)
             .with_context(|| format!("Getting {} storage values for block_n={block_n}", keys.len()))
