@@ -83,6 +83,39 @@ fn latest_bonsai_log_id_reads_latest_committed_revision() {
 }
 
 #[test]
+fn bulk_storage_read_preserves_order_history_and_missing_values() {
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let storage = RocksDBStorage::open(temp_dir.path(), RocksDBConfig::default()).unwrap();
+    let address = Felt::from(2_u64);
+    let first_key = Felt::from(10_u64);
+    let second_key = Felt::from(20_u64);
+    let missing_key = Felt::from(30_u64);
+
+    let state_diff = |first_value, second_value| StateDiff {
+        storage_diffs: vec![ContractStorageDiffItem {
+            address,
+            storage_entries: vec![
+                StorageEntry { key: first_key, value: Felt::from(first_value) },
+                StorageEntry { key: second_key, value: Felt::from(second_value) },
+            ],
+        }],
+        ..Default::default()
+    };
+    storage.inner.state_apply_state_diff(3, &state_diff(11_u64, 20_u64)).unwrap();
+    storage.inner.state_apply_state_diff(7, &state_diff(17_u64, 20_u64)).unwrap();
+
+    let keys = [(address, second_key), (address, first_key), (address, missing_key)];
+    assert_eq!(
+        storage.inner.get_storage_at_many(6, &keys).unwrap(),
+        vec![Some(Felt::from(20_u64)), Some(Felt::from(11_u64)), None]
+    );
+    assert_eq!(
+        storage.inner.get_storage_at_many(7, &keys).unwrap(),
+        vec![Some(Felt::from(20_u64)), Some(Felt::from(17_u64)), None]
+    );
+}
+
+#[test]
 fn revert_single_trie_reverts_and_commits_on_the_same_handle() {
     let temp_dir = tempfile::TempDir::new().unwrap();
     let storage = RocksDBStorage::open(temp_dir.path(), RocksDBConfig::default()).unwrap();

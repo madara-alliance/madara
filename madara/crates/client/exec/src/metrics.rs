@@ -313,17 +313,25 @@ impl ExecutionMetrics {
     /// Records a read-cache hit under the supplied cache-kind label.
     /// Tests mirror the counter so assertions do not depend on exporter collection.
     pub fn record_read_cache_hit(&self, kind: &'static str) {
+        self.record_read_cache_hits(kind, 1);
+    }
+
+    pub fn record_read_cache_hits(&self, kind: &'static str, count: u64) {
         #[cfg(test)]
-        test_counters::READ_CACHE_HITS_TOTAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.read_cache_hits_counter.add(1, &[KeyValue::new("kind", kind)]);
+        test_counters::READ_CACHE_HITS_TOTAL.fetch_add(count, std::sync::atomic::Ordering::Relaxed);
+        self.read_cache_hits_counter.add(count, &[KeyValue::new("kind", kind)]);
     }
 
     /// Records a read-cache miss under the supplied cache-kind label.
     /// Tests mirror the counter so assertions do not depend on exporter collection.
     pub fn record_read_cache_miss(&self, kind: &'static str) {
+        self.record_read_cache_misses(kind, 1);
+    }
+
+    pub fn record_read_cache_misses(&self, kind: &'static str, count: u64) {
         #[cfg(test)]
-        test_counters::READ_CACHE_MISSES_TOTAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.read_cache_misses_counter.add(1, &[KeyValue::new("kind", kind)]);
+        test_counters::READ_CACHE_MISSES_TOTAL.fetch_add(count, std::sync::atomic::Ordering::Relaxed);
+        self.read_cache_misses_counter.add(count, &[KeyValue::new("kind", kind)]);
     }
 
     /// Records the current execution read-cache size in bytes.
