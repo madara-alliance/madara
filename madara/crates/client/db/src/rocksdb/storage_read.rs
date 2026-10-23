@@ -2,7 +2,7 @@
 //! Individual method semantics are documented by [`MadaraStorageRead`].
 
 use super::*;
-use bitvec::{order::Msb0, vec::BitVec, view::AsBits};
+use bitvec::{order::Msb0, view::BitView};
 
 impl MadaraStorageRead for RocksDBStorage {
     // Blocks
@@ -63,8 +63,7 @@ impl MadaraStorageRead for RocksDBStorage {
                 .iter()
                 .map(|(contract_address, key)| {
                     let bytes = key.to_bytes_be();
-                    let key_bits: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
-                    trie.get(&contract_address.to_bytes_be(), &key_bits)
+                    trie.get(&contract_address.to_bytes_be(), &bytes.view_bits::<Msb0>()[5..])
                         .map_err(trie::WrappedBonsaiError)
                         .map_err(Into::into)
                 })
