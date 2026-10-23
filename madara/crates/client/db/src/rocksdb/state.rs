@@ -137,38 +137,7 @@ impl RocksDBStorageInner {
     }
 
     pub(super) fn get_storage_at_many(&self, block_n: u64, keys: &[(Felt, Felt)]) -> Result<Vec<Option<Felt>>> {
-        if keys.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let block_n = u32::try_from(block_n).unwrap_or(u32::MAX);
-        let mut seeks = keys
-            .iter()
-            .enumerate()
-            .map(|(index, (contract_address, key))| (index, make_storage_column_key(contract_address, key, block_n)))
-            .collect::<Vec<_>>();
-        seeks.sort_unstable_by(|(_, left), (_, right)| left.cmp(right));
-
-        let column = self.get_column(CONTRACT_STORAGE_COLUMN);
-        let mut read_options = ReadOptions::default();
-        read_options.set_prefix_same_as_start(true);
-        let mut iterator = DBIterator::new_cf(
-            &self.db,
-            &column,
-            read_options,
-            IteratorMode::From(&seeks[0].1, rocksdb::Direction::Forward),
-        );
-        let mut values = vec![None; keys.len()];
-        for (index, seek_key) in seeks {
-            iterator.set_mode(IteratorMode::From(&seek_key, rocksdb::Direction::Forward));
-            if iterator.next()? {
-                let (found_key, value) = iterator.current_item().expect("Valid iterator should have an item ready");
-                if found_key.get(..CONTRACT_STORAGE_PREFIX_LEN) == seek_key.get(..CONTRACT_STORAGE_PREFIX_LEN) {
-                    values[index] = Some(super::deserialize(value)?);
-                }
-            }
-        }
-        Ok(values)
+        keys.par_iter().map(|(contract_address, key)| self.get_storage_at(block_n, contract_address, key)).collect()
     }
 
     #[tracing::instrument(skip(self))]
