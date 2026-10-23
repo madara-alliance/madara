@@ -159,6 +159,29 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
         self.backend().db.get_storage_at(block_n, contract_address, key)
     }
 
+    pub fn get_contract_storage_many(&self, keys: &[(Felt, Felt)]) -> Result<Vec<Option<Felt>>> {
+        let mut values = vec![None; keys.len()];
+        let mut unresolved = Vec::new();
+        for (index, key) in keys.iter().copied().enumerate() {
+            if let Some(value) =
+                self.lookup_preconfirmed_state(|(_, state)| state.state_diff.storage_diffs.get(&key).copied())
+            {
+                values[index] = Some(value);
+            } else {
+                unresolved.push((index, key));
+            }
+        }
+
+        let Some(block_n) = self.latest_confirmed_block_n() else { return Ok(values) };
+        let db_keys = unresolved.iter().map(|(_, key)| *key).collect::<Vec<_>>();
+        let db_values = self.backend().db.get_storage_at_many(block_n, &db_keys)?;
+        assert_eq!(db_values.len(), unresolved.len(), "Storage bulk result length mismatch");
+        for ((index, _), value) in unresolved.into_iter().zip(db_values) {
+            values[index] = value;
+        }
+        Ok(values)
+    }
+
     pub fn get_contract_nonce(&self, contract_address: &Felt) -> Result<Option<Felt>> {
         if let Some(res) = self.lookup_preconfirmed_state(|(_, s)| s.state_diff.nonces.get(contract_address).copied()) {
             return Ok(Some(res));
