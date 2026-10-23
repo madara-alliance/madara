@@ -1,0 +1,22 @@
+[package]
+name = "madara-oss-verify-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+mp-bloom-filter = { path = "../../madara/crates/primitives/bloom_filter" }
+siphasher = "1"
+
+[[bin]]
+name = "event_bloom"
+path = "fuzz_targets/event_bloom.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

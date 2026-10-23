@@ -1,0 +1,5 @@
+# Copyright 2026 Madara contributors. SPDX-License-Identifier: Apache-2.0
+# kind path arguments (see theorem-labs/oss-verify's lay-out-sources)
+tree	ext/event_bloom/src	madara
+copy	targets/event_bloom/Cargo.lock	Cargo.lock
+crates	ext/event_bloom/vendor	targets/event_bloom/Cargo.lock	ext/event_bloom/src	.oss-verify/fuzz	event_bloom
