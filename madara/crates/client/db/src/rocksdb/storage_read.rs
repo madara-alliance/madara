@@ -2,7 +2,6 @@
 //! Individual method semantics are documented by [`MadaraStorageRead`].
 
 use super::*;
-use bitvec::{order::Msb0, view::BitView};
 
 impl MadaraStorageRead for RocksDBStorage {
     // Blocks
@@ -58,16 +57,7 @@ impl MadaraStorageRead for RocksDBStorage {
         // point-lookup-optimized flat index, so avoid one historical iterator seek per key. Keep
         // the history path for RPC and snapshot reads of older blocks.
         if self.snapshots.inventory().head_block_n == Some(block_n) {
-            let trie = self.contract_storage_trie();
-            return keys
-                .iter()
-                .map(|(contract_address, key)| {
-                    let bytes = key.to_bytes_be();
-                    trie.get(&contract_address.to_bytes_be(), &bytes.view_bits::<Msb0>()[5..])
-                        .map_err(trie::WrappedBonsaiError)
-                        .map_err(Into::into)
-                })
-                .collect();
+            return self.inner.get_current_storage_at_many(keys);
         }
 
         self.inner
