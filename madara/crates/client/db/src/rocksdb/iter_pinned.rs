@@ -73,6 +73,10 @@ impl<'a> DBIterator<'a> {
         }
     }
 
+    pub fn current_item(&self) -> Option<(&[u8], &[u8])> {
+        Some((self.raw.key()?, self.raw.value()?))
+    }
+
     /// This function requires a mapping function, because std Iterator are not lending iterators, meaning, they don't support returning
     /// values with a lifetime associated to itself. You probably want to use this `map` function for deserialization.
     #[allow(unused)]

@@ -136,6 +136,39 @@ impl RocksDBStorageInner {
         self.db_history_kv_resolve(&prefix, CONTRACT_STORAGE_COLUMN)
     }
 
+    pub(super) fn get_storage_at_many(&self, block_n: u64, keys: &[(Felt, Felt)]) -> Result<Vec<Option<Felt>>> {
+        if keys.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let block_n = u32::try_from(block_n).unwrap_or(u32::MAX);
+        let mut seeks = keys
+            .iter()
+            .enumerate()
+            .map(|(index, (contract_address, key))| (index, make_storage_column_key(contract_address, key, block_n)))
+            .collect::<Vec<_>>();
+        seeks.sort_unstable_by(|(_, left), (_, right)| left.cmp(right));
+
+        let column = self.get_column(CONTRACT_STORAGE_COLUMN);
+        let mut iterator = DBIterator::new_cf(
+            &self.db,
+            &column,
+            ReadOptions::default(),
+            IteratorMode::From(&seeks[0].1, rocksdb::Direction::Forward),
+        );
+        let mut values = vec![None; keys.len()];
+        for (index, seek_key) in seeks {
+            iterator.set_mode(IteratorMode::From(&seek_key, rocksdb::Direction::Forward));
+            if iterator.next()? {
+                let (found_key, value) = iterator.current_item().expect("Valid iterator should have an item ready");
+                if found_key.get(..CONTRACT_STORAGE_PREFIX_LEN) == seek_key.get(..CONTRACT_STORAGE_PREFIX_LEN) {
+                    values[index] = Some(super::deserialize(value)?);
+                }
+            }
+        }
+        Ok(values)
+    }
+
     #[tracing::instrument(skip(self))]
     pub(super) fn get_contract_nonce_at(&self, block_n: u64, contract_address: &Felt) -> Result<Option<Felt>> {
         let block_n = u32::try_from(block_n).unwrap_or(u32::MAX); // We can't store blocks past u32::MAX.

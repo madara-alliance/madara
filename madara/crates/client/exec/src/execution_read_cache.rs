@@ -121,6 +121,10 @@ impl ExecutionReadCache {
         self.with_read(|guard| guard.storage.get(&(contract_address, key)).map(|entry| entry.value))
     }
 
+    pub(crate) fn get_storage_many(&self, keys: &[(ContractAddress, StorageKey)]) -> Vec<Option<Felt>> {
+        self.with_read(|guard| keys.iter().map(|key| guard.storage.get(key).map(|entry| entry.value)).collect())
+    }
+
     pub(crate) fn get_nonce(&self, contract_address: ContractAddress) -> Option<Nonce> {
         self.with_read(|guard| guard.nonces.get(&contract_address).map(|entry| entry.value))
     }
@@ -142,6 +146,16 @@ impl ExecutionReadCache {
             return;
         }
         self.with_write_recording(|guard| guard.insert_storage(contract_address, key, value));
+    }
+
+    pub(crate) fn insert_storage_values(&self, values: &[(ContractAddress, StorageKey, Felt)]) {
+        self.with_write_recording(|guard| {
+            for (contract_address, key, value) in values.iter().copied() {
+                if self.is_contract_enabled(contract_address) {
+                    guard.insert_storage(contract_address, key, value);
+                }
+            }
+        });
     }
 
     pub(crate) fn insert_nonce_value(&self, contract_address: ContractAddress, value: Nonce) {
@@ -386,6 +400,31 @@ mod tests {
         assert!(inner.current_bytes <= max_bytes);
         assert_eq!(inner.storage.len(), 1);
         assert_eq!(inner.order.len(), 1);
+    }
+
+    #[test]
+    fn bulk_storage_access_preserves_order_and_allowlist() {
+        let allowed = Felt::ONE.try_into().unwrap();
+        let blocked = Felt::TWO.try_into().unwrap();
+        let first_key = Felt::ONE.try_into().unwrap();
+        let second_key = Felt::TWO.try_into().unwrap();
+        let cache = ExecutionReadCache::from_config(&ExecutionReadCacheConfig {
+            enabled: true,
+            contracts: Some(vec![allowed]),
+            max_memory_bytes: 1024 * 1024,
+        })
+        .unwrap();
+
+        cache.insert_storage_values(&[
+            (allowed, first_key, Felt::from(10u64)),
+            (allowed, second_key, Felt::from(20u64)),
+            (blocked, first_key, Felt::from(30u64)),
+        ]);
+
+        assert_eq!(
+            cache.get_storage_many(&[(allowed, second_key), (blocked, first_key), (allowed, first_key)]),
+            vec![Some(Felt::from(20u64)), None, Some(Felt::from(10u64))]
+        );
     }
 
     #[test]
