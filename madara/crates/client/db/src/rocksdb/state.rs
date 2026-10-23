@@ -161,19 +161,22 @@ impl RocksDBStorageInner {
             })
             .collect::<Vec<_>>();
         let column = self.get_column(BONSAI_CONTRACT_STORAGE_FLAT_COLUMN);
-
-        self.db
-            .batched_multi_get_cf(&column, flat_keys.iter(), false)
-            .into_iter()
-            .map(|result| {
-                result?
-                    .map(|value| {
-                        let bytes: [u8; 32] = value.as_ref().try_into().context("Invalid Bonsai flat Felt length")?;
-                        Ok(Felt::from_bytes_be(&bytes))
-                    })
-                    .transpose()
-            })
-            .collect()
+        let possible =
+            flat_keys.iter().enumerate().filter(|(_, key)| self.db.key_may_exist_cf(&column, key)).collect::<Vec<_>>();
+        let mut values = vec![None; keys.len()];
+        for ((index, _), result) in possible.iter().copied().zip(self.db.batched_multi_get_cf(
+            &column,
+            possible.iter().map(|(_, key)| *key),
+            false,
+        )) {
+            values[index] = result?
+                .map(|value| {
+                    let bytes: [u8; 32] = value.as_ref().try_into().context("Invalid Bonsai flat Felt length")?;
+                    Ok(Felt::from_bytes_be(&bytes))
+                })
+                .transpose()?;
+        }
+        Ok(values)
     }
 
     #[tracing::instrument(skip(self))]
