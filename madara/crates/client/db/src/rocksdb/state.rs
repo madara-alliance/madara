@@ -9,7 +9,7 @@ use mp_convert::Felt;
 use mp_state_update::{
     ContractStorageDiffItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff, StorageEntry,
 };
-use rayon::{iter::ParallelIterator, slice::ParallelSlice};
+use rayon::{iter::ParallelIterator, slice::ParallelSlice, IntoParallelRefIterator};
 use rocksdb::{IteratorMode, ReadOptions};
 use std::collections::HashMap;
 
