@@ -280,6 +280,7 @@ async fn sync_inner(
 }
 
 /// Runs a single message sync session. Returns when the stream ends or an error occurs.
+#[allow(clippy::too_many_arguments)]
 async fn run_message_sync(
     settlement_client: &Arc<dyn SettlementLayerProvider>,
     backend: &Arc<MadaraBackend>,
@@ -517,6 +518,7 @@ async fn process_canonical_event(
 /// succeed, so a failed event cannot be skipped by a later event advancing the cursor.
 /// Reorged events are discarded without advancing the cursor or writing nonce metadata.
 /// Reorgs deeper than `finality_blocks` after L2 inclusion remain outside this finality guarantee.
+#[allow(clippy::too_many_arguments)]
 async fn process_finalized_events(
     settlement_client: &Arc<dyn SettlementLayerProvider>,
     backend: &MadaraBackend,
