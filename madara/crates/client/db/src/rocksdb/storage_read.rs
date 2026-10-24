@@ -110,6 +110,9 @@ impl MadaraStorageRead for RocksDBStorage {
     fn get_l1_messaging_sync_tip(&self) -> Result<Option<u64>> {
         self.inner.get_l1_messaging_sync_tip().context("Getting l1 messaging sync tip")
     }
+    fn get_l1_message_scanned_block(&self) -> Result<Option<u64>> {
+        self.inner.get_l1_message_scanned_block().context("Getting L1 message scanned block")
+    }
     fn get_external_db_retention_cursor(&self) -> Result<Option<u64>> {
         self.inner.get_external_db_retention_cursor().context("Getting external db retention cursor")
     }

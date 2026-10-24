@@ -163,7 +163,13 @@ impl RocksDBStorage {
 
         let writeopts = config.write_mode.to_write_options();
         tracing::info!("📝 Database write mode: {}", config.write_mode);
-        let inner = Arc::new(RocksDBStorageInner { global_opts: opts, writeopts, db, config: config.clone() });
+        let inner = Arc::new(RocksDBStorageInner {
+            global_opts: opts,
+            writeopts,
+            db,
+            config: config.clone(),
+            l1_message_cursor_lock: std::sync::Mutex::new(()),
+        });
 
         let head_block_n = inner.get_head_projection_without_content()?.and_then(|c| match c {
             StoredHeadProjectionWithoutContent::Confirmed(block_n) => Some(block_n),
@@ -750,6 +756,11 @@ impl RocksDBStorage {
         l1_message_nonces_to_cleanup: &[u64],
         l1_messaging_sync_tip_after_revert: Option<u64>,
     ) -> Result<()> {
+        let _cursor_guard = self
+            .inner
+            .l1_message_cursor_lock
+            .lock()
+            .map_err(|_| anyhow::anyhow!("L1 message cursor lock poisoned during reorg"))?;
         let mut batch = WriteBatchWithTransaction::default();
         self.inner.replace_head_projection_in_batch(&StorageHeadProjection::Confirmed(target_block_n), &mut batch)?;
         self.inner.delete_all_preconfirmed_rows_in_batch(&mut batch)?;
@@ -757,6 +768,9 @@ impl RocksDBStorage {
         self.inner.write_latest_applied_trie_update_in_batch(&Some(target_block_n), &mut batch)?;
         if let Some(l1_sync_tip) = l1_messaging_sync_tip_after_revert {
             self.inner.write_l1_messaging_sync_tip_in_batch(Some(l1_sync_tip), &mut batch);
+            if let Some(scanned) = self.inner.get_l1_message_scanned_block()? {
+                self.inner.write_l1_message_scanned_block_in_batch(scanned.min(l1_sync_tip), &mut batch);
+            }
         }
         self.inner.db.write_opt(batch, &self.inner.writeopts).context("Committing canonical reorg head")
     }

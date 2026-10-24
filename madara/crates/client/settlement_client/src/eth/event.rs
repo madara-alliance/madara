@@ -154,12 +154,6 @@ pub struct EthereumEventStream {
     pub stream: EthereumStreamType,
 }
 
-impl EthereumEventStream {
-    pub fn new(watcher: EventPoller<LogMessageToL2>) -> Self {
-        Self { stream: Box::pin(watch_events_with_liveness(watcher)) }
-    }
-}
-
 impl Stream for EthereumEventStream {
     type Item = Result<MessageToL2WithMetadata, SettlementClientError>;
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {

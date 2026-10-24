@@ -4,19 +4,76 @@ use crate::{RECONNECT_BASE_DELAY, RECONNECT_MAX_DELAY};
 use alloy::primitives::{B256, U256};
 use futures::StreamExt;
 use mc_db::MadaraBackend;
+use mc_telemetry::{register_counter_metric_instrument, register_gauge_metric_instrument};
 use mp_convert::L1TransactionHash;
 use mp_transactions::L1HandlerTransactionWithFee;
 use mp_utils::service::ServiceContext;
+use opentelemetry::global;
+use opentelemetry::metrics::{Counter, Gauge};
 use starknet_types_core::felt::Felt;
 use std::collections::VecDeque;
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, OnceLock};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::Notify;
 
 mod find_start_block;
 
 /// Interval for polling the stream and checking finality on queued events.
 const STREAM_POLL_INTERVAL: Duration = Duration::from_millis(100);
+#[cfg(not(test))]
+const L1_SCAN_POLL_INTERVAL: Duration = Duration::from_secs(12);
+#[cfg(test)]
+const L1_SCAN_POLL_INTERVAL: Duration = Duration::from_millis(100);
+const L1_SCAN_RANGE_SIZE: u64 = 256;
+const L1_SCAN_OVERLAP: u64 = 128;
+const L1_RECOVERY_FROM_BLOCK_ENV: &str = "MADARA_L1_MESSAGE_RECOVERY_FROM_BLOCK";
+
+struct L1MessageScanMetrics {
+    scanned_block: Gauge<u64>,
+    lag_blocks: Gauge<u64>,
+    last_success_unix: Gauge<u64>,
+    failures: Counter<u64>,
+    events: Counter<u64>,
+}
+
+fn l1_message_scan_metrics() -> &'static L1MessageScanMetrics {
+    static METRICS: OnceLock<L1MessageScanMetrics> = OnceLock::new();
+    METRICS.get_or_init(|| {
+        let meter = global::meter("mc-settlement-client.l1-message-scan");
+        L1MessageScanMetrics {
+            scanned_block: register_gauge_metric_instrument(
+                &meter,
+                "l1_message_scanned_block".into(),
+                "Last fully scanned Ethereum block".into(),
+                "block".into(),
+            ),
+            lag_blocks: register_gauge_metric_instrument(
+                &meter,
+                "l1_message_scan_lag_blocks".into(),
+                "Confirmed blocks behind the message scanner".into(),
+                "block".into(),
+            ),
+            last_success_unix: register_gauge_metric_instrument(
+                &meter,
+                "l1_message_scan_last_success_unix".into(),
+                "Last successful range scan Unix time".into(),
+                "s".into(),
+            ),
+            failures: register_counter_metric_instrument(
+                &meter,
+                "l1_message_scan_failures".into(),
+                "Failed message range scans".into(),
+                "".into(),
+            ),
+            events: register_counter_metric_instrument(
+                &meter,
+                "l1_message_scan_events".into(),
+                "Message logs returned by range scans, including overlap".into(),
+                "".into(),
+            ),
+        }
+    })
+}
 
 #[derive(Clone, Debug)]
 pub struct MessageToL2WithMetadata {
@@ -164,6 +221,19 @@ async fn run_message_sync(
     unsafe_skip_l1_message_consumed_check: bool,
     metadata_only: bool,
 ) -> Result<(), SettlementClientError> {
+    if matches!(settlement_client.get_client_type(), ClientType::Eth) {
+        return run_eth_message_scan(
+            settlement_client,
+            backend,
+            notify_consumer,
+            replay_max_duration,
+            finality_blocks,
+            unsafe_skip_l1_message_consumed_check,
+            metadata_only,
+        )
+        .await;
+    }
+
     let from_l1_block_n = get_start_block(settlement_client, backend, replay_max_duration).await?;
 
     tracing::info!("⟠ Starting L1→L2 message sync from block #{from_l1_block_n} (finality: {finality_blocks} blocks)");
@@ -217,6 +287,181 @@ async fn run_message_sync(
             tracing::warn!("Error processing finalized events: {e:#}");
         }
     }
+}
+
+fn initial_eth_scan_start(legacy_event_start: u64, recovery_from: Option<u64>) -> u64 {
+    legacy_event_start.saturating_sub(L1_SCAN_OVERLAP).min(recovery_from.unwrap_or(u64::MAX))
+}
+
+/// Ethereum message ingestion uses explicit block ranges. Only a fully processed range
+/// advances the durable cursor; replaying a partially written range is safe by nonce.
+async fn run_eth_message_scan(
+    settlement_client: &Arc<dyn SettlementLayerProvider>,
+    backend: &Arc<MadaraBackend>,
+    notify_consumer: &Notify,
+    replay_max_duration: Duration,
+    finality_blocks: u64,
+    unsafe_skip_l1_message_consumed_check: bool,
+    metadata_only: bool,
+) -> Result<(), SettlementClientError> {
+    let mut scanned = backend.get_l1_message_scanned_block().map_err(|error| {
+        SettlementClientError::DatabaseError(format!("Failed to get scanned L1 message block: {error}"))
+    })?;
+    let mut next_block = match scanned {
+        Some(block) => block.saturating_add(1),
+        None => get_start_block(settlement_client, backend, replay_max_duration).await?,
+    };
+    // Explicit one-time recovery can begin before the legacy event tip. After a
+    // range completes, the durable cursor takes precedence on restarts.
+    let recovery_from = match std::env::var(L1_RECOVERY_FROM_BLOCK_ENV) {
+        Ok(raw) => Some(raw.parse::<u64>().map_err(|error| {
+            SettlementClientError::InvalidResponse(format!(
+                "Invalid {L1_RECOVERY_FROM_BLOCK_ENV} block number: {error}"
+            ))
+        })?),
+        Err(std::env::VarError::NotPresent) => None,
+        Err(error) => {
+            return Err(SettlementClientError::InvalidResponse(format!(
+                "Invalid {L1_RECOVERY_FROM_BLOCK_ENV}: {error}"
+            )));
+        }
+    };
+    if scanned.is_none() {
+        // The legacy tip marks an event, not a complete range. Rewind on
+        // migration, or further for a separately reviewed recovery.
+        next_block = initial_eth_scan_start(next_block, recovery_from);
+        if recovery_from.is_some() {
+            tracing::warn!("⟠ Explicit L1 message recovery starts from Ethereum block #{next_block}");
+        }
+    } else if let Some(recovery_from) = recovery_from {
+        tracing::warn!(
+            "⟠ {L1_RECOVERY_FROM_BLOCK_ENV} is ignored because a durable scanned cursor already exists; verify the cursor began before block #{recovery_from}"
+        );
+    }
+    tracing::info!(
+        "⟠ Starting Ethereum L1 message range scan from block #{next_block} (finality: {finality_blocks} blocks)"
+    );
+    let metrics = l1_message_scan_metrics();
+    if let Some(block) = scanned {
+        metrics.scanned_block.record(block, &[]);
+    }
+
+    loop {
+        let durable_scanned = backend.get_l1_message_scanned_block().map_err(|error| {
+            SettlementClientError::DatabaseError(format!("Failed to reread scanned L1 message block: {error}"))
+        })?;
+        if durable_scanned != scanned {
+            // L2 reorg cleanup can rewind this cursor while the scanner is running.
+            return Err(SettlementClientError::StreamProcessing(
+                "L1 message scan cursor changed externally; restarting from durable value".into(),
+            ));
+        }
+        let head = settlement_client.get_latest_block_number().await?;
+        if head < finality_blocks {
+            tokio::time::sleep(L1_SCAN_POLL_INTERVAL).await;
+            continue;
+        }
+        let confirmed_head = head.saturating_sub(finality_blocks);
+        if next_block > confirmed_head {
+            // Recheck the recent overlap even when no new block has arrived. A provider
+            // may have returned a successful but incomplete result on an earlier pass.
+            if let Some(block) = scanned {
+                if let Err(error) = scan_message_range(
+                    settlement_client,
+                    backend,
+                    notify_consumer,
+                    block.saturating_sub(L1_SCAN_OVERLAP - 1),
+                    block,
+                    unsafe_skip_l1_message_consumed_check,
+                    metadata_only,
+                )
+                .await
+                {
+                    metrics.failures.add(1, &[]);
+                    return Err(error);
+                }
+                metrics.lag_blocks.record(confirmed_head.saturating_sub(block), &[]);
+                if let Ok(duration) = SystemTime::now().duration_since(UNIX_EPOCH) {
+                    metrics.last_success_unix.record(duration.as_secs(), &[]);
+                }
+            }
+            tokio::time::sleep(L1_SCAN_POLL_INTERVAL).await;
+            continue;
+        }
+
+        let from = if scanned.is_some() { next_block.saturating_sub(L1_SCAN_OVERLAP) } else { next_block };
+        let to = next_block.saturating_add(L1_SCAN_RANGE_SIZE - 1).min(confirmed_head);
+        if let Err(error) = scan_message_range(
+            settlement_client,
+            backend,
+            notify_consumer,
+            from,
+            to,
+            unsafe_skip_l1_message_consumed_check,
+            metadata_only,
+        )
+        .await
+        {
+            metrics.failures.add(1, &[]);
+            return Err(error);
+        }
+        let advanced = backend.compare_and_set_l1_message_scanned_block(scanned, to).map_err(|error| {
+            SettlementClientError::DatabaseError(format!("Failed to persist scanned L1 message block {to}: {error}"))
+        })?;
+        if !advanced {
+            return Err(SettlementClientError::StreamProcessing(
+                "L1 message scan cursor changed during range; restarting".into(),
+            ));
+        }
+        metrics.scanned_block.record(to, &[]);
+        metrics.lag_blocks.record(confirmed_head.saturating_sub(to), &[]);
+        if let Ok(duration) = SystemTime::now().duration_since(UNIX_EPOCH) {
+            metrics.last_success_unix.record(duration.as_secs(), &[]);
+        }
+        tracing::info!("⟠ L1 message range scan complete: blocks {from}..={to}, confirmed_head={confirmed_head}");
+        scanned = Some(to);
+        next_block = to.saturating_add(1);
+    }
+}
+
+async fn scan_message_range(
+    settlement_client: &Arc<dyn SettlementLayerProvider>,
+    backend: &MadaraBackend,
+    notify_consumer: &Notify,
+    from: u64,
+    to: u64,
+    unsafe_skip_l1_message_consumed_check: bool,
+    metadata_only: bool,
+) -> Result<(), SettlementClientError> {
+    let mut events = settlement_client.messages_to_l2_in_range(from, to).await?;
+    events.sort_by_key(|event| (event.l1_block_number, event.message.tx.nonce));
+    l1_message_scan_metrics().events.add(events.len() as u64, &[]);
+    tracing::debug!("L1 message range {from}..={to} returned {} events", events.len());
+    for event in events {
+        if event.l1_block_number < from || event.l1_block_number > to {
+            return Err(SettlementClientError::InvalidResponse(format!(
+                "L1 message log outside requested range {from}..={to}: block {}",
+                event.l1_block_number
+            )));
+        }
+        let canonical_hash = settlement_client.get_block_n_hash(event.l1_block_number).await?;
+        if canonical_hash != Some(event.l1_block_hash) {
+            return Err(SettlementClientError::InvalidResponse(format!(
+                "L1 message block {} changed during range scan",
+                event.l1_block_number
+            )));
+        }
+        process_canonical_event(
+            settlement_client,
+            backend,
+            &event,
+            unsafe_skip_l1_message_consumed_check,
+            metadata_only,
+        )
+        .await?;
+        notify_consumer.notify_waiters();
+    }
+    Ok(())
 }
 
 /// Determines the L1 block to start syncing from.
@@ -318,6 +563,15 @@ fn persist_message_origin(
 ) -> Result<(), SettlementClientError> {
     let nonce = event.message.tx.nonce;
     let l1_tx_hash = L1TransactionHash(event.l1_transaction_hash.to_be_bytes::<32>());
+    if let Some(existing) = backend.get_l1_txn_hash_by_nonce(nonce).map_err(|error| {
+        SettlementClientError::DatabaseError(format!("Failed to read L1 origin for nonce {nonce}: {error}"))
+    })? {
+        if existing != l1_tx_hash {
+            return Err(SettlementClientError::InvalidResponse(format!(
+                "Conflicting L1 transaction for message nonce {nonce}; manual reorg reconciliation required"
+            )));
+        }
+    }
     backend.write_l1_txn_hash_by_nonce(nonce, &l1_tx_hash).map_err(|error| {
         SettlementClientError::DatabaseError(format!("Failed to store l1_tx_hash by nonce: {error}"))
     })?;

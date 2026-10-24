@@ -29,7 +29,7 @@ pub enum ClientType {
 ///
 /// # Stream Requirements
 ///
-/// The returned streams must be streams that:
+/// For settlement layers that use a live stream, the returned streams must:
 /// - Produces `Result<MessageToL2WithMetadata, SettlementClientError>`
 /// - Handles gaps in event sequences (via `Option`)
 /// - Manages errors during event processing
@@ -120,17 +120,30 @@ pub trait SettlementLayerProvider: Send + Sync {
     /// message must be discarded.
     async fn get_block_n_hash(&self, l1_block_n: u64) -> Result<Option<[u8; 32]>, SettlementClientError>;
 
+    /// Returns every message log in an inclusive, explicit L1 block range.
+    /// Ethereum implements this with `eth_getLogs`; other settlement layers use the stream.
+    async fn messages_to_l2_in_range(
+        &self,
+        _from_l1_block_n: u64,
+        _to_l1_block_n: u64,
+    ) -> Result<Vec<MessageToL2WithMetadata>, SettlementClientError> {
+        Err(SettlementClientError::StreamProcessing("Block-range message scans are unsupported".into()))
+    }
+
     // ============================================================
     // Stream Implementations :
     // ============================================================
 
-    /// Creates a stream listening to L1 to L2 events.
+    /// Creates a stream listening to L1 to L2 events on settlement layers that
+    /// support it. Ethereum uses `messages_to_l2_in_range` instead.
     ///
     /// # Arguments
     /// * `from_l1_block_n` - Start returning events from this block_n.
     /// * `end_l1_block_n` - Stop returning events at this block_n. None to keep continuing.
     async fn messages_to_l2_stream(
         &self,
-        from_l1_block_n: u64,
-    ) -> Result<BoxStream<'static, Result<MessageToL2WithMetadata, SettlementClientError>>, SettlementClientError>;
+        _from_l1_block_n: u64,
+    ) -> Result<BoxStream<'static, Result<MessageToL2WithMetadata, SettlementClientError>>, SettlementClientError> {
+        Err(SettlementClientError::StreamProcessing("Live L1 message filters are unsupported".into()))
+    }
 }

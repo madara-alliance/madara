@@ -58,6 +58,9 @@ async fn revert_cleans_l1_message_state_and_rewinds_sync_tip_from_source_metadat
         ))
         .expect("Writing pending-only message should succeed");
     backend.write_l1_messaging_sync_tip(Some(10_000)).expect("Writing sync tip should succeed");
+    assert!(backend
+        .compare_and_set_l1_message_scanned_block(None, 10_000)
+        .expect("Writing scan cursor should succeed"));
 
     let (new_tip_n, new_tip_hash) =
         backend.revert_to(&block_0_hash).expect("Revert should succeed with source mapping present");
@@ -82,10 +85,21 @@ async fn revert_cleans_l1_message_state_and_rewinds_sync_tip_from_source_metadat
         .expect("DB read should succeed")
         .is_none());
     assert_eq!(backend.get_l1_messaging_sync_tip().expect("DB read should succeed"), Some(pending_only_l1_block - 1));
+    assert_eq!(
+        backend.get_l1_message_scanned_block().expect("DB read should succeed"),
+        Some(pending_only_l1_block - 1)
+    );
+    assert!(!backend
+        .compare_and_set_l1_message_scanned_block(Some(10_000), 10_001)
+        .expect("Stale cursor advance should be rejected"));
 
     let repeated = backend.revert_to(&block_0_hash).expect("Repeating a completed revert should be a no-op");
     assert_eq!(repeated, (new_tip_n, new_tip_hash));
     assert_eq!(backend.get_l1_messaging_sync_tip().expect("DB read should succeed"), Some(pending_only_l1_block - 1));
+    assert_eq!(
+        backend.get_l1_message_scanned_block().expect("DB read should succeed"),
+        Some(pending_only_l1_block - 1)
+    );
 }
 
 /// Verifies that legacy or replay-injected L1 messages without source-block metadata remain

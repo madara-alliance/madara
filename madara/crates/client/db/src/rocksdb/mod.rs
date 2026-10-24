@@ -102,6 +102,7 @@ pub(crate) struct RocksDBStorageInner {
     global_opts: RocksDBOptions,
     writeopts: WriteOptions,
     config: RocksDBConfig,
+    l1_message_cursor_lock: std::sync::Mutex<()>,
 }
 
 impl Drop for RocksDBStorageInner {

@@ -5,10 +5,12 @@ use super::*;
 
 // Delegate these db reads/writes. These are related to specific services, and are not specific to a block view / the head projection writer handle.
 impl<D: MadaraStorageRead> MadaraBackend<D> {
-    /// Returns the last L1 block scanned by the messaging synchronization service.
-    /// Absence means no durable synchronization cursor has been recorded.
+    /// Returns the block of the last processed event (legacy event tip).
     pub fn get_l1_messaging_sync_tip(&self) -> Result<Option<u64>> {
         self.db.get_l1_messaging_sync_tip()
+    }
+    pub fn get_l1_message_scanned_block(&self) -> Result<Option<u64>> {
+        self.db.get_l1_message_scanned_block()
     }
     /// Returns the external database retention cursor maintained by its service.
     /// The backend does not reinterpret or advance the stored cursor.
@@ -97,6 +99,9 @@ impl<D: MadaraStorage> MadaraBackend<D> {
     /// Passing `None` clears the durable cursor.
     pub fn write_l1_messaging_sync_tip(&self, l1_block_n: Option<u64>) -> Result<()> {
         self.db.write_l1_messaging_sync_tip(l1_block_n)
+    }
+    pub fn compare_and_set_l1_message_scanned_block(&self, expected: Option<u64>, l1_block_n: u64) -> Result<bool> {
+        self.db.compare_and_set_l1_message_scanned_block(expected, l1_block_n)
     }
     /// Persists the external database retention cursor.
     /// Cursor ordering policy remains the responsibility of the calling service.
