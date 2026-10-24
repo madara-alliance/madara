@@ -474,6 +474,7 @@ async fn main() -> anyhow::Result<()> {
         Some(service_mempool.mempool()),
         service_block_production.handle(),
         service_mempool.mempool(),
+        service_l1_sync.backfill_client(),
     );
 
     // Feeder gateway

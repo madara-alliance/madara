@@ -3,6 +3,7 @@ use crate::{versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet, St
 use anyhow::Context;
 use jsonrpsee::core::{async_trait, RpcResult};
 use mc_db::MadaraStorageRead;
+use mc_settlement_client::BackfillL1HandlerMessageResult;
 use mc_submit_tx::{SubmitL1HandlerTransaction, SubmitTransaction};
 use mp_block::header::CustomHeader;
 use mp_convert::Felt;
@@ -11,6 +12,7 @@ use mp_rpc::admin::{
     ReplayBlockBoundaryStatus,
 };
 use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
+use mp_rpc::v0_9_0::L1TxnHash;
 use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
@@ -360,6 +362,25 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .map_err(StarknetRpcApiError::from)?)
     }
 
+    async fn backfill_l1_handler_message(
+        &self,
+        l1_block_number: u64,
+        l1_transaction_hash: L1TxnHash,
+        nonce: u64,
+    ) -> RpcResult<BackfillL1HandlerMessageResult> {
+        if !self.rpc_unsafe_enabled {
+            return Err(StarknetRpcApiError::ErrUnexpectedError {
+                error: "This method requires the --rpc-unsafe flag to be enabled".into(),
+            }
+            .into());
+        }
+        let client = self.l1_backfill_client.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?;
+        client
+            .backfill_l1_handler_message(l1_block_number, l1_transaction_hash.0, nonce)
+            .await
+            .map_err(|e| StarknetRpcApiError::ErrUnexpectedError { error: e.to_string().into() }.into())
+    }
+
     async fn set_block_header(&self, custom_block_headers: CustomHeader) -> RpcResult<()> {
         // Check if unsafe RPC methods are enabled
         if !self.rpc_unsafe_enabled {
@@ -514,6 +535,15 @@ mod tests {
 
     fn make_starknet_with_mempool() -> (Arc<Mempool>, Starknet) {
         make_starknet_with_mempool_and_unsafe(true)
+    }
+
+    #[tokio::test]
+    async fn backfill_requires_unsafe_admin_rpc() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        let mut rpc = make_starknet(backend, ServiceContext::new_for_testing());
+        rpc.set_rpc_unsafe_enabled(false);
+        let error = rpc.backfill_l1_handler_message(100, mp_rpc::v0_9_0::L1TxnHash([0; 32]), 93).await.unwrap_err();
+        assert_eq!(error.code(), 63);
     }
 
     fn invoke_v1_tx(sender: Felt, nonce: Felt, hash: Felt, arrived_at: u64) -> ValidatedTransaction {

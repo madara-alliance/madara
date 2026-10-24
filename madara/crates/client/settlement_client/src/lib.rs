@@ -178,6 +178,7 @@ mod eth;
 pub mod gas_price;
 mod messages_to_l2_consumer;
 mod messaging;
+pub use messaging::{BackfillL1HandlerMessageResult, BackfillStatus};
 pub(crate) mod starknet;
 pub mod state_update;
 pub mod sync;
@@ -197,6 +198,28 @@ pub struct L1ClientImpl {
 }
 
 impl L1ClientImpl {
+    pub async fn backfill_l1_handler_message(
+        &self,
+        block_number: u64,
+        l1_transaction_hash: [u8; 32],
+        nonce: u64,
+    ) -> Result<BackfillL1HandlerMessageResult, crate::error::SettlementClientError> {
+        if self.unsafe_skip_l1_message_consumed_check {
+            return Err(crate::error::SettlementClientError::InvalidResponse(
+                "Verified backfill requires the L1 consumed check to be enabled".into(),
+            ));
+        }
+        messaging::backfill_l1_handler_message(
+            &self.provider,
+            &self.backend,
+            &self.notify_new_message_to_l2,
+            block_number,
+            l1_transaction_hash,
+            nonce,
+        )
+        .await
+    }
+
     fn new(
         backend: Arc<MadaraBackend>,
         provider: Arc<dyn SettlementLayerProvider>,

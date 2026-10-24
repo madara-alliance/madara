@@ -8,6 +8,7 @@ use mc_block_production::BlockProductionHandle;
 use mc_db::MadaraBackend;
 use mc_mempool::Mempool;
 use mc_rpc::{rpc_api_admin, rpc_api_user, Starknet};
+use mc_settlement_client::L1ClientImpl;
 use metrics::RpcMetrics;
 use mp_chain_config::RpcVersion;
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
@@ -34,6 +35,7 @@ pub struct RpcService {
     rpc_type: RpcType,
     block_prod_handle: Option<BlockProductionHandle>,
     mempool: Option<Arc<Mempool>>,
+    l1_backfill_client: Option<Arc<L1ClientImpl>>,
 }
 
 impl RpcService {
@@ -54,6 +56,7 @@ impl RpcService {
             rpc_type: RpcType::User,
             block_prod_handle: None,
             mempool: None,
+            l1_backfill_client: None,
         }
     }
 
@@ -65,6 +68,7 @@ impl RpcService {
         tx_status_watcher: Option<Arc<Mempool>>,
         block_prod_handle: BlockProductionHandle,
         mempool: Arc<Mempool>,
+        l1_backfill_client: Option<Arc<L1ClientImpl>>,
     ) -> Self {
         Self {
             config,
@@ -76,6 +80,7 @@ impl RpcService {
             rpc_type: RpcType::Admin,
             block_prod_handle: Some(block_prod_handle),
             mempool: Some(mempool),
+            l1_backfill_client,
         }
     }
 }
@@ -88,6 +93,7 @@ impl Service for RpcService {
         let submit_tx_provider = self.submit_tx_provider.clone();
         let transaction_lookup_provider = self.transaction_lookup_provider.clone();
         let tx_status_watcher = self.tx_status_watcher.clone();
+        let l1_backfill_client = self.l1_backfill_client.clone();
         let rpc_type = self.rpc_type.clone();
 
         let (stop_handle, server_handle) = jsonrpsee::server::stop_channel();
@@ -117,6 +123,7 @@ impl Service for RpcService {
             }
             starknet.set_pre_v0_9_preconfirmed_as_pending(pre_v0_9_preconfirmed_as_pending);
             starknet.set_rpc_unsafe_enabled(rpc_unsafe_enabled);
+            starknet.set_l1_backfill_client(l1_backfill_client.clone());
             starknet.set_sync_threshold_blocks(config.rpc_sync_threshold_blocks);
             if let Some(mempool) = mempool.clone() {
                 starknet.set_mempool(mempool);
