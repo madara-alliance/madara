@@ -35,6 +35,7 @@ impl L1ClientImpl {
             self.provider.clone(),
             Arc::clone(&self.backend),
             self.notify_new_message_to_l2.clone(),
+            self.newly_queued_nonces.clone(),
             ctx.clone(),
             config.unsafe_skip_l1_message_consumed_check,
             config.unsafe_l1_handler_metadata_only,

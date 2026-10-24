@@ -51,7 +51,7 @@ pub async fn backfill_l1_handler_message(
     settlement_client: &Arc<dyn SettlementLayerProvider>,
     backend: &MadaraBackend,
     notify_consumer: &Notify,
-    backfilled_nonces: &Mutex<BTreeSet<u64>>,
+    newly_queued_nonces: &Mutex<BTreeSet<u64>>,
     block_number: u64,
     l1_transaction_hash: [u8; 32],
     nonce: u64,
@@ -140,10 +140,12 @@ pub async fn backfill_l1_handler_message(
     backend
         .write_l1_handler_l1_block_by_nonce(nonce, block_number)
         .map_err(|e| SettlementClientError::DatabaseError(e.to_string()))?;
+    let mut newly_queued = newly_queued_nonces.lock().expect("queued nonce mutex poisoned");
     backend
         .write_pending_message_to_l2(&event.message)
         .map_err(|e| SettlementClientError::DatabaseError(e.to_string()))?;
-    backfilled_nonces.lock().expect("backfill nonce mutex poisoned").insert(nonce);
+    newly_queued.insert(nonce);
+    drop(newly_queued);
     notify_consumer.notify_waiters();
     tracing::info!(block_number, nonce, l1_transaction_hash = %origin.into_eth(), "Verified L1 handler backfill queued");
     Ok(BackfillL1HandlerMessageResult { transaction_hash, status: BackfillStatus::Queued })
@@ -216,6 +218,7 @@ pub async fn sync(
     settlement_client: Arc<dyn SettlementLayerProvider>,
     backend: Arc<MadaraBackend>,
     notify_consumer: Arc<Notify>,
+    newly_queued_nonces: Arc<Mutex<BTreeSet<u64>>>,
     mut ctx: ServiceContext,
     unsafe_skip_l1_message_consumed_check: bool,
     metadata_only: bool,
@@ -225,6 +228,7 @@ pub async fn sync(
         settlement_client,
         backend,
         notify_consumer,
+        newly_queued_nonces,
         unsafe_skip_l1_message_consumed_check,
         metadata_only,
     ))
@@ -237,6 +241,7 @@ async fn sync_inner(
     settlement_client: Arc<dyn SettlementLayerProvider>,
     backend: Arc<MadaraBackend>,
     notify_consumer: Arc<Notify>,
+    newly_queued_nonces: Arc<Mutex<BTreeSet<u64>>>,
     unsafe_skip_l1_message_consumed_check: bool,
     metadata_only: bool,
 ) -> Result<(), SettlementClientError> {
@@ -253,6 +258,7 @@ async fn sync_inner(
             &settlement_client,
             &backend,
             &notify_consumer,
+            &newly_queued_nonces,
             replay_max_duration,
             finality_blocks,
             unsafe_skip_l1_message_consumed_check,
@@ -278,6 +284,7 @@ async fn run_message_sync(
     settlement_client: &Arc<dyn SettlementLayerProvider>,
     backend: &Arc<MadaraBackend>,
     notify_consumer: &Notify,
+    newly_queued_nonces: &Mutex<BTreeSet<u64>>,
     replay_max_duration: Duration,
     finality_blocks: u64,
     unsafe_skip_l1_message_consumed_check: bool,
@@ -326,6 +333,7 @@ async fn run_message_sync(
             settlement_client,
             backend,
             notify_consumer,
+            newly_queued_nonces,
             &mut pending_events,
             finality_blocks,
             unsafe_skip_l1_message_consumed_check,
@@ -464,6 +472,7 @@ fn persist_message_origin(
 async fn process_canonical_event(
     settlement_client: &Arc<dyn SettlementLayerProvider>,
     backend: &MadaraBackend,
+    newly_queued_nonces: &Mutex<BTreeSet<u64>>,
     event: &MessageToL2WithMetadata,
     unsafe_skip_l1_message_consumed_check: bool,
     metadata_only: bool,
@@ -489,9 +498,11 @@ async fn process_canonical_event(
                 event.message.tx.nonce
             );
         } else {
+            let mut newly_queued = newly_queued_nonces.lock().expect("queued nonce mutex poisoned");
             backend
                 .write_pending_message_to_l2(&event.message)
                 .map_err(|error| SettlementClientError::DatabaseError(format!("Failed to store message: {error}")))?;
+            newly_queued.insert(event.message.tx.nonce);
             tracing::debug!("Message stored: nonce={}", event.message.tx.nonce);
         }
     } else {
@@ -510,6 +521,7 @@ async fn process_finalized_events(
     settlement_client: &Arc<dyn SettlementLayerProvider>,
     backend: &MadaraBackend,
     notify_consumer: &Notify,
+    newly_queued_nonces: &Mutex<BTreeSet<u64>>,
     pending_events: &mut VecDeque<MessageToL2WithMetadata>,
     finality_blocks: u64,
     unsafe_skip_l1_message_consumed_check: bool,
@@ -542,6 +554,7 @@ async fn process_finalized_events(
         process_canonical_event(
             settlement_client,
             backend,
+            newly_queued_nonces,
             event,
             unsafe_skip_l1_message_consumed_check,
             metadata_only,

@@ -195,7 +195,7 @@ pub struct L1ClientImpl {
     provider: Arc<dyn SettlementLayerProvider>,
     backend: Arc<MadaraBackend>,
     notify_new_message_to_l2: Arc<Notify>,
-    backfilled_nonces: Arc<Mutex<BTreeSet<u64>>>,
+    newly_queued_nonces: Arc<Mutex<BTreeSet<u64>>>,
     unsafe_skip_l1_message_consumed_check: bool,
 }
 
@@ -215,7 +215,7 @@ impl L1ClientImpl {
             &self.provider,
             &self.backend,
             &self.notify_new_message_to_l2,
-            &self.backfilled_nonces,
+            &self.newly_queued_nonces,
             block_number,
             l1_transaction_hash,
             nonce,
@@ -239,7 +239,7 @@ impl L1ClientImpl {
             provider,
             backend,
             notify_new_message_to_l2: Default::default(),
-            backfilled_nonces: Default::default(),
+            newly_queued_nonces: Default::default(),
             unsafe_skip_l1_message_consumed_check,
         }
     }
@@ -279,7 +279,7 @@ impl SettlementClient for L1ClientImpl {
             self.backend.clone(),
             self.provider.clone(),
             self.notify_new_message_to_l2.clone(),
-            self.backfilled_nonces.clone(),
+            self.newly_queued_nonces.clone(),
             self.unsafe_skip_l1_message_consumed_check,
         );
         stream::unfold(consumer, |mut consumer| async move { Some((consumer.consume_next_or_wait().await, consumer)) })
