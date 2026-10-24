@@ -783,13 +783,16 @@ async fn validity_failure_keeps_event_ahead_of_later_messages() -> anyhow::Resul
     client.expect_message_to_l2_has_cancel_request().returning(|_| Ok(false));
     let client = Arc::new(client) as Arc<dyn SettlementLayerProvider>;
 
-    assert!(process_finalized_events(&client, &db, &notify, &mut pending, 10, false, false).await.is_err());
+    let queued_nonces = Mutex::new(BTreeSet::new());
+    assert!(process_finalized_events(&client, &db, &notify, &queued_nonces, &mut pending, 10, false, false)
+        .await
+        .is_err());
     assert_eq!(pending.len(), 2, "failed event must remain ahead of later events");
     assert_eq!(pending.front().unwrap().message.tx.nonce, 1);
     assert_eq!(db.get_l1_messaging_sync_tip()?, Some(99));
     assert!(db.get_pending_message_to_l2(2)?.is_none());
 
-    process_finalized_events(&client, &db, &notify, &mut pending, 10, false, false).await?;
+    process_finalized_events(&client, &db, &notify, &queued_nonces, &mut pending, 10, false, false).await?;
     assert!(pending.is_empty());
     assert_eq!(db.get_pending_message_to_l2(1)?, Some(first.message));
     assert_eq!(db.get_pending_message_to_l2(2)?, Some(second.message));
