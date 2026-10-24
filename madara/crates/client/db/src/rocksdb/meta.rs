@@ -14,6 +14,7 @@ pub const PRECONFIRMED_COLUMN: Column = Column::new("preconfirmed");
 
 const META_DEVNET_KEYS_KEY: &[u8] = b"DEVNET_KEYS";
 const META_LAST_SYNCED_L1_EVENT_BLOCK_KEY: &[u8] = b"LAST_SYNCED_L1_EVENT_BLOCK";
+const META_LAST_SCANNED_L1_MESSAGE_BLOCK_KEY: &[u8] = b"LAST_SCANNED_L1_MESSAGE_BLOCK";
 const META_CONFIRMED_ON_L1_TIP_KEY: &[u8] = b"CONFIRMED_ON_L1_TIP";
 const META_EXTERNAL_DB_RETENTION_CURSOR_KEY: &[u8] = b"EXTERNAL_DB_RETENTION_CURSOR";
 const META_HEAD_PROJECTION_KEY: &[u8] = b"HEAD_PROJECTION";
@@ -178,6 +179,33 @@ impl RocksDBStorageInner {
             return Ok(None);
         };
         Ok(Some(u64::from_be_bytes(data[..].try_into().context("Malformated block_n in DB")?)))
+    }
+
+    pub(super) fn write_l1_message_scanned_block(&self, block_n: Option<u64>) -> Result<()> {
+        let column = self.get_column(META_COLUMN);
+        match block_n {
+            Some(block_n) => self.db.put_cf_opt(
+                &column,
+                META_LAST_SCANNED_L1_MESSAGE_BLOCK_KEY,
+                block_n.to_be_bytes(),
+                &self.writeopts,
+            )?,
+            None => self.db.delete_cf_opt(&column, META_LAST_SCANNED_L1_MESSAGE_BLOCK_KEY, &self.writeopts)?,
+        }
+        Ok(())
+    }
+
+    pub(super) fn write_l1_message_scanned_block_in_batch(&self, block_n: u64, batch: &mut WriteBatchWithTransaction) {
+        batch.put_cf(&self.get_column(META_COLUMN), META_LAST_SCANNED_L1_MESSAGE_BLOCK_KEY, block_n.to_be_bytes());
+    }
+
+    pub(super) fn get_l1_message_scanned_block(&self) -> Result<Option<u64>> {
+        let Some(data) =
+            self.db.get_pinned_cf(&self.get_column(META_COLUMN), META_LAST_SCANNED_L1_MESSAGE_BLOCK_KEY)?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(u64::from_be_bytes(data[..].try_into().context("Malformed scanned L1 block in DB")?)))
     }
 
     #[tracing::instrument(skip(self))]

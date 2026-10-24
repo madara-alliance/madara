@@ -57,7 +57,7 @@ async fn setup_messaging_tests(#[default(false)] msg_replay_enabled: bool) -> Me
     let mut mock_client = MockSettlementLayerProvider::new();
 
     // Configure basic mock expectations that all tests will need
-    mock_client.expect_get_client_type().returning(|| ClientType::Eth);
+    mock_client.expect_get_client_type().returning(|| ClientType::Starknet);
 
     // Create a new service context for testing
     let ctx = ServiceContext::new_for_testing();
@@ -86,6 +86,148 @@ fn mock_canonical_block_hash(mock: &mut MockSettlementLayerProvider) {
 }
 
 #[tokio::test]
+async fn eth_range_scan_recovers_a_gap_and_same_block_events_on_replay() -> anyhow::Result<()> {
+    let db = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+    let mut mock = MockSettlementLayerProvider::new();
+    mock.expect_get_client_type().returning(|| ClientType::Eth);
+    let events = vec![create_mock_event(100, 34092), create_mock_event(101, 34093), create_mock_event(101, 34094)];
+    mock.expect_messages_to_l2_in_range()
+        .with(predicate::eq(100), predicate::eq(110))
+        .times(2)
+        .returning(move |_, _| Ok(events.clone()));
+    mock_canonical_block_hash(&mut mock);
+    for nonce in [34092, 34093, 34094] {
+        mock_l1_handler_tx(&mut mock, nonce, true, false);
+    }
+    let client = Arc::new(mock) as Arc<dyn SettlementLayerProvider>;
+    let notify = Notify::new();
+
+    scan_message_range(&client, &db, &notify, 100, 110, false, false).await?;
+    scan_message_range(&client, &db, &notify, 100, 110, false, false).await?;
+
+    for nonce in [34092, 34093, 34094] {
+        assert!(db.get_pending_message_to_l2(nonce)?.is_some());
+    }
+    assert_eq!(db.get_l1_message_scanned_block()?, None);
+    Ok(())
+}
+
+#[tokio::test]
+async fn eth_empty_range_advances_cursor_but_failed_range_does_not() -> anyhow::Result<()> {
+    let db = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+    assert!(db.compare_and_set_l1_message_scanned_block(None, 100)?);
+    let mut mock = MockSettlementLayerProvider::new();
+    mock.expect_get_latest_block_number().returning(|| Ok(200));
+    mock.expect_messages_to_l2_in_range().returning(|_, _| Ok(vec![]));
+    let client = Arc::new(mock) as Arc<dyn SettlementLayerProvider>;
+    let notify = Notify::new();
+    // The scanner stays alive at the confirmed head; the first empty range must
+    // durably move the cursor before the timeout cancels this test invocation.
+    let _ = tokio::time::timeout(
+        Duration::from_millis(100),
+        run_eth_message_scan(&client, &db, &notify, Duration::ZERO, 10, false, false),
+    )
+    .await;
+    assert_eq!(db.get_l1_message_scanned_block()?, Some(190));
+
+    let mut failing = MockSettlementLayerProvider::new();
+    failing.expect_get_latest_block_number().returning(|| Ok(201));
+    failing
+        .expect_messages_to_l2_in_range()
+        .returning(|_, _| Err(SettlementClientError::StreamProcessing("partial RPC page failure".into())));
+    let failing = Arc::new(failing) as Arc<dyn SettlementLayerProvider>;
+    assert!(run_eth_message_scan(&failing, &db, &notify, Duration::ZERO, 10, false, false).await.is_err());
+    assert_eq!(db.get_l1_message_scanned_block()?, Some(190));
+    Ok(())
+}
+
+#[tokio::test]
+async fn eth_reorged_log_cannot_advance_range() -> anyhow::Result<()> {
+    let db = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+    let mut mock = MockSettlementLayerProvider::new();
+    mock.expect_messages_to_l2_in_range().returning(|_, _| Ok(vec![create_mock_event(101, 34093)]));
+    mock.expect_get_block_n_hash().returning(|_| Ok(Some([1u8; 32])));
+    let client = Arc::new(mock) as Arc<dyn SettlementLayerProvider>;
+    assert!(scan_message_range(&client, &db, &Notify::new(), 100, 110, false, false).await.is_err());
+    assert!(db.get_pending_message_to_l2(34093)?.is_none());
+    assert_eq!(db.get_l1_message_scanned_block()?, None);
+    Ok(())
+}
+
+#[tokio::test]
+async fn eth_failed_middle_event_replays_the_whole_range() -> anyhow::Result<()> {
+    let db = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+    let events = vec![create_mock_event(100, 34092), create_mock_event(101, 34093), create_mock_event(102, 34094)];
+    let mut failing = MockSettlementLayerProvider::new();
+    failing.expect_get_client_type().returning(|| ClientType::Eth);
+    let first_events = events.clone();
+    failing.expect_messages_to_l2_in_range().returning(move |_, _| Ok(first_events.clone()));
+    failing.expect_get_block_n_hash().returning(|block| {
+        if block == 101 {
+            Err(SettlementClientError::StreamProcessing("canonical hash RPC failed".into()))
+        } else {
+            Ok(Some([0u8; 32]))
+        }
+    });
+    mock_l1_handler_tx(&mut failing, 34092, true, false);
+    let failing = Arc::new(failing) as Arc<dyn SettlementLayerProvider>;
+    assert!(scan_message_range(&failing, &db, &Notify::new(), 100, 110, false, false).await.is_err());
+    assert!(db.get_pending_message_to_l2(34092)?.is_some());
+    assert!(db.get_pending_message_to_l2(34093)?.is_none());
+    assert_eq!(db.get_l1_message_scanned_block()?, None);
+
+    let mut retry = MockSettlementLayerProvider::new();
+    retry.expect_get_client_type().returning(|| ClientType::Eth);
+    retry.expect_messages_to_l2_in_range().returning(move |_, _| Ok(events.clone()));
+    mock_canonical_block_hash(&mut retry);
+    for nonce in [34092, 34093, 34094] {
+        mock_l1_handler_tx(&mut retry, nonce, true, false);
+    }
+    let retry = Arc::new(retry) as Arc<dyn SettlementLayerProvider>;
+    scan_message_range(&retry, &db, &Notify::new(), 100, 110, false, false).await?;
+    for nonce in [34092, 34093, 34094] {
+        assert!(db.get_pending_message_to_l2(nonce)?.is_some());
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn eth_overlap_finds_a_log_omitted_by_an_earlier_successful_response() -> anyhow::Result<()> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let db = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+    assert!(db.compare_and_set_l1_message_scanned_block(None, 100)?);
+    let polls = Arc::new(AtomicUsize::new(0));
+    let mut mock = MockSettlementLayerProvider::new();
+    mock.expect_get_client_type().returning(|| ClientType::Eth);
+    mock.expect_get_latest_block_number().returning(|| Ok(300));
+    mock_canonical_block_hash(&mut mock);
+    mock.expect_messages_to_l2_in_range().returning({
+        let polls = polls.clone();
+        move |_, _| {
+            let mut events = vec![create_mock_event(200, 34092), create_mock_event(202, 34094)];
+            if polls.fetch_add(1, Ordering::SeqCst) > 0 {
+                events.push(create_mock_event(201, 34093));
+            }
+            Ok(events)
+        }
+    });
+    for nonce in [34092, 34093, 34094] {
+        mock_l1_handler_tx(&mut mock, nonce, true, false);
+    }
+    let client = Arc::new(mock) as Arc<dyn SettlementLayerProvider>;
+    let _ = tokio::time::timeout(
+        Duration::from_millis(500),
+        run_eth_message_scan(&client, &db, &Notify::new(), Duration::ZERO, 10, false, false),
+    )
+    .await;
+    assert!(polls.load(Ordering::SeqCst) >= 2);
+    assert_eq!(db.get_l1_message_scanned_block()?, Some(290));
+    assert!(db.get_pending_message_to_l2(34093)?.is_some());
+    Ok(())
+}
+
+#[tokio::test]
 async fn saved_event_cursor_replays_its_boundary_block() -> anyhow::Result<()> {
     let db = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
     db.write_l1_messaging_sync_tip(Some(100))?;
@@ -95,6 +237,13 @@ async fn saved_event_cursor_replays_its_boundary_block() -> anyhow::Result<()> {
 
     assert_eq!(start, 99);
     Ok(())
+}
+
+#[test]
+fn explicit_initial_recovery_starts_before_the_incident_block() {
+    let legacy_event_start = 26_264_000 - 1;
+    assert!(initial_eth_scan_start(legacy_event_start, None) > 26_263_537);
+    assert_eq!(initial_eth_scan_start(legacy_event_start, Some(26_263_537)), 26_263_537);
 }
 
 #[rstest]
@@ -125,7 +274,7 @@ async fn test_sync_processes_new_messages(#[future] setup_messaging_tests: Messa
     db.write_l1_handler_txn_hash_by_nonce(18, &Felt::ONE).unwrap();
 
     // Mock get_client_type
-    client.expect_get_client_type().returning(|| ClientType::Eth);
+    client.expect_get_client_type().returning(|| ClientType::Starknet);
 
     // Wrap the client in Arc
     let client = Arc::new(client) as Arc<dyn SettlementLayerProvider>;
@@ -191,7 +340,7 @@ async fn test_sync_backfills_consumed_tx_hash_when_already_known(
     mock_canonical_block_hash(&mut client);
 
     // Mock get_client_type
-    client.expect_get_client_type().returning(|| ClientType::Eth);
+    client.expect_get_client_type().returning(|| ClientType::Starknet);
 
     // Wrap the client in Arc
     let client = Arc::new(client) as Arc<dyn SettlementLayerProvider>;
@@ -262,7 +411,7 @@ async fn test_sync_catches_earlier_messages(
     mock_l1_handler_tx(&mut client, 1, true, false);
 
     // Mock get_client_type
-    client.expect_get_client_type().returning(|| ClientType::Eth);
+    client.expect_get_client_type().returning(|| ClientType::Starknet);
 
     // Wrap the client in Arc
     let client = Arc::new(client) as Arc<dyn SettlementLayerProvider>;
@@ -323,7 +472,7 @@ async fn test_finality_blocks_delays_processing() -> anyhow::Result<()> {
     // Event should NOT be processed yet
     mock_client.expect_get_latest_block_number().returning(|| Ok(105));
 
-    mock_client.expect_get_client_type().returning(|| ClientType::Eth);
+    mock_client.expect_get_client_type().returning(|| ClientType::Starknet);
 
     let client = Arc::new(mock_client) as Arc<dyn SettlementLayerProvider>;
     let ctx = ServiceContext::new_for_testing();
@@ -378,7 +527,7 @@ async fn test_finality_blocks_processes_after_threshold() -> anyhow::Result<()> 
     // Event SHOULD be processed
     mock_client.expect_get_latest_block_number().returning(|| Ok(115));
 
-    mock_client.expect_get_client_type().returning(|| ClientType::Eth);
+    mock_client.expect_get_client_type().returning(|| ClientType::Starknet);
     mock_l1_handler_tx(&mut mock_client, 1, true, false);
     mock_canonical_block_hash(&mut mock_client);
 
@@ -434,7 +583,7 @@ async fn test_drops_event_when_block_does_not_exist() -> anyhow::Result<()> {
     let events = vec![mock_event.clone()];
     mock_client.expect_messages_to_l2_stream().returning(move |_| Ok(stream::iter(events.clone()).map(Ok).boxed()));
     mock_client.expect_get_latest_block_number().returning(|| Ok(115));
-    mock_client.expect_get_client_type().returning(|| ClientType::Eth);
+    mock_client.expect_get_client_type().returning(|| ClientType::Starknet);
 
     // CRITICAL: get_block_n_hash returns None — block at #100 no longer exists on canonical chain.
     mock_client.expect_get_block_n_hash().returning(|_| Ok(None));
@@ -501,7 +650,7 @@ async fn test_drops_event_when_block_hash_mismatches() -> anyhow::Result<()> {
     let events = vec![mock_event.clone()];
     mock_client.expect_messages_to_l2_stream().returning(move |_| Ok(stream::iter(events.clone()).map(Ok).boxed()));
     mock_client.expect_get_latest_block_number().returning(|| Ok(115));
-    mock_client.expect_get_client_type().returning(|| ClientType::Eth);
+    mock_client.expect_get_client_type().returning(|| ClientType::Starknet);
 
     // CRITICAL: get_block_n_hash returns a DIFFERENT hash than the event's l1_block_hash.
     // This simulates a reorg where block 100 was replaced with a new block at the same height.
@@ -563,7 +712,7 @@ async fn test_backoff_on_rpc_failure() -> anyhow::Result<()> {
         attempt_count_clone.fetch_add(1, Ordering::SeqCst);
         Ok(stream::empty().boxed())
     });
-    mock_client.expect_get_client_type().returning(|| ClientType::Eth);
+    mock_client.expect_get_client_type().returning(|| ClientType::Starknet);
 
     let client = Arc::new(mock_client);
     let ctx = ServiceContext::new_for_testing();
@@ -608,7 +757,7 @@ async fn test_metadata_only_flag_stores_metadata_but_not_pending(
 
     mock_canonical_block_hash(&mut client);
     mock_l1_handler_tx(&mut client, 1, true, false);
-    client.expect_get_client_type().returning(|| ClientType::Eth);
+    client.expect_get_client_type().returning(|| ClientType::Starknet);
 
     let client = Arc::new(client) as Arc<dyn SettlementLayerProvider>;
     let ctx_clone = ctx.clone();
@@ -639,7 +788,7 @@ async fn test_metadata_only_flag_stores_metadata_but_not_pending(
 
     // A consumer subscribed to the same notify should find nothing to consume
     let mut mock_for_consumer = MockSettlementLayerProvider::new();
-    mock_for_consumer.expect_get_client_type().returning(|| ClientType::Eth);
+    mock_for_consumer.expect_get_client_type().returning(|| ClientType::Starknet);
     let consumer_notify = Arc::new(Notify::new());
     let mut consumer = MessagesToL2Consumer::new(db.clone(), Arc::new(mock_for_consumer), consumer_notify, false);
     assert!(
@@ -663,7 +812,7 @@ async fn validity_failure_keeps_event_ahead_of_later_messages() -> anyhow::Resul
     let mut client = MockSettlementLayerProvider::new();
     client.expect_get_latest_block_number().returning(|| Ok(200));
     mock_canonical_block_hash(&mut client);
-    client.expect_get_client_type().returning(|| ClientType::Eth);
+    client.expect_get_client_type().returning(|| ClientType::Starknet);
     client.expect_calculate_message_hash().returning(|tx| Ok(vec![tx.tx.nonce as u8; 32]));
     let mut attempts = 0;
     client.expect_message_to_l2_is_pending().returning(move |_| {

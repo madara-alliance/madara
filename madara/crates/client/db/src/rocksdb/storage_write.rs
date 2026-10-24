@@ -135,6 +135,23 @@ impl MadaraStorageWrite for RocksDBStorage {
         tracing::debug!("Write l1 messaging tip block_n={block_n:?}");
         self.inner.write_l1_messaging_sync_tip(block_n).context("Writing l1 messaging sync tip")
     }
+    fn compare_and_set_l1_message_scanned_block(&self, expected: Option<u64>, block_n: u64) -> Result<bool> {
+        let _cursor_guard = self
+            .inner
+            .l1_message_cursor_lock
+            .lock()
+            .map_err(|_| anyhow::anyhow!("L1 message cursor lock poisoned during scan"))?;
+        if self.inner.get_l1_message_scanned_block()? != expected {
+            return Ok(false);
+        }
+        // With WAL disabled, flush message writes before allowing a cursor to survive
+        // them. A crash may replay a range, but must never skip lost queue entries.
+        if !self.inner.config.write_mode.wal {
+            self.inner.flush().context("Flushing L1 messages before scanned cursor")?;
+        }
+        self.inner.write_l1_message_scanned_block(Some(block_n)).context("Writing L1 message scanned block")?;
+        Ok(true)
+    }
     fn write_external_db_retention_cursor(&self, block_n: u64) -> Result<()> {
         tracing::debug!("Write external db retention cursor block_n={block_n:?}");
         self.inner.write_external_db_retention_cursor(block_n).context("Writing external db retention cursor")

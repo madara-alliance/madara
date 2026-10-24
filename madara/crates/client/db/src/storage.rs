@@ -153,6 +153,8 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
     fn get_latest_preconfirmed_header_block_n(&self) -> Result<Option<u64>>;
     fn get_confirmed_on_l1_tip(&self) -> Result<Option<u64>>;
     fn get_l1_messaging_sync_tip(&self) -> Result<Option<u64>>;
+    /// Last Ethereum L1 block whose complete message-log range was processed.
+    fn get_l1_message_scanned_block(&self) -> Result<Option<u64>>;
     fn get_external_db_retention_cursor(&self) -> Result<Option<u64>>;
     fn get_stored_chain_info(&self) -> Result<Option<StoredChainInfo>>;
     fn get_latest_applied_trie_update(&self) -> Result<Option<u64>>;
@@ -228,6 +230,8 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     fn write_confirmed_on_l1_tip(&self, block_n: Option<u64>) -> Result<()>;
     /// Write the latest l1_block synced for the messaging worker.
     fn write_l1_messaging_sync_tip(&self, l1_block_n: Option<u64>) -> Result<()>;
+    /// Advance only if no concurrent reorg has changed the cursor.
+    fn compare_and_set_l1_message_scanned_block(&self, expected: Option<u64>, l1_block_n: u64) -> Result<bool>;
     /// Write the highest block fully processed by external DB retention.
     fn write_external_db_retention_cursor(&self, block_n: u64) -> Result<()>;
 

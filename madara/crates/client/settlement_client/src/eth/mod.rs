@@ -1,6 +1,6 @@
 use crate::client::{ClientType, SettlementLayerProvider};
 use crate::error::SettlementClientError;
-use crate::eth::event::{watch_events_with_liveness, EthereumEventStream};
+use crate::eth::event::watch_events_with_liveness;
 use crate::eth::StarknetCoreContract::{LogMessageToL2, StarknetCoreContractInstance};
 use crate::messaging::MessageToL2WithMetadata;
 use crate::state_update::{StateUpdate, StateUpdateWorker};
@@ -15,7 +15,6 @@ use alloy::sol;
 use alloy::sol_types::SolValue;
 use async_trait::async_trait;
 use error::EthereumClientError;
-use futures::stream::{self, BoxStream};
 use futures::StreamExt;
 use mp_convert::{FeltExt, ToFelt};
 use mp_transactions::L1HandlerTransactionWithFee;
@@ -83,8 +82,8 @@ impl EthereumClient {
     }
 
     /// Fetches `LogMessageToL2` events from `from_block` to `to_block` in paginated chunks
-    /// using `eth_getLogs`. This ensures historical events are not missed (unlike `eth_newFilter`
-    /// which only returns events after filter creation).
+    /// using `eth_getLogs`. The messaging worker calls this for historical catchup
+    /// and continuously for new confirmed blocks.
     async fn query_paginated_events(
         contract: &StarknetCoreContractInstance<Arc<DefaultHttpProvider>, Ethereum>,
         from_block: u64,
@@ -393,73 +392,12 @@ impl SettlementLayerProvider for EthereumClient {
         Ok(block.map(|b| b.header.hash.0))
     }
 
-    async fn messages_to_l2_stream(
+    async fn messages_to_l2_in_range(
         &self,
         from_l1_block_n: u64,
-    ) -> Result<BoxStream<'static, Result<MessageToL2WithMetadata, SettlementClientError>>, SettlementClientError> {
-        // Step 1: Create the live event watcher BEFORE querying the latest block.
-        // This guarantees no gap: the watcher tracks events from its creation time onward,
-        // and the historical query (in step 3) covers everything up to the chain tip we
-        // observe in step 2. The two ranges overlap at the chain tip, so any event that lands
-        // in a block right around filter creation is caught by at least one path. Duplicates
-        // from the overlap are deduplicated downstream by nonce.
-        // EthereumEventStream::new() calls into_stream() which spawns a background polling
-        // task (eth_getFilterChanges every ~7s), keeping the filter alive during the
-        // historical query and buffering any new events.
-        //
-        // We use `toBlock: "latest"` (not "finalized") for portability:
-        //   - Vanilla Geth's `SubscribeLogs` rejects `toBlock: "finalized"` with
-        //     `errInvalidBlockRange` — only "latest" or concrete numbers are supported.
-        //   - Hosted providers (e.g. Alchemy) accept "finalized" but their custom filter
-        //     layer does not enforce it, so events are delivered at chain-tip latency anyway.
-        //   - With "latest", the live watcher delivers events as soon as their block is mined.
-        //     Finality enforcement is performed client-side in `process_finalized_events`
-        //     by holding events until they reach `l1_messages_finality_blocks` confirmations
-        //     AND verifying the block hash is still canonical (catches reorgs).
-        let event_poller = self
-            .l1_core_contract
-            .event_filter::<LogMessageToL2>()
-            .from_block(from_l1_block_n)
-            .to_block(BlockNumberOrTag::Latest)
-            .watch()
-            .await
-            .map_err(|e| -> SettlementClientError {
-                EthereumClientError::ArchiveRequired(format!("Could not create event watcher: {e}")).into()
-            })?;
-        let live_stream = EthereumEventStream::new(event_poller);
-
-        // Step 2: Snapshot the latest block AFTER creating the watcher.
-        //
-        // The historical query MUST cover up to `latest` (not `finalized`), otherwise events
-        // in blocks `(finalized, latest]` at the moment of filter creation would be silently
-        // dropped: the live watcher only delivers events from blocks added after filter
-        // creation, so any event already mined in the (finalized, latest] window would never
-        // be picked up by it.
-        //
-        // This is safe because finality enforcement now happens client-side in
-        // `process_finalized_events`: every event (historical or live) is held in the
-        // in-memory `pending_events` queue until it reaches `l1_messages_finality_blocks`
-        // confirmations AND its block hash is verified canonical. Historical events from
-        // unfinalized blocks just sit in the queue a bit longer until they age into the
-        // confirmation window.
-        let latest_block = self.provider.get_block_number().await.map_err(|e| -> SettlementClientError {
-            EthereumClientError::Rpc(format!("Failed to get latest block: {e}")).into()
-        })?;
-
-        // Step 3: Fetch historical events via paginated eth_getLogs (.query()).
-        tracing::info!(
-            "⟠ L1→L2 message sync: querying historical events from block #{from_l1_block_n} to #{latest_block}"
-        );
-        let historical_events =
-            Self::query_paginated_events(&self.l1_core_contract, from_l1_block_n, latest_block).await?;
-        tracing::info!(
-            "⟠ L1→L2 message sync: historical catchup complete ({} events), switching to live watching",
-            historical_events.len()
-        );
-        let historical_stream = stream::iter(historical_events.into_iter().map(Ok));
-
-        // Chain: historical events first, then live watch stream.
-        Ok(historical_stream.chain(live_stream).boxed())
+        to_l1_block_n: u64,
+    ) -> Result<Vec<MessageToL2WithMetadata>, SettlementClientError> {
+        Self::query_paginated_events(&self.l1_core_contract, from_l1_block_n, to_l1_block_n).await
     }
 }
 
@@ -835,8 +773,8 @@ mod l1_messaging_tests {
 
         // Assert that the event is well stored in db
         let last_block = db
-            .get_l1_messaging_sync_tip()
-            .expect("Should successfully retrieve the last synced L1 block with messaging event")
+            .get_l1_message_scanned_block()
+            .expect("Should successfully retrieve the last fully scanned L1 block")
             .unwrap();
         assert_ne!(last_block, 0);
         // TODO: Assert that the transaction has been executed successfully
@@ -886,7 +824,7 @@ mod l1_messaging_tests {
     }
 
     /// Test that historical L1→L2 messages emitted BEFORE the sync worker starts are
-    /// correctly picked up via eth_getLogs (the historical catchup phase).
+    /// correctly picked up via eth_getLogs range scanning.
     ///
     /// This is a regression test: the old implementation only used eth_newFilter +
     /// eth_getFilterChanges (.watch()), which is forward-only from filter creation time.
@@ -895,7 +833,7 @@ mod l1_messaging_tests {
     /// Steps:
     /// 1. Deploy contract and fire a LogMessageToL2 event (this is now "historical")
     /// 2. Wait for a few blocks so the event is in the past
-    /// 3. Start the sync worker (which creates the filter AFTER the event)
+    /// 3. Start the sync worker after the event
     /// 4. Assert the historical event is still picked up and stored in the DB
     #[rstest]
     #[traced_test]
@@ -910,9 +848,8 @@ mod l1_messaging_tests {
         let l1_tx_hash = mp_convert::L1TransactionHash(l1_tx_hash_u256.to_be_bytes::<32>());
 
         // Step 2: Wait a few blocks so the event sits firmly in the "historical" range
-        // by the time the worker starts. The sync worker's historical query (eth_getLogs)
-        // will pick it up regardless of finality, since we use `latest` as the upper bound
-        // and `madara_test()` sets `l1_messages_finality_blocks = 0`.
+        // by the time the worker starts. The scanner's first eth_getLogs range
+        // will pick it up because madara_test() sets finality to zero.
         tokio::time::sleep(Duration::from_secs(5)).await;
 
         // Step 3: Set the sync tip to block 0 so the worker queries from the beginning.
@@ -920,7 +857,6 @@ mod l1_messaging_tests {
         db.write_l1_messaging_sync_tip(Some(0)).unwrap();
 
         // Step 4: NOW start the sync worker — the event is already in the past.
-        // With the old code (.watch() only), this event would be lost.
         let worker_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
@@ -951,9 +887,9 @@ mod l1_messaging_tests {
             Felt::from_dec_str("3256441166037631918262930812410838598500200462657642943867372734773841898370").unwrap()
         );
 
-        // Assert sync tip was updated
+        // Assert the fully scanned block cursor was updated.
         let sync_tip = db
-            .get_l1_messaging_sync_tip()
+            .get_l1_message_scanned_block()
             .expect("DB read should succeed")
             .expect("Sync tip should be updated after processing");
         assert!(sync_tip > 0, "Sync tip should have advanced past block 0");
@@ -1079,7 +1015,7 @@ mod l1_messaging_tests {
             })
         };
 
-        // Brief wait for worker to initialize and create the filter
+        // Brief wait for worker to initialize the range scanner.
         tokio::time::sleep(Duration::from_secs(1)).await;
 
         // === Phase 1: Fire event #1 ===
@@ -1089,14 +1025,11 @@ mod l1_messaging_tests {
         let event_block_1 = receipt_1.block_number.expect("event #1 receipt missing block number");
         tracing::info!("Event #1 fired at block #{event_block_1}, tx={:#x}", l1_tx_hash_1_u256);
 
-        // Wait for the worker's live filter to observe event #1 (alloy polls ~7s).
+        // Wait while event #1 remains short of the confirmation threshold.
         tokio::time::sleep(Duration::from_secs(10)).await;
 
-        // Sanity: event should be in the in-memory queue, not yet in DB
-        assert!(
-            db.get_pending_message_to_l2(0).unwrap().is_none(),
-            "Event #1 should still be in the in-memory queue, not yet processed"
-        );
+        // Sanity: event should not yet be scanned into the DB.
+        assert!(db.get_pending_message_to_l2(0).unwrap().is_none(), "Event #1 should not yet be processed");
 
         // === Phase 2: Reorg past event #1's block ===
         let current_latest = provider.get_block_number().await.expect("get_block_number failed");
@@ -1145,7 +1078,7 @@ mod l1_messaging_tests {
         let target_latest = max_event_block + 15;
         let post_2_latest = provider.get_block_number().await.expect("get_block_number failed");
         let blocks_to_wait = if post_2_latest < target_latest {
-            (target_latest - post_2_latest) + 5 // small buffer for filter polling
+            (target_latest - post_2_latest) + 5 // small buffer for range polling
         } else {
             5
         };
@@ -1179,8 +1112,8 @@ mod l1_messaging_tests {
             "Nonce 0 must NOT be mapped to event #1's tx hash (which was reorged out)"
         );
 
-        // Sync tip should have advanced at least past event #2's block
-        let sync_tip = db.get_l1_messaging_sync_tip().unwrap().unwrap();
+        // The scanned cursor should have advanced at least past event #2's block.
+        let sync_tip = db.get_l1_message_scanned_block().unwrap().unwrap();
         assert!(
             sync_tip >= event_block_2,
             "Sync tip #{sync_tip} should have advanced to at least event #2's block #{event_block_2}"
