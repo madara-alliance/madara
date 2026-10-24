@@ -60,6 +60,7 @@ impl RpcService {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn admin(
         config: RpcParams,
         backend: Arc<MadaraBackend>,
