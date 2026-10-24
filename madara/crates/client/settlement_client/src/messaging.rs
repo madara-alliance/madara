@@ -2,15 +2,16 @@ use crate::client::{ClientType, SettlementLayerProvider};
 use crate::error::SettlementClientError;
 use crate::{RECONNECT_BASE_DELAY, RECONNECT_MAX_DELAY};
 use alloy::primitives::{B256, U256};
+use blockifier::transaction::transaction_execution::Transaction;
 use futures::StreamExt;
 use mc_db::MadaraBackend;
 use mp_convert::{L1TransactionHash, ToFelt};
-use mp_transactions::{IntoStarknetApiExt, L1HandlerTransactionWithFee};
+use mp_transactions::L1HandlerTransactionWithFee;
 use mp_utils::service::ServiceContext;
 use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
-use std::collections::VecDeque;
-use std::sync::Arc;
+use std::collections::{BTreeSet, VecDeque};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::Notify;
 
@@ -50,6 +51,7 @@ pub async fn backfill_l1_handler_message(
     settlement_client: &Arc<dyn SettlementLayerProvider>,
     backend: &MadaraBackend,
     notify_consumer: &Notify,
+    backfilled_nonces: &Mutex<BTreeSet<u64>>,
     block_number: u64,
     l1_transaction_hash: [u8; 32],
     nonce: u64,
@@ -101,7 +103,7 @@ pub async fn backfill_l1_handler_message(
         .clone()
         .into_blockifier(backend.chain_config().chain_id.to_felt(), backend.chain_config().latest_protocol_version)
         .map_err(|e| SettlementClientError::ConversionError(e.to_string()))?;
-    let transaction_hash = api_tx.tx_hash().to_felt();
+    let transaction_hash = Transaction::tx_hash(&api_tx).to_felt();
 
     if let Some(existing_hash) = backend
         .get_l1_handler_txn_hash_by_nonce(nonce)
@@ -141,6 +143,7 @@ pub async fn backfill_l1_handler_message(
     backend
         .write_pending_message_to_l2(&event.message)
         .map_err(|e| SettlementClientError::DatabaseError(e.to_string()))?;
+    backfilled_nonces.lock().expect("backfill nonce mutex poisoned").insert(nonce);
     notify_consumer.notify_waiters();
     tracing::info!(block_number, nonce, l1_transaction_hash = %origin.into_eth(), "Verified L1 handler backfill queued");
     Ok(BackfillL1HandlerMessageResult { transaction_hash, status: BackfillStatus::Queued })

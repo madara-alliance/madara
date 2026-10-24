@@ -2,13 +2,14 @@ use crate::{client::SettlementLayerProvider, messaging::check_message_to_l2_vali
 use anyhow::Context;
 use mc_db::MadaraBackend;
 use mp_transactions::L1HandlerTransactionWithFee;
-use std::collections::HashSet;
-use std::sync::Arc;
+use std::collections::BTreeSet;
+use std::sync::{Arc, Mutex};
 use tokio::sync::Notify;
 
 pub struct MessagesToL2Consumer {
-    /// Pending nonces already yielded to block production in this process.
-    delivered: HashSet<u64>,
+    next_nonce: u64,
+    /// Only newly backfilled nonces are revisited below the forward cursor.
+    backfilled_nonces: Arc<Mutex<BTreeSet<u64>>>,
     backend: Arc<MadaraBackend>,
     l1_read: Arc<dyn SettlementLayerProvider>,
     notify: Arc<Notify>,
@@ -20,9 +21,10 @@ impl MessagesToL2Consumer {
         backend: Arc<MadaraBackend>,
         l1_read: Arc<dyn SettlementLayerProvider>,
         notify: Arc<Notify>,
+        backfilled_nonces: Arc<Mutex<BTreeSet<u64>>>,
         unsafe_skip_l1_message_consumed_check: bool,
     ) -> Self {
-        Self { delivered: HashSet::new(), backend, l1_read, notify, unsafe_skip_l1_message_consumed_check }
+        Self { next_nonce: 0, backfilled_nonces, backend, l1_read, notify, unsafe_skip_l1_message_consumed_check }
     }
 
     pub async fn consume_next_or_wait(&mut self) -> anyhow::Result<L1HandlerTransactionWithFee> {
@@ -41,19 +43,48 @@ impl MessagesToL2Consumer {
                 permit.as_mut().enable();
             }
 
-            // Start at the lowest pending nonce: a backfill can arrive after a later nonce was yielded.
-            let mut scan_nonce = 0;
-            while let Some(msg) =
-                self.backend.get_next_pending_message_to_l2(scan_nonce).context("Getting next pending message to l2")?
+            // A backfill below next_nonce needs one targeted rewind, without rereading every
+            // in-flight row on each ordinary message.
+            let late_nonce = self
+                .backfilled_nonces
+                .lock()
+                .expect("backfill nonce mutex poisoned")
+                .first()
+                .copied()
+                .filter(|nonce| *nonce < self.next_nonce);
+            if let Some(nonce) = late_nonce {
+                if let Some(msg) =
+                    self.backend.get_pending_message_to_l2(nonce).context("Getting backfilled message")?
+                {
+                    match check_message_to_l2_validity(
+                        &self.l1_read,
+                        &self.backend,
+                        &msg,
+                        self.unsafe_skip_l1_message_consumed_check,
+                    )
+                    .await
+                    .context("Checking backfilled message validity")?
+                    {
+                        true => {
+                            self.backfilled_nonces.lock().expect("backfill nonce mutex poisoned").remove(&nonce);
+                            return Ok(msg);
+                        }
+                        false => {
+                            self.backend.remove_pending_message_to_l2(nonce).context("Removing backfilled message")?
+                        }
+                    }
+                }
+                self.backfilled_nonces.lock().expect("backfill nonce mutex poisoned").remove(&nonce);
+                continue;
+            }
+
+            // Normal traffic keeps its monotone cursor and reads each pending row once.
+            while let Some(msg) = self
+                .backend
+                .get_next_pending_message_to_l2(self.next_nonce)
+                .context("Getting next pending message to l2")?
             {
                 let nonce = msg.tx.nonce;
-                scan_nonce = nonce.saturating_add(1);
-                if self.delivered.contains(&nonce) {
-                    if nonce == u64::MAX {
-                        break;
-                    }
-                    continue;
-                }
                 match check_message_to_l2_validity(
                     &self.l1_read,
                     &self.backend,
@@ -65,27 +96,16 @@ impl MessagesToL2Consumer {
                 {
                     // can be consumed (not cancelled, still exists, not already in chain)
                     true => {
-                        self.delivered.insert(nonce);
+                        self.next_nonce = nonce + 1;
+                        self.backfilled_nonces.lock().expect("backfill nonce mutex poisoned").remove(&nonce);
                         return Ok(msg);
                     }
-                    false => self
-                        .backend
-                        .remove_pending_message_to_l2(msg.tx.nonce)
-                        .context("Removing pending message to l2")?,
+                    false => {
+                        self.backend.remove_pending_message_to_l2(nonce).context("Removing pending message to l2")?
+                    }
                 }
-                if nonce == u64::MAX {
-                    break;
-                }
-            }
-
-            let mut completed = Vec::new();
-            for nonce in &self.delivered {
-                if self.backend.get_pending_message_to_l2(*nonce).context("Checking delivered L1 message")?.is_none() {
-                    completed.push(*nonce);
-                }
-            }
-            for nonce in completed {
-                self.delivered.remove(&nonce);
+                self.next_nonce = nonce + 1;
+                self.backfilled_nonces.lock().expect("backfill nonce mutex poisoned").remove(&nonce);
             }
 
             // We have no more messages in db.
@@ -111,7 +131,8 @@ mod tests {
     use mp_chain_config::ChainConfig;
     use mp_convert::Felt;
     use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee};
-    use std::sync::Arc;
+    use std::collections::BTreeSet;
+    use std::sync::{Arc, Mutex};
     use tokio::sync::Notify;
 
     fn l1_handler_tx(nonce: u64) -> L1HandlerTransactionWithFee {
@@ -169,7 +190,8 @@ mod tests {
         backend.write_pending_message_to_l2(&l1_handler_tx(103)).unwrap();
         mock_l1_handler_tx(&mut mock, 103, true, false);
 
-        let mut consumer = MessagesToL2Consumer::new(backend.clone(), Arc::new(mock), notify, false);
+        let mut consumer =
+            MessagesToL2Consumer::new(backend.clone(), Arc::new(mock), notify, Default::default(), false);
 
         assert_eq!(consumer.consume_next_or_wait().now_or_never().unwrap().unwrap(), l1_handler_tx(4));
         assert_eq!(consumer.consume_next_or_wait().now_or_never().unwrap().unwrap(), l1_handler_tx(5));
@@ -188,7 +210,8 @@ mod tests {
         mock_l1_handler_tx(&mut mock, 4, true, false);
         mock_l1_handler_tx(&mut mock, 5, true, false);
 
-        let mut consumer = MessagesToL2Consumer::new(backend.clone(), Arc::new(mock), notify.clone(), false);
+        let mut consumer =
+            MessagesToL2Consumer::new(backend.clone(), Arc::new(mock), notify.clone(), Default::default(), false);
 
         // first: test empty, then write.
         {
@@ -235,11 +258,19 @@ mod tests {
         }
         backend.write_pending_message_to_l2(&l1_handler_tx(34092)).unwrap();
         backend.write_pending_message_to_l2(&l1_handler_tx(34094)).unwrap();
-        let mut consumer = MessagesToL2Consumer::new(backend.clone(), Arc::new(mock), notify.clone(), false);
+        let backfilled_nonces = Arc::new(Mutex::new(BTreeSet::new()));
+        let mut consumer = MessagesToL2Consumer::new(
+            backend.clone(),
+            Arc::new(mock),
+            notify.clone(),
+            backfilled_nonces.clone(),
+            false,
+        );
 
         assert_eq!(consumer.consume_next_or_wait().now_or_never().unwrap().unwrap(), l1_handler_tx(34092));
         assert_eq!(consumer.consume_next_or_wait().now_or_never().unwrap().unwrap(), l1_handler_tx(34094));
         backend.write_pending_message_to_l2(&l1_handler_tx(34093)).unwrap();
+        backfilled_nonces.lock().unwrap().insert(34093);
         notify.notify_waiters();
         assert_eq!(consumer.consume_next_or_wait().now_or_never().unwrap().unwrap(), l1_handler_tx(34093));
         assert!(consumer.consume_next_or_wait().now_or_never().is_none());

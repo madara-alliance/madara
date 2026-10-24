@@ -161,7 +161,8 @@ use futures::{
 };
 use mc_db::MadaraBackend;
 use mp_transactions::L1HandlerTransactionWithFee;
-use std::sync::Arc;
+use std::collections::BTreeSet;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::Notify;
 use url::Url;
@@ -194,6 +195,7 @@ pub struct L1ClientImpl {
     provider: Arc<dyn SettlementLayerProvider>,
     backend: Arc<MadaraBackend>,
     notify_new_message_to_l2: Arc<Notify>,
+    backfilled_nonces: Arc<Mutex<BTreeSet<u64>>>,
     unsafe_skip_l1_message_consumed_check: bool,
 }
 
@@ -213,6 +215,7 @@ impl L1ClientImpl {
             &self.provider,
             &self.backend,
             &self.notify_new_message_to_l2,
+            &self.backfilled_nonces,
             block_number,
             l1_transaction_hash,
             nonce,
@@ -232,7 +235,13 @@ impl L1ClientImpl {
                  This removes a safety guard against double-processing. ⚠⚠⚠"
             );
         }
-        Self { provider, backend, notify_new_message_to_l2: Default::default(), unsafe_skip_l1_message_consumed_check }
+        Self {
+            provider,
+            backend,
+            notify_new_message_to_l2: Default::default(),
+            backfilled_nonces: Default::default(),
+            unsafe_skip_l1_message_consumed_check,
+        }
     }
 
     pub fn provider(&self) -> Arc<dyn SettlementLayerProvider> {
@@ -270,6 +279,7 @@ impl SettlementClient for L1ClientImpl {
             self.backend.clone(),
             self.provider.clone(),
             self.notify_new_message_to_l2.clone(),
+            self.backfilled_nonces.clone(),
             self.unsafe_skip_l1_message_consumed_check,
         );
         stream::unfold(consumer, |mut consumer| async move { Some((consumer.consume_next_or_wait().await, consumer)) })

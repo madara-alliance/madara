@@ -98,22 +98,24 @@ async fn verified_backfill_queues_once_without_advancing_live_cursor() -> anyhow
     mock_l1_handler_tx(&mut mock, 93, true, false);
     let client: Arc<dyn SettlementLayerProvider> = Arc::new(mock);
     let notify = Notify::new();
+    let backfilled_nonces = Mutex::new(BTreeSet::new());
     let hash = U256::from(1).to_be_bytes::<32>();
 
-    let first = backfill_l1_handler_message(&client, &db, &notify, 100, hash, 93).await?;
+    let first = backfill_l1_handler_message(&client, &db, &notify, &backfilled_nonces, 100, hash, 93).await?;
     assert_eq!(first.status, BackfillStatus::Queued);
+    assert!(backfilled_nonces.lock().unwrap().contains(&93));
     assert_eq!(db.get_pending_message_to_l2(93)?, Some(create_mock_event(100, 93).message));
     assert_eq!(db.get_l1_txn_hash_by_nonce(93)?, Some(L1TransactionHash(hash)));
     assert!(db.get_message_to_l2_index_entry(&L1TransactionHash(hash), 93)?.is_some());
     assert_eq!(db.get_l1_messaging_sync_tip()?, Some(200));
 
-    let second = backfill_l1_handler_message(&client, &db, &notify, 100, hash, 93).await?;
+    let second = backfill_l1_handler_message(&client, &db, &notify, &backfilled_nonces, 100, hash, 93).await?;
     assert_eq!(second.status, BackfillStatus::AlreadyQueued);
     assert_eq!(second.transaction_hash, first.transaction_hash);
 
     db.write_l1_handler_txn_hash_by_nonce(93, &first.transaction_hash)?;
     db.remove_pending_message_to_l2(93)?;
-    let third = backfill_l1_handler_message(&client, &db, &notify, 100, hash, 93).await?;
+    let third = backfill_l1_handler_message(&client, &db, &notify, &backfilled_nonces, 100, hash, 93).await?;
     assert_eq!(third.status, BackfillStatus::AlreadyIncluded);
     assert_eq!(
         db.get_messages_to_l2_by_l1_tx_hash(&L1TransactionHash(hash))?,
@@ -133,13 +135,23 @@ async fn verified_backfill_rejects_cancelled_message_without_queuing() -> anyhow
     mock_canonical_block_hash(&mut mock);
     mock_l1_handler_tx(&mut mock, 93, true, true);
     let client: Arc<dyn SettlementLayerProvider> = Arc::new(mock);
+    let backfilled_nonces = Mutex::new(BTreeSet::new());
 
-    let error = backfill_l1_handler_message(&client, &db, &Notify::new(), 100, U256::from(1).to_be_bytes(), 93)
-        .await
-        .unwrap_err();
+    let error = backfill_l1_handler_message(
+        &client,
+        &db,
+        &Notify::new(),
+        &backfilled_nonces,
+        100,
+        U256::from(1).to_be_bytes(),
+        93,
+    )
+    .await
+    .unwrap_err();
     assert!(matches!(error, SettlementClientError::InvalidEvent(_)));
     assert!(db.get_pending_message_to_l2(93)?.is_none());
     assert!(db.get_l1_txn_hash_by_nonce(93)?.is_none());
+    assert!(backfilled_nonces.lock().unwrap().is_empty());
     Ok(())
 }
 
@@ -151,8 +163,11 @@ async fn verified_backfill_rejects_wrong_l1_origin() -> anyhow::Result<()> {
     mock.expect_get_client_type().returning(|| ClientType::Eth);
     mock.expect_messages_to_l2_in_block().returning(move |_| Ok(vec![event.clone()]));
     let client: Arc<dyn SettlementLayerProvider> = Arc::new(mock);
+    let backfilled_nonces = Mutex::new(BTreeSet::new());
 
-    let error = backfill_l1_handler_message(&client, &db, &Notify::new(), 100, [0x55; 32], 93).await.unwrap_err();
+    let error = backfill_l1_handler_message(&client, &db, &Notify::new(), &backfilled_nonces, 100, [0x55; 32], 93)
+        .await
+        .unwrap_err();
     assert!(matches!(error, SettlementClientError::InvalidEvent(_)));
     assert!(db.get_pending_message_to_l2(93)?.is_none());
     Ok(())
@@ -714,7 +729,8 @@ async fn test_metadata_only_flag_stores_metadata_but_not_pending(
     let mut mock_for_consumer = MockSettlementLayerProvider::new();
     mock_for_consumer.expect_get_client_type().returning(|| ClientType::Eth);
     let consumer_notify = Arc::new(Notify::new());
-    let mut consumer = MessagesToL2Consumer::new(db.clone(), Arc::new(mock_for_consumer), consumer_notify, false);
+    let mut consumer =
+        MessagesToL2Consumer::new(db.clone(), Arc::new(mock_for_consumer), consumer_notify, Default::default(), false);
     assert!(
         consumer.consume_next_or_wait().now_or_never().is_none(),
         "Consumer should have nothing to consume when metadata_only is true"
