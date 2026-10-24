@@ -32,7 +32,7 @@ pub struct MessageToL2WithMetadata {
     pub message: L1HandlerTransactionWithFee,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum BackfillStatus {
     Queued,
@@ -40,7 +40,7 @@ pub enum BackfillStatus {
     AlreadyIncluded,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BackfillL1HandlerMessageResult {
     pub transaction_hash: Felt,
     pub status: BackfillStatus,
