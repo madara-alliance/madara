@@ -368,12 +368,6 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         l1_transaction_hash: L1TxnHash,
         nonce: u64,
     ) -> RpcResult<BackfillL1HandlerMessageResult> {
-        if !self.rpc_unsafe_enabled {
-            return Err(StarknetRpcApiError::ErrUnexpectedError {
-                error: "This method requires the --rpc-unsafe flag to be enabled".into(),
-            }
-            .into());
-        }
         let client = self.l1_backfill_client.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?;
         client
             .backfill_l1_handler_message(l1_block_number, l1_transaction_hash.0, nonce)
@@ -538,12 +532,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn backfill_requires_unsafe_admin_rpc() {
+    async fn backfill_does_not_require_unsafe_admin_rpc() {
         let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
         let mut rpc = make_starknet(backend, ServiceContext::new_for_testing());
         rpc.set_rpc_unsafe_enabled(false);
         let error = rpc.backfill_l1_handler_message(100, mp_rpc::v0_9_0::L1TxnHash([0; 32]), 93).await.unwrap_err();
-        assert_eq!(error.code(), 63);
+        // No L1 client was installed in this test. Reaching that check proves the unsafe gate is absent.
+        assert_eq!(error.code(), 501);
     }
 
     fn invoke_v1_tx(sender: Felt, nonce: Felt, hash: Felt, arrived_at: u64) -> ValidatedTransaction {

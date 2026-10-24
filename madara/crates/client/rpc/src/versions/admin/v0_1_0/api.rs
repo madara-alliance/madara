@@ -91,7 +91,7 @@ pub trait MadaraWriteRpcApi {
     ) -> RpcResult<L1HandlerTransactionResult>;
 
     /// Fetch and validate a canonical Ethereum LogMessageToL2, then queue it through L1 sync.
-    /// Requires unsafe admin RPC. A queued result does not mean the L2 transaction was included.
+    /// Admin RPC only. A queued result does not mean the L2 transaction was included.
     #[method(name = "backfillL1HandlerMessage")]
     async fn backfill_l1_handler_message(
         &self,
