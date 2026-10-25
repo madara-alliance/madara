@@ -773,6 +773,12 @@
 //! - `madara_getReplayBoundaryStatus` accepts `block_n` and returns the configured boundary's
 //!   progress, or `null` when no retained boundary exists. Dispatch, execution, and closure are separate
 //!   stages; `boundary_met` does not mean the block has been durably confirmed.
+//! - `madara_V0_1_0_replayBlock` accepts one block's custom header and ordered transactions in a single
+//!   request. It validates every submitted transaction hash, preserves source-block boundaries, and
+//!   returns only after the block is confirmed, including the resulting block hash. Madara must run
+//!   with both `--rpc-unsafe` and `--replay-mode`. Up to ten consecutive block requests may be in
+//!   flight; transaction ingestion is serialized in block order. Retrying the same confirmed block
+//!   is idempotent when the requested block and transaction hashes match the stored block.
 //! - `madara_setMempoolIntake` accepts `enabled`: `false` pauses further mempool intake and
 //!   `true` resumes it. Transactions already dispatched may still execute. This requires block
 //!   production and leaves L1 messages and administrative bypass submissions active.
@@ -1023,6 +1029,8 @@ pub struct Starknet {
     pub ctx: ServiceContext,
     pub(crate) rpc_unsafe_enabled: bool,
     pub(crate) sync_threshold_blocks: u64,
+    /// Serializes managed-block execution while later replay requests wait for their turn.
+    pub(crate) replay_block_ingestion: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl Starknet {
@@ -1049,6 +1057,7 @@ impl Starknet {
             pre_v0_9_preconfirmed_as_pending: false,
             rpc_unsafe_enabled: false,
             sync_threshold_blocks: DEFAULT_SYNC_THRESHOLD_BLOCKS,
+            replay_block_ingestion: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
