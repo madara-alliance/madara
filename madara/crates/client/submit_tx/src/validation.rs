@@ -239,6 +239,13 @@ pub struct TransactionValidator {
     config: TransactionValidatorConfig,
 }
 
+/// A transaction that has completed format conversion and validation but has not been forwarded
+/// to the configured transaction provider yet.
+pub struct PreparedTransaction<T> {
+    pub response: T,
+    pub transaction: ValidatedTransaction,
+}
+
 impl fmt::Debug for TransactionValidator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "TransactionValidator {{ config: {:?} }}", self.config)
@@ -255,12 +262,12 @@ impl TransactionValidator {
     }
 
     #[tracing::instrument(skip(self, tx, converted_class))]
-    async fn accept_tx(
+    async fn prepare_account_tx(
         &self,
         tx: ApiAccountTransaction,
         converted_class: Option<ConvertedClass>,
         arrived_at: TxTimestamp,
-    ) -> Result<(), SubmitTransactionError> {
+    ) -> Result<ValidatedTransaction, SubmitTransactionError> {
         let tx_hash = tx.tx_hash().to_felt();
 
         if tx.tx_type() == TransactionType::L1Handler {
@@ -305,55 +312,43 @@ impl TransactionValidator {
             mp_utils::spawn_blocking(move || validator.perform_validations(account_tx)).await?;
         }
 
-        // Forward the validated tx.
-        let tx = ValidatedTransaction::from_starknet_api(
+        Ok(ValidatedTransaction::from_starknet_api(
             account_tx.tx,
             arrived_at,
             converted_class,
             account_tx.execution_flags.charge_fee,
-        );
-        self.inner.submit_validated_transaction(tx).await?;
-
-        Ok(())
+        ))
     }
-}
 
-#[async_trait]
-impl SubmitL1HandlerTransaction for TransactionValidator {
-    async fn submit_l1_handler_transaction(
+    pub fn prepare_l1_handler_transaction(
         &self,
         tx: L1HandlerTransactionWithFee,
-    ) -> Result<L1HandlerTransactionResult, SubmitTransactionError> {
+    ) -> Result<PreparedTransaction<L1HandlerTransactionResult>, SubmitTransactionError> {
         let (api_tx, class) = tx.clone().into_blockifier(
             self.backend.chain_config().chain_id.to_felt(),
             self.backend.chain_config().latest_protocol_version,
         )?;
-
-        let response = L1HandlerTransactionResult { transaction_hash: api_tx.tx_hash().to_felt() };
-
+        let transaction_hash = api_tx.tx_hash().to_felt();
         let contract_address = tx.tx.contract_address;
 
-        let validated_txn = ValidatedTransaction {
-            transaction: mp_transactions::Transaction::L1Handler(tx.tx),
-            paid_fee_on_l1: Some(tx.paid_fee_on_l1),
-            contract_address,
-            arrived_at: TxTimestamp::now(),
-            declared_class: class,
-            hash: api_tx.tx_hash().to_felt(),
-            charge_fee: true,
-        };
-
-        self.inner.submit_validated_transaction(validated_txn).await?;
-        Ok(response)
+        Ok(PreparedTransaction {
+            response: L1HandlerTransactionResult { transaction_hash },
+            transaction: ValidatedTransaction {
+                transaction: mp_transactions::Transaction::L1Handler(tx.tx),
+                paid_fee_on_l1: Some(tx.paid_fee_on_l1),
+                contract_address,
+                arrived_at: TxTimestamp::now(),
+                declared_class: class,
+                hash: transaction_hash,
+                charge_fee: true,
+            },
+        })
     }
-}
 
-#[async_trait]
-impl SubmitTransaction for TransactionValidator {
-    async fn submit_declare_v0_transaction(
+    pub async fn prepare_declare_v0_transaction(
         &self,
         tx: BroadcastedDeclareTxnV0,
-    ) -> Result<ClassAndTxnHash, SubmitTransactionError> {
+    ) -> Result<PreparedTransaction<ClassAndTxnHash>, SubmitTransactionError> {
         if tx.is_query() {
             return Err(RejectedTransactionError::new(
                 RejectedTransactionErrorKind::InvalidTransactionVersion,
@@ -363,28 +358,23 @@ impl SubmitTransaction for TransactionValidator {
         }
 
         let arrived_at = TxTimestamp::now();
-
         let (api_tx, class) = tx.into_starknet_api(
             self.backend.chain_config().chain_id.to_felt(),
             self.backend.chain_config().latest_protocol_version,
         )?;
-
-        // Destructure to get class hash only if it's a Declare tx
         let class_hash = match &api_tx {
             ApiAccountTransaction::Declare(declare_tx) => declare_tx.class_hash().to_felt(),
             _ => unreachable!("Created transaction should be Declare"),
         };
-
-        let res = ClassAndTxnHash { transaction_hash: api_tx.tx_hash().to_felt(), class_hash };
-
-        self.accept_tx(api_tx, class, arrived_at).await?;
-        Ok(res)
+        let response = ClassAndTxnHash { transaction_hash: api_tx.tx_hash().to_felt(), class_hash };
+        let transaction = self.prepare_account_tx(api_tx, class, arrived_at).await?;
+        Ok(PreparedTransaction { response, transaction })
     }
 
-    async fn submit_declare_transaction(
+    pub async fn prepare_declare_transaction(
         &self,
         tx: BroadcastedDeclareTxn,
-    ) -> Result<ClassAndTxnHash, SubmitTransactionError> {
+    ) -> Result<PreparedTransaction<ClassAndTxnHash>, SubmitTransactionError> {
         if tx.is_query() {
             return Err(RejectedTransactionError::new(
                 RejectedTransactionErrorKind::InvalidTransactionVersion,
@@ -399,23 +389,19 @@ impl SubmitTransaction for TransactionValidator {
             self.backend.chain_config().chain_id.to_felt(),
             self.backend.chain_config().latest_protocol_version,
         )?;
-
-        // Destructure to get class hash only if it's a Declare tx
         let class_hash = match &api_tx {
             ApiAccountTransaction::Declare(declare_tx) => declare_tx.class_hash().to_felt(),
             _ => unreachable!("Created transaction should be Declare"),
         };
-
-        let res = ClassAndTxnHash { transaction_hash: api_tx.tx_hash().to_felt(), class_hash };
-
-        self.accept_tx(api_tx, class, arrived_at).await?;
-        Ok(res)
+        let response = ClassAndTxnHash { transaction_hash: api_tx.tx_hash().to_felt(), class_hash };
+        let transaction = self.prepare_account_tx(api_tx, class, arrived_at).await?;
+        Ok(PreparedTransaction { response, transaction })
     }
 
-    async fn submit_deploy_account_transaction(
+    pub async fn prepare_deploy_account_transaction(
         &self,
         tx: BroadcastedDeployAccountTxn,
-    ) -> Result<ContractAndTxnHash, SubmitTransactionError> {
+    ) -> Result<PreparedTransaction<ContractAndTxnHash>, SubmitTransactionError> {
         if tx.is_query() {
             return Err(RejectedTransactionError::new(
                 RejectedTransactionErrorKind::InvalidTransactionVersion,
@@ -430,23 +416,19 @@ impl SubmitTransaction for TransactionValidator {
             self.backend.chain_config().chain_id.to_felt(),
             self.backend.chain_config().latest_protocol_version,
         )?;
-
-        // Destructure to get class hash only if it's a DeployAccount tx
         let contract_address = match &api_tx {
             ApiAccountTransaction::DeployAccount(deploy_account_tx) => deploy_account_tx.contract_address().to_felt(),
             _ => unreachable!("Created transaction should be DeployAccount"),
         };
-
-        let res = ContractAndTxnHash { transaction_hash: api_tx.tx_hash().to_felt(), contract_address };
-
-        self.accept_tx(api_tx, class, arrived_at).await?;
-        Ok(res)
+        let response = ContractAndTxnHash { transaction_hash: api_tx.tx_hash().to_felt(), contract_address };
+        let transaction = self.prepare_account_tx(api_tx, class, arrived_at).await?;
+        Ok(PreparedTransaction { response, transaction })
     }
 
-    async fn submit_invoke_transaction(
+    pub async fn prepare_invoke_transaction(
         &self,
         tx: BroadcastedInvokeTxn,
-    ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
+    ) -> Result<PreparedTransaction<AddInvokeTransactionResult>, SubmitTransactionError> {
         if tx.is_query() {
             return Err(RejectedTransactionError::new(
                 RejectedTransactionErrorKind::InvalidTransactionVersion,
@@ -469,9 +451,59 @@ impl SubmitTransaction for TransactionValidator {
             tx: invoke.try_into().map_err(ToBlockifierError::from)?,
             tx_hash: TransactionHash(hash),
         });
+        let transaction = self.prepare_account_tx(api_tx, None, arrived_at).await?;
+        Ok(PreparedTransaction { response: AddInvokeTransactionResult { transaction_hash: hash }, transaction })
+    }
+}
 
-        self.accept_tx(api_tx, None, arrived_at).await?;
-        Ok(AddInvokeTransactionResult { transaction_hash: hash })
+#[async_trait]
+impl SubmitL1HandlerTransaction for TransactionValidator {
+    async fn submit_l1_handler_transaction(
+        &self,
+        tx: L1HandlerTransactionWithFee,
+    ) -> Result<L1HandlerTransactionResult, SubmitTransactionError> {
+        let prepared = self.prepare_l1_handler_transaction(tx)?;
+        self.inner.submit_validated_transaction(prepared.transaction).await?;
+        Ok(prepared.response)
+    }
+}
+
+#[async_trait]
+impl SubmitTransaction for TransactionValidator {
+    async fn submit_declare_v0_transaction(
+        &self,
+        tx: BroadcastedDeclareTxnV0,
+    ) -> Result<ClassAndTxnHash, SubmitTransactionError> {
+        let prepared = self.prepare_declare_v0_transaction(tx).await?;
+        self.inner.submit_validated_transaction(prepared.transaction).await?;
+        Ok(prepared.response)
+    }
+
+    async fn submit_declare_transaction(
+        &self,
+        tx: BroadcastedDeclareTxn,
+    ) -> Result<ClassAndTxnHash, SubmitTransactionError> {
+        let prepared = self.prepare_declare_transaction(tx).await?;
+        self.inner.submit_validated_transaction(prepared.transaction).await?;
+        Ok(prepared.response)
+    }
+
+    async fn submit_deploy_account_transaction(
+        &self,
+        tx: BroadcastedDeployAccountTxn,
+    ) -> Result<ContractAndTxnHash, SubmitTransactionError> {
+        let prepared = self.prepare_deploy_account_transaction(tx).await?;
+        self.inner.submit_validated_transaction(prepared.transaction).await?;
+        Ok(prepared.response)
+    }
+
+    async fn submit_invoke_transaction(
+        &self,
+        tx: BroadcastedInvokeTxn,
+    ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
+        let prepared = self.prepare_invoke_transaction(tx).await?;
+        self.inner.submit_validated_transaction(prepared.transaction).await?;
+        Ok(prepared.response)
     }
 }
 

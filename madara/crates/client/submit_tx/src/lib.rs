@@ -128,7 +128,7 @@ mod error;
 mod validation;
 
 pub use error::*;
-pub use validation::{TransactionValidator, TransactionValidatorConfig};
+pub use validation::{PreparedTransaction, TransactionValidator, TransactionValidatorConfig};
 
 fn gateway_executed_transaction(transaction: &mp_block::TransactionWithReceipt) -> GatewayTransaction {
     GatewayTransaction::new(

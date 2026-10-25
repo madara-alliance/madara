@@ -1031,6 +1031,9 @@ pub struct Starknet {
     pub(crate) sync_threshold_blocks: u64,
     /// Serializes managed-block execution while later replay requests wait for their turn.
     pub(crate) replay_block_ingestion: Arc<tokio::sync::Mutex<()>>,
+    /// Once managed replay starts, granular bypass endpoints remain disabled until restart so
+    /// another transaction source cannot interleave with later pipelined replay blocks.
+    pub(crate) managed_replay_active: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Starknet {
@@ -1058,6 +1061,7 @@ impl Starknet {
             rpc_unsafe_enabled: false,
             sync_threshold_blocks: DEFAULT_SYNC_THRESHOLD_BLOCKS,
             replay_block_ingestion: Arc::new(tokio::sync::Mutex::new(())),
+            managed_replay_active: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 
