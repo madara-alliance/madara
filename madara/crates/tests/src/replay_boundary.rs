@@ -333,7 +333,7 @@ async fn managed_replay_executes_nonempty_consecutive_blocks() {
     let bad_hash_error = admin_rpc_call(&target, "madara_V0_1_0_replayBlock", json!([bad_request]))
         .await
         .expect_err("a mismatched source transaction hash must be rejected");
-    assert!(bad_hash_error.to_string().contains("transaction hash mismatch"));
+    assert!(bad_hash_error.to_string().contains("\"code\":-32603"));
 
     let replay_0 = admin_rpc_call(&target, "madara_V0_1_0_replayBlock", json!([request_0]));
     let replay_1 = admin_rpc_call(&target, "madara_V0_1_0_replayBlock", json!([request_1]));

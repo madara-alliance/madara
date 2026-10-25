@@ -188,6 +188,13 @@ async fn wait_for_transaction_execution<D: MadaraStorageRead>(
             }
 
             if let Some(mut view) = backend.block_view_on_current_preconfirmed() {
+                // Subscribe first, then refresh and recheck that exact view. If execution races
+                // with this check, the receiver remains marked changed and the wait returns
+                // immediately instead of sleeping until an unrelated later update.
+                view.refresh();
+                if view.get_block_info().tx_hashes.contains(&transaction_hash) {
+                    return Ok(());
+                }
                 view.wait_until_outdated().await;
             } else {
                 chain_head.recv().await;
