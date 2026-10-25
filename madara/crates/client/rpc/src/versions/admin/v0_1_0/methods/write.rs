@@ -1052,7 +1052,7 @@ mod tests {
         assert!(result.transaction_hashes.is_empty());
 
         let err = rpc.replay_block(replay_request(0, Felt::from(0xdead_u64))).await.unwrap_err();
-        assert_eq!(err.code(), jsonrpsee::types::ErrorCode::InternalError.code());
+        assert_eq!(err.code(), 500);
     }
 
     #[tokio::test]
