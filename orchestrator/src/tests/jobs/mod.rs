@@ -78,6 +78,21 @@ use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::service::JobService;
 use assert_matches::assert_matches;
 
+fn queue_client_with_failed_sends() -> MockQueueClient {
+    let mut queue = MockQueueClient::new();
+    queue
+        .expect_send_message()
+        .times(1)
+        .returning(|_, _, _| Err(QueueError::FailedToGetQueueUrl("test queue unavailable".to_string())));
+    queue
+}
+
+fn alert_client_accepting_one_failure() -> MockAlertClient {
+    let mut alerts = MockAlertClient::new();
+    alerts.expect_send_message().times(1).returning(|_| Ok(()));
+    alerts
+}
+
 /// Tests `create_job` function when job is not existing in the db.
 #[rstest]
 #[tokio::test]
@@ -244,6 +259,40 @@ async fn create_job_job_handler_returns_error() {
     assert_matches!(queue_result.unwrap_err(), QueueError::ErrorFromQueueError(_));
 }
 
+#[tokio::test]
+async fn create_job_queue_failure_marks_job_failed() {
+    let _test_lock = acquire_test_lock();
+    let job = build_job_item(JobType::SnosRun, JobStatus::Created, 2);
+    let mut job_handler = MockJobHandlerTrait::new();
+    let created_job = job.clone();
+    job_handler.expect_create_job().times(1).returning(move |_, _| Ok(created_job.clone()));
+
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Mock(MockType::Queue(Box::new(queue_client_with_failed_sends()))))
+        .configure_alerts(ConfigType::Mock(MockType::Alerts(Box::new(alert_client_accepting_one_failure()))))
+        .build()
+        .await;
+
+    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
+    let ctx = get_job_handler_context_safe();
+    ctx.expect().times(1).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
+
+    let metadata =
+        JobMetadata { common: CommonMetadata::default(), specific: JobSpecificMetadata::Snos(SnosMetadata::default()) };
+    assert!(JobHandlerService::create_job(JobType::SnosRun, 2, metadata, services.config.clone()).await.is_err());
+
+    let failed_job = services.config.database().get_job_by_id(job.id).await.unwrap().unwrap();
+    assert_eq!(failed_job.status, JobStatus::Failed);
+    assert!(failed_job
+        .metadata
+        .common
+        .failure_reason
+        .as_deref()
+        .unwrap()
+        .contains("Failed to queue newly created job"));
+}
+
 /// Tests `process_job` function when job is already existing in the db and job status is either
 /// `Created` or `VerificationFailed`.
 #[rstest]
@@ -341,6 +390,40 @@ async fn process_job_uses_configured_state_transition_verification_delay() {
     JobHandlerService::process_job(job.id, services.config).await.unwrap();
 }
 
+#[tokio::test]
+async fn process_job_queue_failure_marks_job_failed_and_preserves_external_id() {
+    let _test_lock = acquire_test_lock();
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Mock(MockType::Queue(Box::new(queue_client_with_failed_sends()))))
+        .configure_alerts(ConfigType::Mock(MockType::Alerts(Box::new(alert_client_accepting_one_failure()))))
+        .build()
+        .await;
+    let job = build_job_item(JobType::ProofCreation, JobStatus::Created, 3);
+    services.config.database().create_job(job.clone()).await.unwrap();
+
+    let mut job_handler = MockJobHandlerTrait::new();
+    job_handler.expect_check_ready_to_process().times(1).returning(|_, _| Ok(()));
+    job_handler.expect_process_job().times(1).returning(|_, _| Ok("proof-task-id".to_string()));
+    job_handler.expect_verification_polling_delay_seconds().times(1).return_const(2u64);
+    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
+    let ctx = get_job_handler_context_safe();
+    ctx.expect().times(1).with(eq(JobType::ProofCreation)).returning(move |_| Arc::clone(&job_handler));
+
+    JobHandlerService::process_job(job.id, services.config.clone()).await.unwrap();
+
+    let failed_job = services.config.database().get_job_by_id(job.id).await.unwrap().unwrap();
+    assert_eq!(failed_job.status, JobStatus::Failed);
+    assert_eq!(failed_job.external_id, ExternalId::String(Box::from("proof-task-id")));
+    assert!(failed_job
+        .metadata
+        .common
+        .failure_reason
+        .as_deref()
+        .unwrap()
+        .contains("Failed to queue processed job for verification"));
+}
+
 #[rstest]
 #[case(JobType::StateTransition, false, QueueType::UpdateStateJobVerification, Some(Duration::from_secs(7)))]
 #[case(JobType::StateTransition, true, QueueType::PriorityVerificationQueue, None)]
@@ -379,6 +462,37 @@ async fn manual_verification_requeue_uses_expected_delay(
     ctx.expect().times(1).with(eq(job_type)).returning(move |_| Arc::clone(&job_handler));
 
     JobService::queue_job_for_verification(job.id, services.config, priority).await.unwrap();
+}
+
+#[tokio::test]
+async fn manual_verification_queue_failure_marks_job_failed() {
+    let _test_lock = acquire_test_lock();
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Mock(MockType::Queue(Box::new(queue_client_with_failed_sends()))))
+        .configure_alerts(ConfigType::Mock(MockType::Alerts(Box::new(alert_client_accepting_one_failure()))))
+        .build()
+        .await;
+    let job = build_job_item(JobType::DataSubmission, JobStatus::VerificationTimeout, 4);
+    services.config.database().create_job(job.clone()).await.unwrap();
+
+    let mut job_handler = MockJobHandlerTrait::new();
+    job_handler.expect_verification_polling_delay_seconds().times(1).return_const(2u64);
+    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
+    let ctx = get_job_handler_context_safe();
+    ctx.expect().times(1).with(eq(JobType::DataSubmission)).returning(move |_| Arc::clone(&job_handler));
+
+    assert!(JobService::queue_job_for_verification(job.id, services.config.clone(), false).await.is_err());
+
+    let failed_job = services.config.database().get_job_by_id(job.id).await.unwrap().unwrap();
+    assert_eq!(failed_job.status, JobStatus::Failed);
+    assert!(failed_job
+        .metadata
+        .common
+        .failure_reason
+        .as_deref()
+        .unwrap()
+        .contains("Failed to queue job for verification"));
 }
 
 /// Tests that SNOS panics restore the original job status and rely on SQS/DLQ retries.
@@ -1091,6 +1205,41 @@ async fn verify_job_with_rejected_status_adds_to_queue_works() {
     assert_eq!(consumed_message_payload.id, job_item.id);
 }
 
+#[tokio::test]
+async fn rejected_verification_queue_failure_marks_job_failed() {
+    let _test_lock = acquire_test_lock();
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Mock(MockType::Queue(Box::new(queue_client_with_failed_sends()))))
+        .configure_alerts(ConfigType::Mock(MockType::Alerts(Box::new(alert_client_accepting_one_failure()))))
+        .build()
+        .await;
+    let job = build_job_item(JobType::DataSubmission, JobStatus::PendingVerification, 5);
+    services.config.database().create_job(job.clone()).await.unwrap();
+
+    let mut job_handler = MockJobHandlerTrait::new();
+    job_handler
+        .expect_verify_job()
+        .times(1)
+        .returning(|_, _| Ok(JobVerificationStatus::Rejected("prover rejected".to_string())));
+    job_handler.expect_max_process_attempts().times(1).return_const(2u64);
+    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
+    let ctx = get_job_handler_context_safe();
+    ctx.expect().times(1).with(eq(JobType::DataSubmission)).returning(move |_| Arc::clone(&job_handler));
+
+    JobHandlerService::verify_job(job.id, services.config.clone()).await.unwrap();
+
+    let failed_job = services.config.database().get_job_by_id(job.id).await.unwrap().unwrap();
+    assert_eq!(failed_job.status, JobStatus::Failed);
+    assert!(failed_job
+        .metadata
+        .common
+        .failure_reason
+        .as_deref()
+        .unwrap()
+        .contains("Failed to queue rejected job for reprocessing"));
+}
+
 /// Tests `verify_job` function when job is having expected status
 /// and returns a `Rejected` verification status but doesn't add
 /// the job to process queue because of maximum attempts reached.
@@ -1267,6 +1416,39 @@ async fn pending_verification_requeue_uses_expected_delay(
     ctx.expect().times(1).with(eq(job_type)).returning(move |_| Arc::clone(&job_handler));
 
     JobHandlerService::verify_job(job.id, services.config).await.unwrap();
+}
+
+#[tokio::test]
+async fn pending_verification_queue_failure_marks_job_failed() {
+    let _test_lock = acquire_test_lock();
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Mock(MockType::Queue(Box::new(queue_client_with_failed_sends()))))
+        .configure_alerts(ConfigType::Mock(MockType::Alerts(Box::new(alert_client_accepting_one_failure()))))
+        .build()
+        .await;
+    let job = build_job_item(JobType::DataSubmission, JobStatus::PendingVerification, 6);
+    services.config.database().create_job(job.clone()).await.unwrap();
+
+    let mut job_handler = MockJobHandlerTrait::new();
+    job_handler.expect_verify_job().times(1).returning(|_, _| Ok(JobVerificationStatus::Pending));
+    job_handler.expect_max_verification_attempts().times(1).return_const(2u64);
+    job_handler.expect_verification_polling_delay_seconds().times(1).return_const(2u64);
+    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
+    let ctx = get_job_handler_context_safe();
+    ctx.expect().times(1).with(eq(JobType::DataSubmission)).returning(move |_| Arc::clone(&job_handler));
+
+    JobHandlerService::verify_job(job.id, services.config.clone()).await.unwrap();
+
+    let failed_job = services.config.database().get_job_by_id(job.id).await.unwrap().unwrap();
+    assert_eq!(failed_job.status, JobStatus::Failed);
+    assert!(failed_job
+        .metadata
+        .common
+        .failure_reason
+        .as_deref()
+        .unwrap()
+        .contains("Failed to requeue pending verification"));
 }
 
 /// Tests `verify_job` function when job is having expected status
@@ -1522,6 +1704,23 @@ async fn test_retry_job_adds_to_process_queue(#[case] is_priority: bool) {
     .unwrap();
     let consumed_message_payload: MessagePayloadType = consumed_messages.payload_serde_json().unwrap().unwrap();
     assert_eq!(consumed_message_payload.id, job_id);
+}
+
+#[tokio::test]
+async fn retry_job_queue_failure_leaves_job_failed() {
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Mock(MockType::Queue(Box::new(queue_client_with_failed_sends()))))
+        .build()
+        .await;
+    let job = build_job_item(JobType::DataSubmission, JobStatus::Failed, 7);
+    services.config.database().create_job(job.clone()).await.unwrap();
+
+    assert!(JobHandlerService::retry_job(job.id, services.config.clone(), false).await.is_err());
+
+    let unchanged_job = services.config.database().get_job_by_id(job.id).await.unwrap().unwrap();
+    assert_eq!(unchanged_job.status, JobStatus::Failed);
+    assert_eq!(unchanged_job.metadata.common.process_retry_attempt_no, 0);
 }
 
 #[rstest]

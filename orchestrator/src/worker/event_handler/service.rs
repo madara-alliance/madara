@@ -101,7 +101,15 @@ impl JobHandlerService {
         // Update job status tracking metrics
         MetricsRecorder::record_job_status(&job_item, &JobStatus::Created);
 
-        JobService::add_job_to_process_queue(job_item.id, &job_type, config.clone()).await?;
+        if let Err(error) = JobService::add_job_to_process_queue(job_item.id, &job_type, config.clone()).await {
+            JobService::move_job_to_failed(
+                &job_item,
+                config.clone(),
+                format!("Failed to queue newly created job for processing after SQS retries: {}", error),
+            )
+            .await?;
+            return Err(error);
+        }
 
         let attributes = [
             KeyValue::new("operation_job_type", format!("{:?}", job_type)),
@@ -404,15 +412,45 @@ impl JobHandlerService {
             }
         };
 
-        // Update job status and metadata
-        config
+        // Keep the job LockedForProcessing until the verification message is durably accepted.
+        job.external_id = external_id.clone().into();
+        if let Err(error) = JobService::add_job_to_verify_queue(
+            config.clone(),
+            job.id,
+            &job.job_type,
+            Some(Duration::from_secs(
+                config
+                    .service_config()
+                    .verification_delay_seconds(&job.job_type, job_handler.verification_polling_delay_seconds()),
+            )),
+        )
+        .await
+        {
+            error!(job_id = ?id, error = ?error, "Failed to add job to verification queue after SQS retries");
+            MetricsRecorder::record_job_state_transition(
+                JobStatus::LockedForProcessing,
+                JobStatus::Failed,
+                &job.job_type,
+            );
+            JobService::move_job_to_failed(
+                &job,
+                config.clone(),
+                format!("Failed to queue processed job for verification after SQS retries: {}", error),
+            )
+            .await?;
+            workload.finish_error();
+            return Ok(());
+        }
+
+        // Publish succeeded; now expose the job to verification consumers.
+        let job = config
             .database()
             .update_job(
                 &job,
                 JobItemUpdates::new()
                     .update_status(JobStatus::PendingVerification)
                     .update_metadata(job.metadata.clone())
-                    .update_external_id(external_id.clone().into())
+                    .update_external_id(job.external_id.clone())
                     .build(),
             )
             .await
@@ -429,28 +467,8 @@ impl JobHandlerService {
             "Updating status of {:?} job {} to {}", job.job_type, job.internal_id, JobStatus::PendingVerification
         );
 
-        // Update job status tracking metrics for PendingVerification
         MetricsRecorder::record_job_status(&job, &JobStatus::PendingVerification);
-
-        // Record transition metrics for entering verification
         MetricsRecorder::record_verification_started(&job);
-
-        // Add to the verification queue
-        JobService::add_job_to_verify_queue(
-            config.clone(),
-            job.id,
-            &job.job_type,
-            Some(Duration::from_secs(
-                config
-                    .service_config()
-                    .verification_delay_seconds(&job.job_type, job_handler.verification_polling_delay_seconds()),
-            )),
-        )
-        .await
-        .map_err(|e| {
-            error!(job_id = ?id, error = ?e, "Failed to add job to verification queue");
-            e
-        })?;
 
         let attributes = vec![
             KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
@@ -667,7 +685,7 @@ impl JobHandlerService {
                         "Verification failed. Retrying job processing"
                     );
 
-                    config
+                    job = config
                         .database()
                         .update_job(
                             &job,
@@ -687,7 +705,23 @@ impl JobHandlerService {
                         JobStatus::VerificationFailed,
                         &job.job_type,
                     );
-                    JobService::add_job_to_process_queue(job.id, &job.job_type, config.clone()).await?;
+                    if let Err(error) =
+                        JobService::add_job_to_process_queue(job.id, &job.job_type, config.clone()).await
+                    {
+                        MetricsRecorder::record_job_state_transition(
+                            JobStatus::VerificationFailed,
+                            JobStatus::Failed,
+                            &job.job_type,
+                        );
+                        JobService::move_job_to_failed(
+                            &job,
+                            config.clone(),
+                            format!("Failed to queue rejected job for reprocessing after SQS retries: {}", error),
+                        )
+                        .await?;
+                        workload.finish_error();
+                        return Ok(());
+                    }
                 } else {
                     warn!(job_id = ?id, "Max process attempts reached. Job will not be retried");
 
@@ -748,17 +782,8 @@ impl JobHandlerService {
 
                     operation_job_status = Some(JobStatus::VerificationTimeout);
                 } else {
-                    config
-                        .database()
-                        .update_job(&job, JobItemUpdates::new().update_metadata(job.metadata.clone()).build())
-                        .await
-                        .map_err(|e| {
-                            error!(job_id = ?id, error = ?e, "Failed to update job metadata");
-                            JobError::from(e)
-                        })?;
-
                     debug!(job_id = ?id, "Adding job back to verification queue");
-                    JobService::add_job_to_verify_queue(
+                    if let Err(error) = JobService::add_job_to_verify_queue(
                         config.clone(),
                         job.id,
                         &job.job_type,
@@ -768,10 +793,31 @@ impl JobHandlerService {
                         ))),
                     )
                     .await
-                    .map_err(|e| {
-                        error!(job_id = ?id, error = ?e, "Failed to add job to verification queue");
-                        e
-                    })?;
+                    {
+                        error!(job_id = ?id, error = ?error, "Failed to requeue job for verification after SQS retries");
+                        MetricsRecorder::record_job_state_transition(
+                            JobStatus::PendingVerification,
+                            JobStatus::Failed,
+                            &job.job_type,
+                        );
+                        JobService::move_job_to_failed(
+                            &job,
+                            config.clone(),
+                            format!("Failed to requeue pending verification after SQS retries: {}", error),
+                        )
+                        .await?;
+                        workload.finish_error();
+                        return Ok(());
+                    }
+
+                    config
+                        .database()
+                        .update_job(&job, JobItemUpdates::new().update_metadata(job.metadata.clone()).build())
+                        .await
+                        .map_err(|e| {
+                            error!(job_id = ?id, error = ?e, "Failed to update job metadata");
+                            JobError::from(e)
+                        })?;
                 }
             }
         };
@@ -841,7 +887,7 @@ impl JobHandlerService {
     ///
     /// # Notes
     /// * Only jobs in Failed status can be retried
-    /// * Transitions through PendingRetry status before processing
+    /// * Enqueues the retry before exposing the PendingRetry status
     /// * Uses priority queue if priority flag is set, otherwise normal queue
     pub async fn retry_job(id: Uuid, config: Arc<Config>, priority: bool) -> Result<(), JobError> {
         let mut job = JobService::get_job(id, config.clone()).await?;
@@ -875,7 +921,20 @@ impl JobHandlerService {
             "Incrementing process retry attempt counter"
         );
 
-        // Update job status and metadata to PendingRetry before processing
+        // Queue first so a failed send leaves the job in its existing terminal Failed state.
+        JobService::queue_job_for_processing(job.id, config.clone(), priority).await.map_err(|e| {
+            error!(
+                log_type = "error",
+                category = "general",
+                function_type = "retry_job",
+                block_no = %internal_id,
+                priority = priority,
+                error = %e,
+                "Failed to add job to process queue"
+            );
+            e
+        })?;
+
         config
             .database()
             .update_job(
@@ -894,20 +953,6 @@ impl JobHandlerService {
                 );
                 e
             })?;
-
-        // Queue for processing - use priority queue if requested
-        JobService::queue_job_for_processing(job.id, config.clone(), priority).await.map_err(|e| {
-            error!(
-                log_type = "error",
-                category = "general",
-                function_type = "retry_job",
-                block_no = %internal_id,
-                priority = priority,
-                error = %e,
-                "Failed to add job to process queue"
-            );
-            e
-        })?;
 
         let queue_type = if priority { "PRIORITY" } else { "normal" };
         info!(

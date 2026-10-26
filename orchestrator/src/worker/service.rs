@@ -165,8 +165,9 @@ impl JobService {
             "Incrementing verification retry attempt counter"
         );
 
-        // Update job status and metadata
-        config
+        // Update job status and metadata. This transition stays before the queue send because
+        // verification messages can be consumed immediately and require the reset counters.
+        let job = config
             .database()
             .update_job(
                 &job,
@@ -177,15 +178,25 @@ impl JobService {
             )
             .await?;
 
-        if priority {
+        let queue_result = if priority {
             // Send to priority verification queue
-            Self::add_job_to_priority_queue(id, JobAction::Verify, config).await?;
+            Self::add_job_to_priority_queue(id, JobAction::Verify, config.clone()).await
         } else {
             // Add to verification queue with appropriate delay
             let delay = config
                 .service_config()
                 .verification_delay_seconds(&job.job_type, job_handler.verification_polling_delay_seconds());
-            Self::add_job_to_verify_queue(config, id, &job.job_type, Some(Duration::from_secs(delay))).await?;
+            Self::add_job_to_verify_queue(config.clone(), id, &job.job_type, Some(Duration::from_secs(delay))).await
+        };
+
+        if let Err(error) = queue_result {
+            Self::move_job_to_failed(
+                &job,
+                config,
+                format!("Failed to queue job for verification after SQS retries: {}", error),
+            )
+            .await?;
+            return Err(error);
         }
 
         Ok(())
@@ -233,7 +244,11 @@ impl JobService {
             .database()
             .update_job(
                 job,
-                JobItemUpdates::new().update_status(JobStatus::Failed).update_metadata(job_metadata).build(),
+                JobItemUpdates::new()
+                    .update_status(JobStatus::Failed)
+                    .update_external_id(job.external_id.clone())
+                    .update_metadata(job_metadata)
+                    .build(),
             )
             .await
         {
