@@ -109,9 +109,12 @@ async fn verified_backfill_queues_once_without_advancing_live_cursor() -> anyhow
     assert!(db.get_message_to_l2_index_entry(&L1TransactionHash(hash), 93)?.is_some());
     assert_eq!(db.get_l1_messaging_sync_tip()?, Some(200));
 
+    // Simulate a restart: the pending row survives, but the in-memory rewind hint does not.
+    newly_queued_nonces.lock().unwrap().clear();
     let second = backfill_l1_handler_message(&client, &db, &notify, &newly_queued_nonces, 100, hash, 93).await?;
     assert_eq!(second.status, BackfillStatus::AlreadyQueued);
     assert_eq!(second.transaction_hash, first.transaction_hash);
+    assert!(newly_queued_nonces.lock().unwrap().contains(&93));
 
     db.write_l1_handler_txn_hash_by_nonce(93, &first.transaction_hash)?;
     db.remove_pending_message_to_l2(93)?;
@@ -223,10 +226,7 @@ async fn test_sync_processes_new_messages(#[future] setup_messaging_tests: Messa
     let db_backend_clone = db.clone();
 
     // Spawn the sync task in a separate thread
-    let sync_handle =
-        tokio::spawn(
-            async move { sync(client, db_backend_clone, notify, Default::default(), ctx, false, false).await },
-        );
+    let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx, false, false).await });
 
     // Wait for event to be processed (short wait since stream returns immediately)
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -292,10 +292,7 @@ async fn test_sync_backfills_consumed_tx_hash_when_already_known(
     let db_backend_clone = db.clone();
 
     // Spawn the sync task in a separate thread
-    let sync_handle =
-        tokio::spawn(
-            async move { sync(client, db_backend_clone, notify, Default::default(), ctx, false, false).await },
-        );
+    let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx, false, false).await });
 
     // Wait for event to be processed (short wait since stream returns immediately)
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -366,10 +363,7 @@ async fn test_sync_catches_earlier_messages(
     let db_backend_clone = db.clone();
 
     // Spawn the sync task in a separate thread
-    let sync_handle =
-        tokio::spawn(
-            async move { sync(client, db_backend_clone, notify, Default::default(), ctx, false, false).await },
-        );
+    let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx, false, false).await });
 
     // Wait for event to be processed (short wait since stream returns immediately)
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -428,8 +422,7 @@ async fn test_finality_blocks_delays_processing() -> anyhow::Result<()> {
     let notify = Arc::new(Notify::new());
     let db_clone = db.clone();
 
-    let sync_handle =
-        tokio::spawn(async move { sync(client, db_clone, notify, Default::default(), ctx, false, false).await });
+    let sync_handle = tokio::spawn(async move { sync(client, db_clone, notify, ctx, false, false).await });
 
     // Wait for processing attempt (short wait)
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -486,8 +479,7 @@ async fn test_finality_blocks_processes_after_threshold() -> anyhow::Result<()> 
     let notify = Arc::new(Notify::new());
     let db_clone = db.clone();
 
-    let sync_handle =
-        tokio::spawn(async move { sync(client, db_clone, notify, Default::default(), ctx, false, false).await });
+    let sync_handle = tokio::spawn(async move { sync(client, db_clone, notify, ctx, false, false).await });
 
     // Wait for processing (short wait)
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -548,8 +540,7 @@ async fn test_drops_event_when_block_does_not_exist() -> anyhow::Result<()> {
     let notify = Arc::new(Notify::new());
     let db_clone = db.clone();
 
-    let sync_handle =
-        tokio::spawn(async move { sync(client, db_clone, notify, Default::default(), ctx, false, false).await });
+    let sync_handle = tokio::spawn(async move { sync(client, db_clone, notify, ctx, false, false).await });
 
     tokio::time::sleep(Duration::from_millis(500)).await;
 
@@ -615,8 +606,7 @@ async fn test_drops_event_when_block_hash_mismatches() -> anyhow::Result<()> {
     let notify = Arc::new(Notify::new());
     let db_clone = db.clone();
 
-    let sync_handle =
-        tokio::spawn(async move { sync(client, db_clone, notify, Default::default(), ctx, false, false).await });
+    let sync_handle = tokio::spawn(async move { sync(client, db_clone, notify, ctx, false, false).await });
 
     tokio::time::sleep(Duration::from_millis(500)).await;
 
@@ -669,10 +659,7 @@ async fn test_backoff_on_rpc_failure() -> anyhow::Result<()> {
     let client = Arc::new(mock_client);
     let ctx = ServiceContext::new_for_testing();
 
-    let sync_handle =
-        tokio::spawn(
-            async move { sync(client, db, Arc::new(Notify::new()), Default::default(), ctx, false, false).await },
-        );
+    let sync_handle = tokio::spawn(async move { sync(client, db, Arc::new(Notify::new()), ctx, false, false).await });
 
     // Verify exponential backoff: 1s -> 2s -> 4s
     tokio::time::advance(Duration::from_millis(50)).await;
@@ -719,8 +706,7 @@ async fn test_metadata_only_flag_stores_metadata_but_not_pending(
     let db_backend_clone = db.clone();
 
     // Pass metadata_only = true (last argument)
-    let sync_handle =
-        tokio::spawn(async move { sync(client, db_backend_clone, notify, Default::default(), ctx, false, true).await });
+    let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx, false, true).await });
 
     tokio::time::sleep(Duration::from_millis(500)).await;
 
@@ -783,16 +769,13 @@ async fn validity_failure_keeps_event_ahead_of_later_messages() -> anyhow::Resul
     client.expect_message_to_l2_has_cancel_request().returning(|_| Ok(false));
     let client = Arc::new(client) as Arc<dyn SettlementLayerProvider>;
 
-    let queued_nonces = Mutex::new(BTreeSet::new());
-    assert!(process_finalized_events(&client, &db, &notify, &queued_nonces, &mut pending, 10, false, false)
-        .await
-        .is_err());
+    assert!(process_finalized_events(&client, &db, &notify, &mut pending, 10, false, false).await.is_err());
     assert_eq!(pending.len(), 2, "failed event must remain ahead of later events");
     assert_eq!(pending.front().unwrap().message.tx.nonce, 1);
     assert_eq!(db.get_l1_messaging_sync_tip()?, Some(99));
     assert!(db.get_pending_message_to_l2(2)?.is_none());
 
-    process_finalized_events(&client, &db, &notify, &queued_nonces, &mut pending, 10, false, false).await?;
+    process_finalized_events(&client, &db, &notify, &mut pending, 10, false, false).await?;
     assert!(pending.is_empty());
     assert_eq!(db.get_pending_message_to_l2(1)?, Some(first.message));
     assert_eq!(db.get_pending_message_to_l2(2)?, Some(second.message));

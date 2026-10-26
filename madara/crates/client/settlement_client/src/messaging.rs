@@ -132,6 +132,7 @@ pub async fn backfill_l1_handler_message(
         backend
             .write_l1_handler_l1_block_by_nonce(nonce, block_number)
             .map_err(|e| SettlementClientError::DatabaseError(e.to_string()))?;
+        newly_queued_nonces.lock().expect("queued nonce mutex poisoned").insert(nonce);
         notify_consumer.notify_waiters();
         return Ok(BackfillL1HandlerMessageResult { transaction_hash, status: BackfillStatus::AlreadyQueued });
     }
@@ -218,7 +219,6 @@ pub async fn sync(
     settlement_client: Arc<dyn SettlementLayerProvider>,
     backend: Arc<MadaraBackend>,
     notify_consumer: Arc<Notify>,
-    newly_queued_nonces: Arc<Mutex<BTreeSet<u64>>>,
     mut ctx: ServiceContext,
     unsafe_skip_l1_message_consumed_check: bool,
     metadata_only: bool,
@@ -228,7 +228,6 @@ pub async fn sync(
         settlement_client,
         backend,
         notify_consumer,
-        newly_queued_nonces,
         unsafe_skip_l1_message_consumed_check,
         metadata_only,
     ))
@@ -241,7 +240,6 @@ async fn sync_inner(
     settlement_client: Arc<dyn SettlementLayerProvider>,
     backend: Arc<MadaraBackend>,
     notify_consumer: Arc<Notify>,
-    newly_queued_nonces: Arc<Mutex<BTreeSet<u64>>>,
     unsafe_skip_l1_message_consumed_check: bool,
     metadata_only: bool,
 ) -> Result<(), SettlementClientError> {
@@ -258,7 +256,6 @@ async fn sync_inner(
             &settlement_client,
             &backend,
             &notify_consumer,
-            &newly_queued_nonces,
             replay_max_duration,
             finality_blocks,
             unsafe_skip_l1_message_consumed_check,
@@ -280,12 +277,10 @@ async fn sync_inner(
 }
 
 /// Runs a single message sync session. Returns when the stream ends or an error occurs.
-#[allow(clippy::too_many_arguments)]
 async fn run_message_sync(
     settlement_client: &Arc<dyn SettlementLayerProvider>,
     backend: &Arc<MadaraBackend>,
     notify_consumer: &Notify,
-    newly_queued_nonces: &Mutex<BTreeSet<u64>>,
     replay_max_duration: Duration,
     finality_blocks: u64,
     unsafe_skip_l1_message_consumed_check: bool,
@@ -334,7 +329,6 @@ async fn run_message_sync(
             settlement_client,
             backend,
             notify_consumer,
-            newly_queued_nonces,
             &mut pending_events,
             finality_blocks,
             unsafe_skip_l1_message_consumed_check,
@@ -473,7 +467,6 @@ fn persist_message_origin(
 async fn process_canonical_event(
     settlement_client: &Arc<dyn SettlementLayerProvider>,
     backend: &MadaraBackend,
-    newly_queued_nonces: &Mutex<BTreeSet<u64>>,
     event: &MessageToL2WithMetadata,
     unsafe_skip_l1_message_consumed_check: bool,
     metadata_only: bool,
@@ -499,11 +492,9 @@ async fn process_canonical_event(
                 event.message.tx.nonce
             );
         } else {
-            let mut newly_queued = newly_queued_nonces.lock().expect("queued nonce mutex poisoned");
             backend
                 .write_pending_message_to_l2(&event.message)
                 .map_err(|error| SettlementClientError::DatabaseError(format!("Failed to store message: {error}")))?;
-            newly_queued.insert(event.message.tx.nonce);
             tracing::debug!("Message stored: nonce={}", event.message.tx.nonce);
         }
     } else {
@@ -518,12 +509,10 @@ async fn process_canonical_event(
 /// succeed, so a failed event cannot be skipped by a later event advancing the cursor.
 /// Reorged events are discarded without advancing the cursor or writing nonce metadata.
 /// Reorgs deeper than `finality_blocks` after L2 inclusion remain outside this finality guarantee.
-#[allow(clippy::too_many_arguments)]
 async fn process_finalized_events(
     settlement_client: &Arc<dyn SettlementLayerProvider>,
     backend: &MadaraBackend,
     notify_consumer: &Notify,
-    newly_queued_nonces: &Mutex<BTreeSet<u64>>,
     pending_events: &mut VecDeque<MessageToL2WithMetadata>,
     finality_blocks: u64,
     unsafe_skip_l1_message_consumed_check: bool,
@@ -556,7 +545,6 @@ async fn process_finalized_events(
         process_canonical_event(
             settlement_client,
             backend,
-            newly_queued_nonces,
             event,
             unsafe_skip_l1_message_consumed_check,
             metadata_only,

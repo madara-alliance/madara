@@ -8,7 +8,7 @@ use tokio::sync::Notify;
 
 pub struct MessagesToL2Consumer {
     next_nonce: u64,
-    /// Newly queued nonces from backfill and live sync can be revisited below the forward cursor.
+    /// Admin backfills can be revisited below the ordinary forward cursor.
     newly_queued_nonces: Arc<Mutex<BTreeSet<u64>>>,
     backend: Arc<MadaraBackend>,
     l1_read: Arc<dyn SettlementLayerProvider>,
@@ -43,8 +43,7 @@ impl MessagesToL2Consumer {
                 permit.as_mut().enable();
             }
 
-            // A new message below next_nonce needs one targeted rewind, without rereading every
-            // in-flight row on each ordinary message.
+            // A backfilled message below next_nonce needs one targeted rewind.
             let late_nonce = self
                 .newly_queued_nonces
                 .lock()
@@ -78,13 +77,13 @@ impl MessagesToL2Consumer {
                 continue;
             }
 
-            // Normal traffic keeps its monotone cursor and reads each pending row once.
+            // Ordinary L1 messages retain the existing forward-cursor behavior.
             while let Some(msg) = self
                 .backend
                 .get_next_pending_message_to_l2(self.next_nonce)
                 .context("Getting next pending message to l2")?
             {
-                let nonce = msg.tx.nonce;
+                self.next_nonce = msg.tx.nonce + 1;
                 match check_message_to_l2_validity(
                     &self.l1_read,
                     &self.backend,
@@ -96,16 +95,16 @@ impl MessagesToL2Consumer {
                 {
                     // can be consumed (not cancelled, still exists, not already in chain)
                     true => {
-                        self.next_nonce = nonce + 1;
-                        self.newly_queued_nonces.lock().expect("backfill nonce mutex poisoned").remove(&nonce);
+                        self.newly_queued_nonces.lock().expect("backfill nonce mutex poisoned").remove(&msg.tx.nonce);
                         return Ok(msg);
                     }
                     false => {
-                        self.backend.remove_pending_message_to_l2(nonce).context("Removing pending message to l2")?
+                        self.backend
+                            .remove_pending_message_to_l2(msg.tx.nonce)
+                            .context("Removing pending message to l2")?;
+                        self.newly_queued_nonces.lock().expect("backfill nonce mutex poisoned").remove(&msg.tx.nonce);
                     }
                 }
-                self.next_nonce = nonce + 1;
-                self.newly_queued_nonces.lock().expect("backfill nonce mutex poisoned").remove(&nonce);
             }
 
             // We have no more messages in db.
@@ -248,7 +247,7 @@ mod tests {
     }
 
     #[test]
-    fn test_consumer_picks_late_backfill_and_live_nonce_without_redelivering() {
+    fn test_consumer_picks_late_backfills_without_redelivering() {
         let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
         let notify = Arc::new(Notify::new());
         let mut mock = MockSettlementLayerProvider::new();
@@ -270,15 +269,11 @@ mod tests {
         assert_eq!(consumer.consume_next_or_wait().now_or_never().unwrap().unwrap(), l1_handler_tx(34092));
         assert_eq!(consumer.consume_next_or_wait().now_or_never().unwrap().unwrap(), l1_handler_tx(34094));
         backend.write_pending_message_to_l2(&l1_handler_tx(34093)).unwrap();
-        newly_queued_nonces.lock().unwrap().insert(34093);
-        notify.notify_waiters();
-        assert_eq!(consumer.consume_next_or_wait().now_or_never().unwrap().unwrap(), l1_handler_tx(34093));
-
-        // Live sync may queue a lower nonce after a backfill advanced the forward cursor.
         backend.write_pending_message_to_l2(&l1_handler_tx(34091)).unwrap();
-        newly_queued_nonces.lock().unwrap().insert(34091);
+        newly_queued_nonces.lock().unwrap().extend([34093, 34091]);
         notify.notify_waiters();
         assert_eq!(consumer.consume_next_or_wait().now_or_never().unwrap().unwrap(), l1_handler_tx(34091));
+        assert_eq!(consumer.consume_next_or_wait().now_or_never().unwrap().unwrap(), l1_handler_tx(34093));
         assert!(consumer.consume_next_or_wait().now_or_never().is_none());
     }
 }

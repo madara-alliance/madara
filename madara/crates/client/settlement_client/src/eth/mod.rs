@@ -797,7 +797,6 @@ mod l1_messaging_tests {
                     Arc::new(eth_client),
                     Arc::clone(&db),
                     Default::default(),
-                    Default::default(),
                     ServiceContext::new_for_testing(),
                     false,
                     false,
@@ -934,7 +933,6 @@ mod l1_messaging_tests {
                 sync(
                     Arc::new(eth_client),
                     Arc::clone(&db),
-                    Default::default(),
                     Default::default(),
                     ServiceContext::new_for_testing(),
                     false,
@@ -1078,7 +1076,6 @@ mod l1_messaging_tests {
                 sync(
                     Arc::new(eth_client),
                     Arc::clone(&db),
-                    Default::default(),
                     Default::default(),
                     ServiceContext::new_for_testing(),
                     false,

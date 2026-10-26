@@ -773,7 +773,6 @@ mod starknet_client_messaging_test {
                     Arc::new(starknet_client),
                     Arc::clone(&db),
                     Default::default(),
-                    Default::default(),
                     ServiceContext::new_for_testing(),
                     false,
                     false,
@@ -863,7 +862,6 @@ mod starknet_client_messaging_test {
                 sync(
                     Arc::new(starknet_client),
                     Arc::clone(&db),
-                    Default::default(),
                     Default::default(),
                     ServiceContext::new_for_testing(),
                     false,
