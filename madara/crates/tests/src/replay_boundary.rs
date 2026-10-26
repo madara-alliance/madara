@@ -7,7 +7,7 @@ use rstest::rstest;
 use serde_json::{json, Value};
 use starknet::accounts::{Account, ExecutionEncoding, SingleOwnerAccount};
 use starknet::signers::{LocalWallet, SigningKey};
-use starknet_core::types::{BlockId, BlockTag, Felt, MaybePreConfirmedBlockWithTxHashes};
+use starknet_core::types::{BlockId, BlockTag, BlockWithTxHashes, Felt, MaybePreConfirmedBlockWithTxHashes};
 use starknet_core::utils::starknet_keccak;
 use starknet_providers::Provider;
 use std::time::Duration;
@@ -95,25 +95,31 @@ async fn bypass_add_invoke_transaction(node: &MadaraCmd, invoke_tx: Value) -> an
 
 /// Starts a paused-mempool replay node whose blocks close only at replay boundaries.
 /// The long block time prevents the normal timer from influencing the test.
+fn replay_node_builder() -> MadaraCmdBuilder {
+    MadaraCmdBuilder::new().args([
+        "--devnet",
+        "--no-l1-sync",
+        "--l1-gas-price",
+        "0",
+        "--blob-gas-price",
+        "0",
+        "--chain-config-path",
+        "test_devnet.yaml",
+        "--chain-config-override",
+        "block_time=500min",
+        "--rpc-admin",
+        "--rpc-unsafe",
+        "--replay-mode",
+        "--mempool-paused",
+    ])
+}
+
 async fn start_replay_node() -> MadaraCmd {
-    let mut node = MadaraCmdBuilder::new()
-        .args([
-            "--devnet",
-            "--no-l1-sync",
-            "--l1-gas-price",
-            "0",
-            "--blob-gas-price",
-            "0",
-            "--chain-config-path",
-            "test_devnet.yaml",
-            "--chain-config-override",
-            "block_time=500min",
-            "--rpc-admin",
-            "--rpc-unsafe",
-            "--replay-mode",
-            "--mempool-paused",
-        ])
-        .run();
+    start_replay_node_with(replay_node_builder()).await
+}
+
+async fn start_replay_node_with(builder: MadaraCmdBuilder) -> MadaraCmd {
+    let mut node = builder.run();
     node.wait_for_ready().await;
     node.wait_for_sync_to(0).await;
     node
@@ -121,7 +127,7 @@ async fn start_replay_node() -> MadaraCmd {
 
 /// Builds and signs the deterministic transfer sequence without submitting it.
 /// Returned hashes are the boundary oracle and requests are sent later through bypass RPC.
-async fn prepare_replay_transactions(node: &MadaraCmd) -> (u64, Vec<Felt>, Vec<Value>) {
+async fn prepare_replay_transactions(node: &MadaraCmd, total_txs: usize) -> (u64, Vec<Felt>, Vec<Value>) {
     let chain_id = node.json_rpc().chain_id().await.unwrap();
     let signer = LocalWallet::from_signing_key(SigningKey::from_secret_scalar(ACCOUNT_SECRET));
     let mut account =
@@ -130,10 +136,10 @@ async fn prepare_replay_transactions(node: &MadaraCmd) -> (u64, Vec<Felt>, Vec<V
     let start_block_n = node.json_rpc().block_hash_and_number().await.unwrap().block_number + 1;
     let mut next_nonce =
         node.json_rpc().get_nonce(BlockId::Tag(BlockTag::PreConfirmed), ACCOUNT_ADDRESS).await.unwrap();
-    let mut tx_hashes = Vec::with_capacity(TOTAL_TXS);
-    let mut invoke_txs = Vec::with_capacity(TOTAL_TXS);
+    let mut tx_hashes = Vec::with_capacity(total_txs);
+    let mut invoke_txs = Vec::with_capacity(total_txs);
 
-    for tx_idx in 0..TOTAL_TXS {
+    for tx_idx in 0..total_txs {
         let recipient = ACCOUNTS[(tx_idx % (ACCOUNTS.len() - 1)) + 1];
         let prepared = account
             .execute_v3(make_transfer_call(recipient, 1))
@@ -260,10 +266,116 @@ async fn assert_replay_chain(node: &MadaraCmd, start_block_n: u64, tx_hashes: &[
 async fn replay_mode_boundary_happy_path_200_txs_10_per_block() {
     let _ = tracing_subscriber::fmt().with_test_writer().try_init();
     let node = start_replay_node().await;
-    let (start_block_n, tx_hashes, invoke_txs) = prepare_replay_transactions(&node).await;
+    let (start_block_n, tx_hashes, invoke_txs) = prepare_replay_transactions(&node, TOTAL_TXS).await;
     seed_replay_boundaries(&node, start_block_n, &tx_hashes).await;
     submit_replay_transactions(&node, &tx_hashes, invoke_txs).await;
     assert_replay_boundaries_closed(&node, start_block_n, &tx_hashes).await;
     wait_for_replay_head(&node, start_block_n).await;
     assert_replay_chain(&node, start_block_n, &tx_hashes).await;
+}
+
+fn replay_request(block: &BlockWithTxHashes, transaction_hash: Felt, invoke_transaction: Value) -> Value {
+    let gas_price = |price: Felt| u128::try_from(price).expect("devnet gas price should fit u128");
+    json!({
+        "custom_header": {
+            "block_n": block.block_number,
+            "timestamp": block.timestamp,
+            "gas_prices": {
+                "eth_l1_gas_price": gas_price(block.l1_gas_price.price_in_wei),
+                "strk_l1_gas_price": gas_price(block.l1_gas_price.price_in_fri),
+                "eth_l1_data_gas_price": gas_price(block.l1_data_gas_price.price_in_wei),
+                "strk_l1_data_gas_price": gas_price(block.l1_data_gas_price.price_in_fri),
+                "eth_l2_gas_price": gas_price(block.l2_gas_price.price_in_wei),
+                "strk_l2_gas_price": gas_price(block.l2_gas_price.price_in_fri),
+            },
+            "expected_block_hash": format!("{:#x}", block.block_hash),
+        },
+        "transactions": [{
+            "kind": "invoke",
+            "transaction_hash": format!("{transaction_hash:#x}"),
+            "invoke_transaction": invoke_transaction,
+        }],
+    })
+}
+
+#[tokio::test]
+async fn managed_replay_executes_nonempty_consecutive_blocks() {
+    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
+    let builder = replay_node_builder();
+    let mut source = start_replay_node_with(builder.clone()).await;
+    let (start_block_n, tx_hashes, invoke_txs) = prepare_replay_transactions(&source, 2).await;
+
+    for index in 0..2 {
+        set_replay_boundary(&source, start_block_n + index as u64, 1, tx_hashes[index]).await.unwrap();
+        let actual_hash = bypass_add_invoke_transaction(&source, invoke_txs[index].clone()).await.unwrap();
+        assert_eq!(actual_hash, tx_hashes[index]);
+    }
+    source.wait_for_sync_to(start_block_n + 1).await;
+
+    let mut source_blocks = Vec::with_capacity(2);
+    for index in 0..2 {
+        let block =
+            source.json_rpc().get_block_with_tx_hashes(BlockId::Number(start_block_n + index as u64)).await.unwrap();
+        let MaybePreConfirmedBlockWithTxHashes::Block(block) = block else {
+            panic!("source replay block should be confirmed");
+        };
+        source_blocks.push(block);
+    }
+
+    // Restart from the exact source genesis rather than launching an independent devnet.
+    // Devnet genesis timestamps are wall-clock based, so two fresh nodes can have different
+    // genesis hashes even though their configured state is identical. Reverting the source DB
+    // also exercises the same recovery shape used by an operator before replaying canonical
+    // blocks after a divergence.
+    let genesis = source.json_rpc().get_block_with_tx_hashes(BlockId::Number(0)).await.unwrap();
+    let MaybePreConfirmedBlockWithTxHashes::Block(genesis) = genesis else {
+        panic!("genesis block should be confirmed");
+    };
+    admin_rpc_call(&source, "madara_revertToAndShutdown", json!([format!("{:#x}", genesis.block_hash)])).await.unwrap();
+    source.stop();
+
+    let mut target = start_replay_node_with(builder).await;
+
+    let request_0 = replay_request(&source_blocks[0], tx_hashes[0], invoke_txs[0].clone());
+    let request_1 = replay_request(&source_blocks[1], tx_hashes[1], invoke_txs[1].clone());
+
+    let resume_error = admin_rpc_call(&target, "madara_setMempoolIntake", json!([true]))
+        .await
+        .expect_err("normal mempool intake must remain disabled throughout replay mode");
+    assert!(resume_error.to_string().contains("Cannot resume mempool intake"));
+
+    // A bad source hash must fail during preflight, before header/boundary state or transactions
+    // are submitted. The corrected request below then proves the target remains usable.
+    let mut bad_request = request_0.clone();
+    bad_request["transactions"][0]["transaction_hash"] = json!(format!("{:#x}", Felt::from(0xdead_u64)));
+    let bad_hash_error = admin_rpc_call(&target, "madara_V0_1_0_replayBlock", json!([bad_request]))
+        .await
+        .expect_err("a mismatched source transaction hash must be rejected");
+    assert!(bad_hash_error.to_string().contains("\"code\":500"));
+
+    let replay_0 = admin_rpc_call(&target, "madara_V0_1_0_replayBlock", json!([request_0]));
+    let replay_1 = admin_rpc_call(&target, "madara_V0_1_0_replayBlock", json!([request_1]));
+    let (result_0, result_1) = tokio::join!(replay_0, replay_1);
+
+    for (index, result) in [result_0.unwrap(), result_1.unwrap()].into_iter().enumerate() {
+        assert_eq!(result["block_number"], json!(start_block_n + index as u64));
+        assert_eq!(result["block_hash"], json!(format!("{:#x}", source_blocks[index].block_hash)));
+        assert_eq!(result["transaction_hashes"], json!([format!("{:#x}", tx_hashes[index])]));
+    }
+
+    target.wait_for_sync_to(start_block_n + 1).await;
+    for (index, source_block) in source_blocks.into_iter().enumerate() {
+        let replayed =
+            target.json_rpc().get_block_with_tx_hashes(BlockId::Number(start_block_n + index as u64)).await.unwrap();
+        let MaybePreConfirmedBlockWithTxHashes::Block(replayed) = replayed else {
+            panic!("managed replay block should be confirmed");
+        };
+        assert_eq!(replayed.block_hash, source_block.block_hash);
+        assert_eq!(replayed.transactions, source_block.transactions);
+    }
+
+    let granular_error = bypass_add_invoke_transaction(&target, invoke_txs[0].clone())
+        .await
+        .expect_err("granular intake must stay disabled after managed replay starts");
+    assert!(granular_error.to_string().contains("after managed replay has started"));
 }

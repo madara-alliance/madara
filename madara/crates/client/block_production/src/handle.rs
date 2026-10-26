@@ -3,8 +3,8 @@ use crate::MempoolIntakeMode;
 use async_trait::async_trait;
 use mc_db::MadaraBackend;
 use mc_submit_tx::{
-    SubmitL1HandlerTransaction, SubmitTransaction, SubmitTransactionError, SubmitValidatedTransaction,
-    TransactionLookup, TransactionValidator, TransactionValidatorConfig,
+    PreparedTransaction, SubmitL1HandlerTransaction, SubmitTransaction, SubmitTransactionError,
+    SubmitValidatedTransaction, TransactionLookup, TransactionValidator, TransactionValidatorConfig,
 };
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
 use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
@@ -106,6 +106,46 @@ impl BlockProductionHandle {
     /// Returns whether replay-only control methods are enabled.
     pub fn replay_mode_enabled(&self) -> bool {
         self.replay_mode_enabled
+    }
+
+    /// Converts and validates a replay transaction without placing it on a live intake channel.
+    pub async fn prepare_declare_v0_transaction(
+        &self,
+        tx: BroadcastedDeclareTxnV0,
+    ) -> Result<PreparedTransaction<ClassAndTxnHash>, SubmitTransactionError> {
+        self.tx_converter.prepare_declare_v0_transaction(tx).await
+    }
+
+    /// Converts and validates a replay transaction without placing it on a live intake channel.
+    pub async fn prepare_declare_transaction(
+        &self,
+        tx: BroadcastedDeclareTxn,
+    ) -> Result<PreparedTransaction<ClassAndTxnHash>, SubmitTransactionError> {
+        self.tx_converter.prepare_declare_transaction(tx).await
+    }
+
+    /// Converts and validates a replay transaction without placing it on a live intake channel.
+    pub async fn prepare_deploy_account_transaction(
+        &self,
+        tx: BroadcastedDeployAccountTxn,
+    ) -> Result<PreparedTransaction<ContractAndTxnHash>, SubmitTransactionError> {
+        self.tx_converter.prepare_deploy_account_transaction(tx).await
+    }
+
+    /// Converts and validates a replay transaction without placing it on a live intake channel.
+    pub async fn prepare_invoke_transaction(
+        &self,
+        tx: BroadcastedInvokeTxn,
+    ) -> Result<PreparedTransaction<AddInvokeTransactionResult>, SubmitTransactionError> {
+        self.tx_converter.prepare_invoke_transaction(tx).await
+    }
+
+    /// Converts and validates a replay L1 handler without placing it on a live intake channel.
+    pub fn prepare_l1_handler_transaction(
+        &self,
+        tx: L1HandlerTransactionWithFee,
+    ) -> Result<PreparedTransaction<L1HandlerTransactionResult>, SubmitTransactionError> {
+        self.tx_converter.prepare_l1_handler_transaction(tx)
     }
 
     /// Send a transaction through the bypass channel to bypass mempool and validation.

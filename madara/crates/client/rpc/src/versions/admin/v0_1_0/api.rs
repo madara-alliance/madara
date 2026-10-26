@@ -11,7 +11,7 @@ use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
 use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
-use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
+use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionResult, L1HandlerTransactionWithFee};
 use mp_utils::service::{MadaraServiceId, MadaraServiceStatus};
 use serde::{Deserialize, Serialize};
 
@@ -28,6 +28,67 @@ pub enum ServiceRequest {
     Start,
     Stop,
     Restart,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ReplayBlockRequest {
+    pub custom_header: CustomHeader,
+    pub transactions: Vec<ReplayBlockTransaction>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct ReplayBlockResult {
+    pub block_number: u64,
+    pub block_hash: Felt,
+    pub transaction_hashes: Vec<Felt>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct ReplayL1HandlerTransactionWithFee {
+    pub tx: L1HandlerTransaction,
+    #[serde(with = "replay_u128_hex")]
+    pub paid_fee_on_l1: u128,
+}
+
+impl From<ReplayL1HandlerTransactionWithFee> for L1HandlerTransactionWithFee {
+    fn from(value: ReplayL1HandlerTransactionWithFee) -> Self {
+        Self { tx: value.tx, paid_fee_on_l1: value.paid_fee_on_l1 }
+    }
+}
+
+mod replay_u128_hex {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(value: &u128, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&format!("0x{value:x}"))
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u128, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        u128::from_str_radix(value.strip_prefix("0x").unwrap_or(&value), 16).map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ReplayBlockTransaction {
+    Invoke { transaction_hash: Felt, invoke_transaction: BroadcastedInvokeTxn },
+    DeclareV0 { transaction_hash: Felt, declare_transaction: BroadcastedDeclareTxnV0 },
+    Declare { transaction_hash: Felt, declare_transaction: BroadcastedDeclareTxn },
+    DeployAccount { transaction_hash: Felt, deploy_account_transaction: BroadcastedDeployAccountTxn },
+    L1Handler { transaction_hash: Felt, l1_handler_message: ReplayL1HandlerTransactionWithFee },
+}
+
+impl ReplayBlockTransaction {
+    pub fn expected_tx_hash(&self) -> Felt {
+        match self {
+            Self::Invoke { transaction_hash, .. }
+            | Self::DeclareV0 { transaction_hash, .. }
+            | Self::Declare { transaction_hash, .. }
+            | Self::DeployAccount { transaction_hash, .. }
+            | Self::L1Handler { transaction_hash, .. } => *transaction_hash,
+        }
+    }
 }
 
 /// This is an admin method, so semver is different!
@@ -112,6 +173,16 @@ pub trait MadaraWriteRpcApi {
     /// Returns replay boundary status for a given block, if configured and still retained.
     #[method(name = "getReplayBoundaryStatus")]
     async fn get_replay_boundary_status(&self, block_n: u64) -> RpcResult<Option<ReplayBlockBoundaryStatus>>;
+
+    /// Replays a full Starknet block inside Madara and only returns after the block is confirmed.
+    ///
+    /// Requires `--rpc-unsafe`, block production, and `--replay-mode`. The replay request stages the
+    /// custom header, submits the ordered transactions, verifies their hashes and replay boundary,
+    /// and waits until the confirmed block is written to the database. Up to ten consecutive requests
+    /// may wait in the managed replay pipeline; ingestion remains ordered. Retrying an already
+    /// confirmed request is idempotent when its block hash and transaction hashes still match.
+    #[method(name = "replayBlock")]
+    async fn replay_block(&self, replay_block_request: ReplayBlockRequest) -> RpcResult<ReplayBlockResult>;
 }
 
 #[versioned_rpc("V0_1_0", "madara")]
@@ -190,4 +261,20 @@ pub trait MadaraServicesRpcApi {
     /// If the list is empty, returns the status of all externally controllable services.
     #[method(name = "serviceStatus")]
     async fn service_status(&self, service: Vec<MadaraServiceId>) -> RpcResult<Vec<ServiceStatusInfo>>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ReplayL1HandlerTransactionWithFee;
+    use mp_transactions::L1HandlerTransaction;
+
+    #[test]
+    fn replay_l1_handler_fee_uses_lossless_hex_without_changing_the_shared_type() {
+        let message =
+            ReplayL1HandlerTransactionWithFee { tx: L1HandlerTransaction::default(), paid_fee_on_l1: u128::MAX };
+
+        let json = serde_json::to_value(&message).unwrap();
+        assert_eq!(json["paid_fee_on_l1"], "0xffffffffffffffffffffffffffffffff");
+        assert_eq!(serde_json::from_value::<ReplayL1HandlerTransactionWithFee>(json).unwrap(), message);
+    }
 }

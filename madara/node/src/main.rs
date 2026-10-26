@@ -141,6 +141,17 @@ fn validate_runtime_controls(run_cmd: &RunCmd) -> anyhow::Result<()> {
     {
         bail!("`--mempool-paused` requires both `--rpc-admin` and `--rpc-unsafe`.");
     }
+    if run_cmd.block_production_params.replay_mode {
+        if !(run_cmd.rpc_params.rpc_admin && run_cmd.rpc_params.rpc_unsafe) {
+            bail!("`--replay-mode` requires both `--rpc-admin` and `--rpc-unsafe`.");
+        }
+        if !run_cmd.block_production_params.mempool_paused {
+            bail!("`--replay-mode` requires `--mempool-paused` so normal transactions cannot enter replay blocks.");
+        }
+        if !run_cmd.l1_sync_params.l1_sync_disabled {
+            bail!("`--replay-mode` requires `--no-l1-sync` so L1 messages cannot enter replay blocks.");
+        }
+    }
     Ok(())
 }
 

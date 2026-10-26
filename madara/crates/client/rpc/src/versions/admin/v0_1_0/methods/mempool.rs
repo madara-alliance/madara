@@ -17,7 +17,7 @@ pub(super) fn matches_nonce_filter(transaction: &ValidatedTransaction, nonce_fil
 #[async_trait]
 impl MadaraMempoolRpcApiV0_1_0Server for Starknet {
     /// Pauses or resumes sequencer mempool intake after enforcing unsafe-RPC access control.
-    /// Bypass and L1-handler sources remain available because the handle changes only mempool mode.
+    /// Replay mode cannot resume normal intake because source blocks require exclusive ordering.
     async fn set_mempool_intake(&self, enabled: bool) -> RpcResult<()> {
         if !self.rpc_unsafe_enabled {
             return Err(StarknetRpcApiError::ErrUnexpectedError {
@@ -26,13 +26,17 @@ impl MadaraMempoolRpcApiV0_1_0Server for Starknet {
             .into());
         }
 
+        let block_prod_handle = self.block_prod_handle.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?;
+        if enabled && block_prod_handle.replay_mode_enabled() {
+            return Err(StarknetRpcApiError::ErrUnexpectedError {
+                error: "Cannot resume mempool intake while --replay-mode is enabled".to_string().into(),
+            }
+            .into());
+        }
+
+        let _replay_guard = self.lock_manual_replay_operation("setMempoolIntake").await?;
         tracing::info!(target: "rpc::admin", enabled, "setMempoolIntake request received");
-        Ok(self
-            .block_prod_handle
-            .as_ref()
-            .ok_or(StarknetRpcApiError::UnimplementedMethod)?
-            .set_mempool_intake(enabled)
-            .map_err(StarknetRpcApiError::from)?)
+        Ok(block_prod_handle.set_mempool_intake(enabled).map_err(StarknetRpcApiError::from)?)
     }
 }
 
