@@ -128,6 +128,10 @@ impl L1SyncService {
             Arc::new(L1SyncDisabledClient)
         }
     }
+
+    pub fn backfill_client(&self) -> Option<Arc<L1ClientImpl>> {
+        self.client.clone()
+    }
 }
 
 #[async_trait::async_trait]

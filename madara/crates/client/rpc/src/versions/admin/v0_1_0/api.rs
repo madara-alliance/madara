@@ -1,6 +1,7 @@
 use blockifier::bouncer::BouncerWeights;
 use jsonrpsee::core::RpcResult;
 use m_proc_macros::versioned_rpc;
+use mc_settlement_client::BackfillL1HandlerMessageResult;
 use mp_block::header::CustomHeader;
 use mp_convert::Felt;
 use mp_rpc::admin::{
@@ -8,6 +9,7 @@ use mp_rpc::admin::{
     MempoolTxnInfo, ReplayBlockBoundary, ReplayBlockBoundaryStatus,
 };
 use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
+use mp_rpc::v0_9_0::L1TxnHash;
 use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
@@ -87,6 +89,16 @@ pub trait MadaraWriteRpcApi {
         &self,
         l1_handler_message: L1HandlerTransactionWithFee,
     ) -> RpcResult<L1HandlerTransactionResult>;
+
+    /// Fetch and validate a canonical Ethereum LogMessageToL2, then queue it through L1 sync.
+    /// Admin RPC only. A queued result does not mean the L2 transaction was included.
+    #[method(name = "backfillL1HandlerMessage")]
+    async fn backfill_l1_handler_message(
+        &self,
+        l1_block_number: u64,
+        l1_transaction_hash: L1TxnHash,
+        nonce: u64,
+    ) -> RpcResult<BackfillL1HandlerMessageResult>;
 
     /// Sets custom headers to be used for a specific block number.
     /// Only available when unsafe RPC methods are enabled.

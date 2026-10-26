@@ -2,14 +2,16 @@ use crate::client::{ClientType, SettlementLayerProvider};
 use crate::error::SettlementClientError;
 use crate::{RECONNECT_BASE_DELAY, RECONNECT_MAX_DELAY};
 use alloy::primitives::{B256, U256};
+use blockifier::transaction::transaction_execution::Transaction;
 use futures::StreamExt;
 use mc_db::MadaraBackend;
-use mp_convert::L1TransactionHash;
+use mp_convert::{L1TransactionHash, ToFelt};
 use mp_transactions::L1HandlerTransactionWithFee;
 use mp_utils::service::ServiceContext;
+use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
-use std::collections::VecDeque;
-use std::sync::Arc;
+use std::collections::{BTreeSet, VecDeque};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::Notify;
 
@@ -28,6 +30,126 @@ pub struct MessageToL2WithMetadata {
     pub l1_block_hash: [u8; 32],
     pub l1_transaction_hash: U256,
     pub message: L1HandlerTransactionWithFee,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BackfillStatus {
+    Queued,
+    AlreadyQueued,
+    AlreadyIncluded,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackfillL1HandlerMessageResult {
+    pub transaction_hash: Felt,
+    pub status: BackfillStatus,
+}
+
+/// Backfill one event from the configured Ethereum core contract without moving the live sync tip.
+pub async fn backfill_l1_handler_message(
+    settlement_client: &Arc<dyn SettlementLayerProvider>,
+    backend: &MadaraBackend,
+    notify_consumer: &Notify,
+    newly_queued_nonces: &Mutex<BTreeSet<u64>>,
+    block_number: u64,
+    l1_transaction_hash: [u8; 32],
+    nonce: u64,
+) -> Result<BackfillL1HandlerMessageResult, SettlementClientError> {
+    if !matches!(settlement_client.get_client_type(), ClientType::Eth) {
+        return Err(SettlementClientError::InvalidResponse("Backfill requires an Ethereum L1 client".into()));
+    }
+
+    let mut matches = settlement_client.messages_to_l2_in_block(block_number).await?.into_iter().filter(|event| {
+        event.l1_block_number == block_number
+            && event.l1_transaction_hash.to_be_bytes::<32>() == l1_transaction_hash
+            && event.message.tx.nonce == nonce
+    });
+    let event = matches.next().ok_or_else(|| {
+        SettlementClientError::InvalidEvent("No matching LogMessageToL2 in the specified canonical block".into())
+    })?;
+    if matches.next().is_some() {
+        return Err(SettlementClientError::InvalidEvent("Multiple matching L1 message events".into()));
+    }
+
+    let latest = settlement_client.get_latest_block_number().await?;
+    match poll_finalized_event(settlement_client, &event, latest, backend.chain_config().l1_messages_finality_blocks)
+        .await
+    {
+        FinalizedEventPoll::Ready { .. } => {}
+        FinalizedEventPoll::Waiting => {
+            return Err(SettlementClientError::InvalidEvent(
+                "L1 message has not reached the configured confirmation depth".into(),
+            ));
+        }
+        FinalizedEventPoll::Dropped => {
+            return Err(SettlementClientError::InvalidEvent("L1 message is not in the canonical block".into()));
+        }
+        FinalizedEventPoll::RetryCanonicalCheck => {
+            return Err(SettlementClientError::InvalidResponse("Could not verify canonical L1 block".into()));
+        }
+    }
+
+    let origin = L1TransactionHash(l1_transaction_hash);
+    if let Some(existing) =
+        backend.get_l1_txn_hash_by_nonce(nonce).map_err(|e| SettlementClientError::DatabaseError(e.to_string()))?
+    {
+        if existing != origin {
+            return Err(SettlementClientError::InvalidEvent("Nonce is indexed to a different L1 transaction".into()));
+        }
+    }
+    let (api_tx, _) = event
+        .message
+        .clone()
+        .into_blockifier(backend.chain_config().chain_id.to_felt(), backend.chain_config().latest_protocol_version)
+        .map_err(|e| SettlementClientError::ConversionError(e.to_string()))?;
+    let transaction_hash = Transaction::tx_hash(&api_tx).to_felt();
+
+    if let Some(existing_hash) = backend
+        .get_l1_handler_txn_hash_by_nonce(nonce)
+        .map_err(|e| SettlementClientError::DatabaseError(e.to_string()))?
+    {
+        if existing_hash != transaction_hash {
+            return Err(SettlementClientError::InvalidEvent("Nonce was consumed by a different L2 transaction".into()));
+        }
+        persist_message_origin(backend, &event)?;
+        return Ok(BackfillL1HandlerMessageResult { transaction_hash, status: BackfillStatus::AlreadyIncluded });
+    }
+
+    if !check_message_to_l2_validity(settlement_client, backend, &event.message, false).await? {
+        return Err(SettlementClientError::InvalidEvent(
+            "Message is no longer pending or has a cancellation request".into(),
+        ));
+    }
+
+    if let Some(existing) =
+        backend.get_pending_message_to_l2(nonce).map_err(|e| SettlementClientError::DatabaseError(e.to_string()))?
+    {
+        if existing != event.message {
+            return Err(SettlementClientError::InvalidEvent("Nonce is queued with different message data".into()));
+        }
+        persist_message_origin(backend, &event)?;
+        backend
+            .write_l1_handler_l1_block_by_nonce(nonce, block_number)
+            .map_err(|e| SettlementClientError::DatabaseError(e.to_string()))?;
+        newly_queued_nonces.lock().expect("queued nonce mutex poisoned").insert(nonce);
+        notify_consumer.notify_waiters();
+        return Ok(BackfillL1HandlerMessageResult { transaction_hash, status: BackfillStatus::AlreadyQueued });
+    }
+
+    persist_message_origin(backend, &event)?;
+    backend
+        .write_l1_handler_l1_block_by_nonce(nonce, block_number)
+        .map_err(|e| SettlementClientError::DatabaseError(e.to_string()))?;
+    let mut newly_queued = newly_queued_nonces.lock().expect("queued nonce mutex poisoned");
+    backend
+        .write_pending_message_to_l2(&event.message)
+        .map_err(|e| SettlementClientError::DatabaseError(e.to_string()))?;
+    newly_queued.insert(nonce);
+    drop(newly_queued);
+    notify_consumer.notify_waiters();
+    tracing::info!(block_number, nonce, l1_transaction_hash = %origin.into_eth(), "Verified L1 handler backfill queued");
+    Ok(BackfillL1HandlerMessageResult { transaction_hash, status: BackfillStatus::Queued })
 }
 
 /// Returns true if the message is valid, can be consumed.

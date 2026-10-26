@@ -1022,6 +1022,7 @@ pub struct Starknet {
     pub(crate) block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
     pub ctx: ServiceContext,
     pub(crate) rpc_unsafe_enabled: bool,
+    pub(crate) l1_backfill_client: Option<Arc<mc_settlement_client::L1ClientImpl>>,
     pub(crate) sync_threshold_blocks: u64,
 }
 
@@ -1048,6 +1049,7 @@ impl Starknet {
             ctx,
             pre_v0_9_preconfirmed_as_pending: false,
             rpc_unsafe_enabled: false,
+            l1_backfill_client: None,
             sync_threshold_blocks: DEFAULT_SYNC_THRESHOLD_BLOCKS,
         }
     }
@@ -1058,6 +1060,10 @@ impl Starknet {
 
     pub fn set_rpc_unsafe_enabled(&mut self, value: bool) {
         self.rpc_unsafe_enabled = value;
+    }
+
+    pub fn set_l1_backfill_client(&mut self, client: Option<Arc<mc_settlement_client::L1ClientImpl>>) {
+        self.l1_backfill_client = client;
     }
 
     pub fn set_sync_threshold_blocks(&mut self, value: u64) {

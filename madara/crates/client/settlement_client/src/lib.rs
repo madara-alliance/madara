@@ -161,7 +161,8 @@ use futures::{
 };
 use mc_db::MadaraBackend;
 use mp_transactions::L1HandlerTransactionWithFee;
-use std::sync::Arc;
+use std::collections::BTreeSet;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::Notify;
 use url::Url;
@@ -178,6 +179,7 @@ mod eth;
 pub mod gas_price;
 mod messages_to_l2_consumer;
 mod messaging;
+pub use messaging::{BackfillL1HandlerMessageResult, BackfillStatus};
 pub(crate) mod starknet;
 pub mod state_update;
 pub mod sync;
@@ -193,10 +195,34 @@ pub struct L1ClientImpl {
     provider: Arc<dyn SettlementLayerProvider>,
     backend: Arc<MadaraBackend>,
     notify_new_message_to_l2: Arc<Notify>,
+    newly_queued_nonces: Arc<Mutex<BTreeSet<u64>>>,
     unsafe_skip_l1_message_consumed_check: bool,
 }
 
 impl L1ClientImpl {
+    pub async fn backfill_l1_handler_message(
+        &self,
+        block_number: u64,
+        l1_transaction_hash: [u8; 32],
+        nonce: u64,
+    ) -> Result<BackfillL1HandlerMessageResult, crate::error::SettlementClientError> {
+        if self.unsafe_skip_l1_message_consumed_check {
+            return Err(crate::error::SettlementClientError::InvalidResponse(
+                "Verified backfill requires the L1 consumed check to be enabled".into(),
+            ));
+        }
+        messaging::backfill_l1_handler_message(
+            &self.provider,
+            &self.backend,
+            &self.notify_new_message_to_l2,
+            &self.newly_queued_nonces,
+            block_number,
+            l1_transaction_hash,
+            nonce,
+        )
+        .await
+    }
+
     fn new(
         backend: Arc<MadaraBackend>,
         provider: Arc<dyn SettlementLayerProvider>,
@@ -209,7 +235,13 @@ impl L1ClientImpl {
                  This removes a safety guard against double-processing. ⚠⚠⚠"
             );
         }
-        Self { provider, backend, notify_new_message_to_l2: Default::default(), unsafe_skip_l1_message_consumed_check }
+        Self {
+            provider,
+            backend,
+            notify_new_message_to_l2: Default::default(),
+            newly_queued_nonces: Default::default(),
+            unsafe_skip_l1_message_consumed_check,
+        }
     }
 
     pub fn provider(&self) -> Arc<dyn SettlementLayerProvider> {
@@ -247,6 +279,7 @@ impl SettlementClient for L1ClientImpl {
             self.backend.clone(),
             self.provider.clone(),
             self.notify_new_message_to_l2.clone(),
+            self.newly_queued_nonces.clone(),
             self.unsafe_skip_l1_message_consumed_check,
         );
         stream::unfold(consumer, |mut consumer| async move { Some((consumer.consume_next_or_wait().await, consumer)) })

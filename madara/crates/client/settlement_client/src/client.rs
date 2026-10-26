@@ -46,6 +46,13 @@ pub enum ClientType {
 #[async_trait]
 pub trait SettlementLayerProvider: Send + Sync {
     fn get_client_type(&self) -> ClientType;
+    /// Read canonical L1 message logs in one block. Only Ethereum supports admin backfill.
+    async fn messages_to_l2_in_block(
+        &self,
+        _block_number: u64,
+    ) -> Result<Vec<MessageToL2WithMetadata>, SettlementClientError> {
+        Err(SettlementClientError::InvalidResponse("L1 message backfill is only supported for Ethereum".into()))
+    }
     async fn get_latest_block_number(&self) -> Result<u64, SettlementClientError>;
     async fn get_last_event_block_number(&self) -> Result<u64, SettlementClientError>;
 

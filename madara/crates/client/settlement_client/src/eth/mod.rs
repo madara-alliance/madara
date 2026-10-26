@@ -131,6 +131,12 @@ const HISTORY_SIZE: usize = 300; // Number of blocks to use for gas price calcul
 
 #[async_trait]
 impl SettlementLayerProvider for EthereumClient {
+    async fn messages_to_l2_in_block(
+        &self,
+        block_number: u64,
+    ) -> Result<Vec<MessageToL2WithMetadata>, SettlementClientError> {
+        Self::query_paginated_events(&self.l1_core_contract, block_number, block_number).await
+    }
     fn get_client_type(&self) -> ClientType {
         ClientType::Eth
     }
