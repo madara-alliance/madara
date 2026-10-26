@@ -301,7 +301,7 @@ impl RocksDBStorage {
     /// Reads a bounded slice of raw values. Replicas authenticate the assembled dataset before import.
     pub(super) fn read_committed_data_page(&self, root: Felt, start: u32) -> Result<Option<CommittedDataPageEntries>> {
         anyhow::ensure!(
-            (start as usize) % VALUES_PER_PAGE == 0 && (start as usize) < MAX_COMMITTED_DATA_VALUES,
+            (start as usize).is_multiple_of(VALUES_PER_PAGE) && (start as usize) < MAX_COMMITTED_DATA_VALUES,
             "Invalid committed-data page offset"
         );
         let cf = self.inner.get_column(meta::META_COLUMN);

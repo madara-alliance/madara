@@ -37,7 +37,11 @@ impl RecoveryArchive {
         }
     }
     pub async fn complete(&self, id: &str) -> Result<bool> {
-        Ok(self.manifests.find_one(doc! {"_id":id}).await?.is_some())
+        // Completion permits deleting the last local upload payload. A document at this
+        // key is insufficient: authenticate its manifest before acknowledging the backup.
+        let Some(document) = self.manifests.find_one(doc! {"_id":id}).await? else { return Ok(false) };
+        Self::decode_manifest(&document, id)?;
+        Ok(true)
     }
     async fn immutable(collection: &Collection<Document>, id: &str, bytes: Vec<u8>) -> Result<()> {
         let document = doc! {"_id":id,"payload":binary(bytes)};
@@ -63,6 +67,9 @@ impl RecoveryArchive {
     }
     async fn manifest(&self, id: &str) -> Result<RecoveryManifest> {
         let doc = self.manifests.find_one(doc! {"_id":id}).await?.context("Missing complete recovery manifest")?;
+        Self::decode_manifest(&doc, id)
+    }
+    fn decode_manifest(doc: &Document, id: &str) -> Result<RecoveryManifest> {
         let bytes = doc.get_binary_generic("payload")?;
         ensure!(bytes.len() <= 65536, "Oversized recovery manifest");
         let manifest: RecoveryManifest = serde_json::from_slice(bytes)?;
@@ -291,6 +298,16 @@ mod tests {
         // A manifest cannot complete while its exact parent is missing.
         archive.manifests.delete_one(doc! {"_id":&base}).await.unwrap();
         assert!(archive.upload(&next_record).await.is_err());
+        // A corrupt completion marker must not authorize deleting the remaining local payload.
+        archive
+            .manifests
+            .update_one(
+                doc! {"_id":&next},
+                doc! {"$set":{"payload":binary(serde_json::to_vec(&base_record.manifest).unwrap())}},
+            )
+            .await
+            .unwrap();
+        assert!(archive.complete(&next).await.is_err());
         db.drop().await.unwrap();
     }
 }
