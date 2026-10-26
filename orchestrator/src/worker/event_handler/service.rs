@@ -809,15 +809,6 @@ impl JobHandlerService {
                         workload.finish_error();
                         return Ok(());
                     }
-
-                    config
-                        .database()
-                        .update_job(&job, JobItemUpdates::new().update_metadata(job.metadata.clone()).build())
-                        .await
-                        .map_err(|e| {
-                            error!(job_id = ?id, error = ?e, "Failed to update job metadata");
-                            JobError::from(e)
-                        })?;
                 }
             }
         };

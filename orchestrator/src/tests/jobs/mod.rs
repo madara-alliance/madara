@@ -33,7 +33,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use generate_pie::error::{BlockProcessingError, PieGenerationError};
-use mockall::predicate::eq;
+use mockall::{predicate::eq, Sequence};
 use mongodb::bson::doc;
 use rstest::rstest;
 use starknet::providers::ProviderError;
@@ -60,6 +60,7 @@ pub mod snos_job;
 #[cfg(test)]
 mod aggregator_job;
 
+use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::queue::{MockQueueClient, QueueError};
 use crate::error::job::JobError;
 use crate::tests::common::constants::{QUEUE_CONSUME_MAX_RETRIES, QUEUE_CONSUME_RETRY_DELAY_SECS};
@@ -1414,6 +1415,51 @@ async fn pending_verification_requeue_uses_expected_delay(
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
     let ctx = get_job_handler_context_safe();
     ctx.expect().times(1).with(eq(job_type)).returning(move |_| Arc::clone(&job_handler));
+
+    JobHandlerService::verify_job(job.id, services.config).await.unwrap();
+}
+
+#[tokio::test]
+async fn pending_verification_persists_attempt_before_zero_delay_requeue() {
+    let _test_lock = acquire_test_lock();
+    let job = build_job_item(JobType::DataSubmission, JobStatus::PendingVerification, 8);
+    let mut sequence = Sequence::new();
+
+    let mut database = MockDatabaseClient::new();
+    let stored_job = job.clone();
+    database
+        .expect_get_job_by_id()
+        .with(eq(job.id))
+        .times(1)
+        .in_sequence(&mut sequence)
+        .returning(move |_| Ok(Some(stored_job.clone())));
+    database.expect_update_job().times(1).in_sequence(&mut sequence).returning(|job, _| {
+        let mut updated_job = job.clone();
+        updated_job.version += 1;
+        Ok(updated_job)
+    });
+
+    let mut queue = MockQueueClient::new();
+    queue
+        .expect_send_message()
+        .withf(|queue, _, delay| *queue == QueueType::DataSubmissionJobVerification && *delay == Some(Duration::ZERO))
+        .times(1)
+        .in_sequence(&mut sequence)
+        .returning(|_, _, _| Ok(()));
+
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Mock(MockType::Database(Box::new(database))))
+        .configure_queue_client(ConfigType::Mock(MockType::Queue(Box::new(queue))))
+        .build()
+        .await;
+
+    let mut job_handler = MockJobHandlerTrait::new();
+    job_handler.expect_verify_job().times(1).returning(|_, _| Ok(JobVerificationStatus::Pending));
+    job_handler.expect_max_verification_attempts().times(1).return_const(2u64);
+    job_handler.expect_verification_polling_delay_seconds().times(1).return_const(0u64);
+    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
+    let ctx = get_job_handler_context_safe();
+    ctx.expect().times(1).with(eq(JobType::DataSubmission)).returning(move |_| Arc::clone(&job_handler));
 
     JobHandlerService::verify_job(job.id, services.config).await.unwrap();
 }
