@@ -4,6 +4,9 @@ use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter};
 
 /// Metrics for external database operations.
 pub struct ExternalDbMetrics {
+    pub committed_data_pending_bytes: Gauge<u64>,
+    pub committed_data_backup_seconds: Histogram<f64>,
+
     /// Total transactions attempted to be written to external DB (includes duplicates).
     pub transactions_attempted: Counter<u64>,
 
@@ -74,6 +77,14 @@ impl ExternalDbMetrics {
     /// Register metrics with a specific meter (useful for testing).
     pub fn register_with_meter(meter: &Meter) -> Self {
         Self {
+            committed_data_pending_bytes: meter
+                .u64_gauge("external_db_committed_data_pending_bytes")
+                .with_description("Unexported compressed recovery bytes; admission backpressures at the hard limit")
+                .build(),
+            committed_data_backup_seconds: meter
+                .f64_histogram("external_db_committed_data_backup_seconds")
+                .with_description("Time to upload and acknowledge one complete committed-data record")
+                .build(),
             transactions_attempted: meter
                 .u64_counter("external_db_transactions_attempted")
                 .with_description("Total transactions attempted to be written to external DB")

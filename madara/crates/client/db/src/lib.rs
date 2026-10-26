@@ -484,4 +484,6 @@ mod writer;
 pub use writer::MadaraBackendWriter;
 
 mod committed_data;
+pub mod committed_data_recovery;
+mod persistent_committed_data;
 mod service_storage;

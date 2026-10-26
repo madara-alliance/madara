@@ -347,6 +347,18 @@ impl RunCmd {
         self.should_run_mempool() && self.external_db_params.is_enabled()
     }
 
+    /// Imports queue a bounded, temporary payload until the external writer acknowledges it.
+    /// Reject an undrainable configuration before opening or migrating the database.
+    pub fn validate_committed_data_recovery(&self) -> anyhow::Result<()> {
+        if self.rpc_params.rpc_committed_data {
+            anyhow::ensure!(
+                self.should_run_external_db() && self.should_save_mempool_to_db(),
+                "The committed-data import listener requires a sequencer with mempool saving and configured external DB backup"
+            );
+        }
+        Ok(())
+    }
+
     pub fn should_save_mempool_to_db(&self) -> bool {
         self.should_run_mempool() && !self.validator_params.no_mempool_saving
     }
@@ -420,6 +432,24 @@ mod tests {
             "mongodb://localhost:27017",
         ]);
         assert!(enabled.should_run_external_db());
+    }
+
+    #[test]
+    fn committed_data_recovery_rejects_undrainable_import_configuration() {
+        let common = ["madara", "--sequencer", "--preset", "devnet", "--rpc-committed-data"];
+        let missing_backup = RunCmd::parse_from(common);
+        assert!(missing_backup.validate_committed_data_recovery().is_err());
+        let configured = ["--external-db-enabled", "--external-db-mongodb-uri", "mongodb://localhost:27017"];
+        let valid = RunCmd::parse_from(common.into_iter().chain(configured));
+        assert!(valid.validate_committed_data_recovery().is_ok());
+        let no_saving = RunCmd::parse_from(common.into_iter().chain(configured).chain(["--no-mempool-saving"]));
+        assert!(no_saving.validate_committed_data_recovery().is_err());
+        let full = RunCmd::parse_from(
+            ["madara", "--full", "--network", "sepolia", "--rpc-committed-data"].into_iter().chain(configured),
+        );
+        assert!(full.validate_committed_data_recovery().is_err());
+        let disabled = RunCmd::parse_from(["madara", "--full", "--network", "sepolia"]);
+        assert!(disabled.validate_committed_data_recovery().is_ok());
     }
 
     #[test]

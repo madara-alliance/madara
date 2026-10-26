@@ -80,7 +80,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
 impl<D: MadaraStorage> MadaraBackend<D> {
     /// Applies keyed upserts to an explicit retained base. Omission and zero never delete keys.
     /// Namespace labels are operational metadata, not application authorization or a latest head.
-    /// Cold bases are authenticated before merging; all resulting pages are durable before the
+    /// Cold paths are authenticated before merging; all resulting nodes are durable before the
     /// version label is acknowledged. Rejected transaction submission may leave an unused version.
     pub async fn update_committed_data(
         self: &Arc<Self>,
@@ -111,6 +111,10 @@ impl<D: MadaraStorage> MadaraBackend<D> {
                     backend.db.has_committed_data_version(CommittedDataVersion { root: base_root, ..version })?,
                     "Base root is not registered in this namespace"
                 );
+                if backend.db.patch_committed_data_dataset(base_root, root, patch.clone(), imported_after_block)? {
+                    backend.db.write_committed_data_version(version, false)?;
+                    return Ok(());
+                }
                 let base = match backend.committed_data_cache.get(base_root)? {
                     Some(base) => base,
                     None => {
@@ -156,7 +160,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
     /// Rejects another admitted import before enqueuing blocking work. The permit stays with
     /// the worker if its async caller is cancelled; an accepted import may still complete.
     /// Success means a synchronous WAL write completed. Re-importing an identical dataset
-    /// repairs its pages. This never publishes a root on-chain.
+    /// repairs its stored nodes. This never publishes a root on-chain.
     ///
     /// Returns an error for busy admission, invalid data/root or storage failure.
     pub async fn import_committed_data_snapshot(self: &Arc<Self>, root: Felt, values: Vec<(Felt, Felt)>) -> Result<()> {
@@ -306,11 +310,18 @@ mod tests {
         let root = CommittedDataSet::new(vec![(Felt::ZERO, Felt::TWO)]).unwrap().root();
         backend.update_committed_data(context, root, vec![(Felt::ZERO, Felt::TWO)]).await.unwrap();
         backend.committed_data_cache.entries.lock().unwrap().clear();
-        let mut key = b"committed_data_mpt/".to_vec();
-        key.extend_from_slice(&root.to_bytes_be());
-        key.extend_from_slice(&[0, 0, 0, 0, 0]);
+        let mut metadata_key = b"committed_data_mpt/".to_vec();
+        metadata_key.extend_from_slice(&root.to_bytes_be());
+        metadata_key.extend_from_slice(&[u8::MAX, 0, 0, 0, 0]);
         let cf = backend.db.inner_db().cf_handle("meta").unwrap();
-        backend.db.inner_db().put_cf(&cf, key, [Felt::ZERO.to_bytes_be(), Felt::ONE.to_bytes_be()].concat()).unwrap();
+        let metadata = backend.db.inner_db().get_cf(&cf, metadata_key).unwrap().unwrap();
+        let id = u64::from_be_bytes(metadata[13..21].try_into().unwrap());
+        let key = crate::persistent_committed_data::node_key(id);
+        backend
+            .db
+            .inner_db()
+            .put_cf(&cf, key, [vec![0], Felt::ZERO.to_bytes_be().to_vec(), Felt::ONE.to_bytes_be().to_vec()].concat())
+            .unwrap();
         let corrupted = CommittedDataSet::new(vec![(Felt::ZERO, Felt::ONE), (Felt::ONE, Felt::THREE)]).unwrap().root();
         let error = backend
             .update_committed_data(
@@ -320,7 +331,7 @@ mod tests {
             )
             .await
             .unwrap_err();
-        assert!(error.to_string().contains("Stored base dataset root mismatch"));
+        assert!(error.to_string().contains("root"));
         assert!(backend.db.get_committed_data_count(corrupted).unwrap().is_none());
     }
 
@@ -413,14 +424,21 @@ mod tests {
         let root = CommittedDataSet::new(values.clone()).unwrap().root();
         backend.import_committed_data_snapshot(root, values).await.unwrap();
         backend.committed_data_cache.entries.lock().unwrap().clear();
+        let mut metadata_key = b"committed_data_mpt/".to_vec();
+        metadata_key.extend_from_slice(&root.to_bytes_be());
+        metadata_key.extend_from_slice(&[u8::MAX, 0, 0, 0, 0]);
         let cf = backend.db.inner_db().cf_handle("meta").unwrap();
-        let mut key = b"committed_data_mpt/".to_vec();
-        key.extend_from_slice(&root.to_bytes_be());
-        key.extend_from_slice(&[0, 0, 0, 0, 0]);
+        let metadata = backend.db.inner_db().get_cf(&cf, metadata_key).unwrap().unwrap();
+        let id = u64::from_be_bytes(metadata[13..21].try_into().unwrap());
+        let key = crate::persistent_committed_data::node_key(id);
         // Correct encoding and length must not be confused with authentication.
-        backend.db.inner_db().put_cf(&cf, key, [Felt::ZERO.to_bytes_be(), Felt::ONE.to_bytes_be()].concat()).unwrap();
+        backend
+            .db
+            .inner_db()
+            .put_cf(&cf, key, [vec![0], Felt::ZERO.to_bytes_be().to_vec(), Felt::ONE.to_bytes_be().to_vec()].concat())
+            .unwrap();
         let error = backend.committed_data_witness(root, Felt::ZERO).unwrap_err();
-        assert!(error.to_string().contains("Stored committed-data witness mismatch"));
+        assert!(error.to_string().contains("Persistent root mismatch"));
     }
 
     #[tokio::test]
@@ -433,16 +451,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn committed_data_reimport_repairs_malformed_pages() {
+    async fn committed_data_reimport_repairs_malformed_nodes() {
         let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
         let values: Vec<_> = vec![(Felt::ZERO, Felt::TWO)];
         let root = CommittedDataSet::new(values.clone()).unwrap().root();
         backend.import_committed_data_snapshot(root, values.clone()).await.unwrap();
         backend.committed_data_cache.entries.lock().unwrap().clear();
+        let mut metadata_key = b"committed_data_mpt/".to_vec();
+        metadata_key.extend_from_slice(&root.to_bytes_be());
+        metadata_key.extend_from_slice(&[u8::MAX, 0, 0, 0, 0]);
         let cf = backend.db.inner_db().cf_handle("meta").unwrap();
-        let mut key = b"committed_data_mpt/".to_vec();
-        key.extend_from_slice(&root.to_bytes_be());
-        key.extend_from_slice(&[0, 0, 0, 0, 0]);
+        let metadata = backend.db.inner_db().get_cf(&cf, metadata_key).unwrap().unwrap();
+        let id = u64::from_be_bytes(metadata[13..21].try_into().unwrap());
+        let key = crate::persistent_committed_data::node_key(id);
         backend.db.inner_db().put_cf(&cf, key, [0xff]).unwrap();
         assert!(backend.committed_data_witness(root, Felt::ZERO).is_err());
         backend.import_committed_data_snapshot(root, values).await.unwrap();
@@ -513,6 +534,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn persistent_patch_is_atomic_and_reuses_unchanged_nodes() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        let context = CommittedDataUpdate { application_id: Felt::ONE, dataset_id: Felt::ONE, base_root: None };
+        let mut values: Vec<_> = (0..1024u32).map(|k| (Felt::from(k), Felt::from(k + 10))).collect();
+        let old = CommittedDataSet::new(values.clone()).unwrap();
+        backend.update_committed_data(context, old.root(), values.clone()).await.unwrap();
+        let cf = backend.db.inner_db().cf_handle("meta").unwrap();
+        let allocated = || {
+            let bytes = backend.db.inner_db().get_cf(&cf, crate::persistent_committed_data::NEXT_KEY).unwrap().unwrap();
+            u64::from_be_bytes(bytes.try_into().unwrap())
+        };
+        let before = allocated();
+        let update = CommittedDataUpdate { base_root: Some(old.root()), ..context };
+        values[500].1 = Felt::ZERO;
+        let new = CommittedDataSet::new(values.clone()).unwrap();
+        // The rejected expected root must publish neither nodes nor a root/catalog entry.
+        assert!(backend.update_committed_data(update, Felt::ONE, vec![values[500]]).await.is_err());
+        assert_eq!(allocated(), before);
+        assert!(backend.db.get_committed_data_count(Felt::ONE).unwrap().is_none());
+        backend.update_committed_data(update, new.root(), vec![values[500]]).await.unwrap();
+        assert!(allocated() > before && allocated() - before <= 11);
+        let after = allocated();
+        backend.update_committed_data(update, new.root(), vec![values[500]]).await.unwrap();
+        // Retrying from the original base and updating the current root with identical values allocate nothing.
+        backend
+            .update_committed_data(
+                CommittedDataUpdate { base_root: Some(new.root()), ..context },
+                new.root(),
+                vec![values[500]],
+            )
+            .await
+            .unwrap();
+        assert_eq!(allocated(), after);
+        let no_op = allocated();
+        backend.import_committed_data_snapshot(new.root(), values).await.unwrap();
+        assert_eq!(allocated(), no_op);
+        backend.committed_data_cache.entries.lock().unwrap().clear();
+        assert_eq!(
+            backend.committed_data_witness(old.root(), Felt::from(500)).unwrap().unwrap().value,
+            Felt::from(510)
+        );
+        assert_eq!(backend.committed_data_witness(new.root(), Felt::from(500)).unwrap().unwrap().value, Felt::ZERO);
+    }
+
+    #[tokio::test]
     async fn committed_data_first_import_checkpoint_is_preserved_on_reimport() {
         let directory = tempfile::TempDir::new().unwrap();
         let backend = MadaraBackend::open_rocksdb(
@@ -531,7 +597,7 @@ mod tests {
         key.extend_from_slice(&dataset.root().to_bytes_be());
         key.extend_from_slice(&[u8::MAX, 0, 0, 0, 0]);
         let metadata = backend.db.inner_db().get_cf(&cf, key).unwrap().unwrap();
-        assert_eq!(metadata.len(), 13);
+        assert_eq!(metadata.len(), 21);
         assert_eq!(metadata[4], 1);
         assert_eq!(u64::from_be_bytes(metadata[5..13].try_into().unwrap()), 42);
     }

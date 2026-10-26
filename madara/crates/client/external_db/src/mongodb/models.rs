@@ -28,6 +28,9 @@ pub struct ResourceBoundsDoc {
 /// MongoDB document for a mempool transaction.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MempoolTransactionDocument {
+    /// Complete immutable data dependencies; empty for legacy/ordinary transactions.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub committed_data: Vec<String>,
     /// Unique document id (UUID)
     #[serde(rename = "_id")]
     pub id: bson::Binary,

@@ -24,11 +24,11 @@ pub struct ExternalOutboxId {
 }
 
 impl ExternalOutboxId {
-    fn new(arrived_at: TxTimestamp) -> Self {
+    pub(super) fn new(arrived_at: TxTimestamp) -> Self {
         Self { arrived_at_ms: arrived_at.0, uuid: *Uuid::new_v4().as_bytes() }
     }
 
-    fn to_key_bytes(self) -> [u8; EXTERNAL_OUTBOX_KEY_LEN] {
+    pub(super) fn to_key_bytes(self) -> [u8; EXTERNAL_OUTBOX_KEY_LEN] {
         let mut bytes = [0u8; EXTERNAL_OUTBOX_KEY_LEN];
         bytes[..8].copy_from_slice(&self.arrived_at_ms.to_be_bytes());
         bytes[8..].copy_from_slice(&self.uuid);

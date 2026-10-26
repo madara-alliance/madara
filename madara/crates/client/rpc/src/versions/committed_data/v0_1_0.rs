@@ -295,7 +295,9 @@ impl CommittedDataRpcApiV0_1_0Server for Starknet {
         })
         .await
         .map_err(|error| StarknetRpcApiError::from(anyhow::anyhow!(error)))??;
-        self.backend.update_committed_data(update, root, values).await.map_err(StarknetRpcApiError::from)?;
+        self.backend.check_recovery_capacity(Some(update), root, values.len()).map_err(StarknetRpcApiError::from)?;
+        self.backend.update_committed_data(update, root, values.clone()).await.map_err(StarknetRpcApiError::from)?;
+        self.backend.journal_committed_data(Some(update), root, values).await.map_err(StarknetRpcApiError::from)?;
         Ok(())
     }
 
@@ -320,7 +322,9 @@ impl CommittedDataRpcApiV0_1_0Server for Starknet {
         })
         .await
         .map_err(|e| StarknetRpcApiError::from(anyhow::anyhow!(e)))??;
-        self.backend.import_committed_data_snapshot(root, values).await.map_err(StarknetRpcApiError::from)?;
+        self.backend.check_recovery_capacity(None, root, values.len()).map_err(StarknetRpcApiError::from)?;
+        self.backend.import_committed_data_snapshot(root, values.clone()).await.map_err(StarknetRpcApiError::from)?;
+        self.backend.journal_committed_data(None, root, values).await.map_err(StarknetRpcApiError::from)?;
         Ok(())
     }
 
@@ -340,6 +344,7 @@ impl CommittedDataRpcApiV0_1_0Server for Starknet {
         if transaction.is_query() {
             return Err(CommittedDataRpcError::QueryTransaction.into());
         }
+        let mut dependencies = Vec::new();
         for dataset in datasets.0 {
             match dataset.update {
                 Some(update) => {
@@ -350,34 +355,19 @@ impl CommittedDataRpcApiV0_1_0Server for Starknet {
                     self.import_committed_data_snapshot(dataset.root, dataset.entries, Some(dataset.signatures)).await?
                 }
             }
+            dependencies.push(
+                self.backend.recovery_reference(dataset.update, dataset.root).map_err(StarknetRpcApiError::from)?,
+            );
         }
         // Catch a sequencer that entered catch-up while the (possibly large) imports were running.
         if !local_submission_ready(self) {
             return Err(CommittedDataRpcError::LocalProductionRequired.into());
         }
-        let transaction_hash = match transaction {
-            BroadcastedTxn::Invoke(tx) => {
-                self.transaction_submitter
-                    .submit_invoke_transaction(tx)
-                    .await
-                    .map_err(StarknetRpcApiError::from)?
-                    .transaction_hash
-            }
-            BroadcastedTxn::Declare(tx) => {
-                self.transaction_submitter
-                    .submit_declare_transaction(tx)
-                    .await
-                    .map_err(StarknetRpcApiError::from)?
-                    .transaction_hash
-            }
-            BroadcastedTxn::DeployAccount(tx) => {
-                self.transaction_submitter
-                    .submit_deploy_account_transaction(tx)
-                    .await
-                    .map_err(StarknetRpcApiError::from)?
-                    .transaction_hash
-            }
-        };
+        let transaction_hash = self
+            .transaction_submitter
+            .submit_committed_data_transaction(transaction, dependencies)
+            .await
+            .map_err(StarknetRpcApiError::from)?;
         Ok(ImportAndSubmitResult { transaction_hash })
     }
 }
@@ -431,6 +421,19 @@ mod committed_data_tests {
 
     #[async_trait]
     impl SubmitTransaction for RecordingSubmitter {
+        async fn submit_committed_data_transaction(
+            &self,
+            transaction: BroadcastedTxn,
+            dependencies: Vec<String>,
+        ) -> Result<Felt, SubmitTransactionError> {
+            assert!(!dependencies.is_empty());
+            assert!(dependencies.iter().all(|id| id.len() == 64));
+            match transaction {
+                BroadcastedTxn::Invoke(tx) => Ok(self.submit_invoke_transaction(tx).await?.transaction_hash),
+                _ => Err(SubmitTransactionError::Unsupported),
+            }
+        }
+
         async fn submit_declare_transaction(
             &self,
             _tx: BroadcastedDeclareTxn,

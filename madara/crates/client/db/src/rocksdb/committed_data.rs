@@ -1,5 +1,6 @@
-//! Immutable Patricia datasets: sorted key/value pages and compact postorder branch pages.
+//! Immutable shared Patricia nodes, with backward-compatible reads of legacy paged snapshots.
 use super::*;
+use crate::persistent_committed_data::{node_key, Tree, NEXT_KEY};
 use crate::storage::CommittedDataPageEntries;
 use blockifier::execution::syscalls::committed_data::{
     key_bit, leaf, CommittedDataBranch, CommittedDataSet, CommittedDataSibling, CommittedDataWitness,
@@ -45,7 +46,10 @@ fn canonical_felt(bytes: &[u8]) -> Result<Felt> {
 }
 /// Count plus first-import checkpoint. The checkpoint is not a publication or last-use block.
 fn decode_metadata(bytes: &[u8]) -> Result<(usize, Option<u64>)> {
-    anyhow::ensure!(bytes.len() == METADATA_BYTES, "Invalid committed-data metadata length");
+    anyhow::ensure!(
+        (bytes.len() == METADATA_BYTES || bytes.len() == METADATA_BYTES + 8),
+        "Invalid committed-data metadata length"
+    );
     let count = u32::from_be_bytes(bytes[..4].try_into()?) as usize;
     anyhow::ensure!((1..=MAX_COMMITTED_DATA_VALUES).contains(&count), "Invalid committed-data size");
     let block = u64::from_be_bytes(bytes[5..13].try_into()?);
@@ -56,9 +60,21 @@ fn decode_metadata(bytes: &[u8]) -> Result<(usize, Option<u64>)> {
     };
     Ok((count, checkpoint))
 }
+
+fn persistent_id(metadata: &[u8]) -> Result<Option<u64>> {
+    decode_metadata(metadata)?;
+    if metadata.len() == METADATA_BYTES {
+        return Ok(None);
+    }
+    let id = u64::from_be_bytes(metadata[METADATA_BYTES..].try_into()?);
+    anyhow::ensure!(id > 0 && id < u64::MAX, "Invalid persistent root pointer");
+    Ok(Some(id))
+}
+
 fn count(bytes: &[u8]) -> Result<usize> {
     Ok(decode_metadata(bytes)?.0)
 }
+#[cfg(test)]
 fn encode_metadata(dataset: &CommittedDataSet, checkpoint: Option<u64>) -> Result<[u8; METADATA_BYTES]> {
     let mut bytes = [0; METADATA_BYTES];
     bytes[..4].copy_from_slice(&u32::try_from(dataset.entries().len())?.to_be_bytes());
@@ -144,6 +160,7 @@ fn read_witness(
     Ok(Some(CommittedDataWitness { root, key: requested, value: canonical_felt(&bytes[32..])?, siblings }))
 }
 /// Fixed-size encoding keeps storage independent of Rust/serde layouts.
+#[cfg(test)]
 fn records(dataset: &CommittedDataSet) -> impl Iterator<Item = (Vec<u8>, Vec<u8>)> + '_ {
     let entries = dataset.entries().chunks(PAGE_VALUES).enumerate().map(|(page, entries)| {
         (
@@ -292,6 +309,15 @@ impl RocksDBStorage {
         let Some(metadata) = snapshot.get_pinned_cf(&cf, key(root, METADATA_LEVEL, 0))? else { return Ok(None) };
         let count = count(&metadata)?;
         anyhow::ensure!((start as usize) < count, "Committed-data page outside dataset");
+        if let Some(id) = persistent_id(&metadata)? {
+            let mut tree = Tree::new(u64::MAX, MAX_COMMITTED_DATA_VALUES as u32, |id| {
+                Ok(snapshot.get_pinned_cf(&cf, node_key(id))?.map(|b| b.to_vec()))
+            });
+            tree.check_root(id, root, count as u32)?;
+            let mut values = Vec::new();
+            tree.page(id, start, VALUES_PER_PAGE as u32, &mut values)?;
+            return Ok(Some((count as u32, values)));
+        }
         // The feeder response spans several on-disk pages, but remains a
         // protocol-bounded slice under one RocksDB snapshot.
         let end = (start as usize + VALUES_PER_PAGE).min(count);
@@ -311,10 +337,19 @@ impl RocksDBStorage {
         Ok(Some((count as u32, values)))
     }
 
-    /// Reads metadata and at most two pages per Patricia branch, plus the leaf page.
+    /// Reads the requested path from shared nodes, or bounded pages for a legacy snapshot.
     pub(super) fn read_committed_data_witness(&self, root: Felt, index: Felt) -> Result<Option<CommittedDataWitness>> {
         let cf = self.inner.get_column(meta::META_COLUMN);
         let snapshot = rocksdb_snapshot::SnapshotWithDBArc::new(Arc::clone(&self.inner));
+        if let Some(metadata) = snapshot.get_pinned_cf(&cf, key(root, METADATA_LEVEL, 0))? {
+            if let Some(id) = persistent_id(&metadata)? {
+                let mut tree = Tree::new(u64::MAX, MAX_COMMITTED_DATA_VALUES as u32, |id| {
+                    Ok(snapshot.get_pinned_cf(&cf, node_key(id))?.map(|b| b.to_vec()))
+                });
+                tree.check_root(id, root, count(&metadata)? as u32)?;
+                return tree.witness(id, root, index);
+            }
+        }
         read_witness(root, index, |key| {
             snapshot
                 .get_pinned_cf(&cf, key)?
@@ -326,39 +361,108 @@ impl RocksDBStorage {
         })
     }
 
-    /// Atomically writes all root-keyed pages and metadata with synchronous WAL.
-    /// Re-import repairs pages while preserving the original import checkpoint.
+    /// Imports an authenticated full map into the immutable arena. Legacy snapshots remain readable.
+    /// Identical imports reuse nodes; an explicit full import can repair a corrupt root by rebuilding it.
     pub(super) fn store_committed_data_dataset(
         &self,
         dataset: &CommittedDataSet,
         imported_after_block: Option<u64>,
     ) -> Result<()> {
-        let _write = self
+        self.store_persistent_patch(None, dataset.root(), dataset.entries().to_vec(), imported_after_block, true)?;
+        Ok(())
+    }
+
+    /// Returns false only for a legacy base, allowing its existing authenticated migration path.
+    pub(super) fn store_persistent_patch(
+        &self,
+        base: Option<Felt>,
+        root: Felt,
+        mut entries: Vec<(Felt, Felt)>,
+        checkpoint: Option<u64>,
+        full_import: bool,
+    ) -> Result<bool> {
+        let mut state = self
             .inner
             .committed_data_write
             .lock()
             .map_err(|_| anyhow::anyhow!("Committed-data write lock poisoned"))?;
         let cf = self.inner.get_column(meta::META_COLUMN);
-        let metadata_key = key(dataset.root(), METADATA_LEVEL, 0);
-        let existing = self.inner.db.get_pinned_cf(&cf, &metadata_key)?;
-        if let Some(existing) = &existing {
-            let (count, _) = decode_metadata(existing)?;
-            anyhow::ensure!(count == dataset.entries().len(), "Conflicting committed-data metadata");
+        let old_metadata = self.inner.db.get_pinned_cf(&cf, key(root, METADATA_LEVEL, 0))?;
+        let base_root = base.unwrap_or(root);
+        let base_metadata = self.inner.db.get_pinned_cf(&cf, key(base_root, METADATA_LEVEL, 0))?;
+        let base_id = base_metadata.as_ref().map(|b| persistent_id(b)).transpose()?.flatten();
+        if !full_import && base_id.is_none() {
+            return Ok(false);
         }
-        let mut batch = WriteBatch::default();
-        let metadata = match existing {
-            Some(existing) => existing.to_vec(),
-            None => encode_metadata(dataset, imported_after_block)?.to_vec(),
+        let first_id = self
+            .inner
+            .db
+            .get_pinned_cf(&cf, NEXT_KEY)?
+            .map(|b| -> Result<u64> { Ok(u64::from_be_bytes(b.as_ref().try_into()?)) })
+            .transpose()?
+            .unwrap_or(1);
+        anyhow::ensure!(first_id > 0, "Invalid persistent allocator");
+        // No nodes are deleted in this schema. A missing/rewound allocator must never overwrite
+        // an immutable node that older roots may still reference.
+        anyhow::ensure!(
+            self.inner.db.get_pinned_cf(&cf, node_key(first_id))?.is_none(),
+            "Persistent allocator overlaps existing nodes"
+        );
+        let reader =
+            |id| -> Result<Option<Vec<u8>>> { Ok(self.inner.db.get_pinned_cf(&cf, node_key(id))?.map(|b| b.to_vec())) };
+        // Full imports deliberately bypass the cache so they can repair corrupt disk records.
+        let cache = if full_import { Default::default() } else { std::mem::take(&mut *state) };
+        let mut tree = Tree::with_cache(first_id, MAX_COMMITTED_DATA_VALUES as u32, reader, cache);
+        let attempt = if let Some(id) = base_id {
+            tree.check_root(
+                id,
+                base_root,
+                count(base_metadata.as_ref().context("Persistent base metadata missing")?)? as u32,
+            )
+            .and_then(|_| tree.update(id, &mut entries))
+        } else {
+            tree.build(&mut entries)
         };
-        for (key, bytes) in std::iter::once((metadata_key, metadata)).chain(records(dataset)) {
-            // Re-import repairs corrupt pages with the same authenticated logical dataset.
-            batch.put_cf(&cf, key, bytes);
+        let id = match attempt {
+            Ok(id) => id,
+            // Only a full, independently authenticated map is allowed to repair damaged storage.
+            Err(_) if full_import => {
+                tree = Tree::new(first_id, MAX_COMMITTED_DATA_VALUES as u32, reader);
+                tree.build(&mut entries)?
+            }
+            Err(error) => return Err(error),
+        };
+        let (actual_root, count) = tree.root(id)?;
+        anyhow::ensure!(actual_root == root, "Committed-data root does not match updated dataset");
+        // Retry/fork from an older base may reproduce a root already present. Authenticate the
+        // request first, then discard its staged nodes instead of duplicating that version.
+        // Full imports retain their explicit repair path, including damaged descendants.
+        if !full_import {
+            if let Some(existing_id) = old_metadata.as_ref().map(|b| persistent_id(b)).transpose()?.flatten() {
+                tree.check_root(existing_id, root, count)?;
+                *state = tree.into_read_cache();
+                return Ok(true);
+            }
         }
+        let checkpoint =
+            old_metadata.as_ref().map(|b| decode_metadata(b).map(|(_, c)| c)).transpose()?.unwrap_or(checkpoint);
+        let mut metadata = Vec::with_capacity(METADATA_BYTES + 8);
+        metadata.extend(count.to_be_bytes());
+        metadata.push(u8::from(checkpoint.is_some()));
+        metadata.extend(checkpoint.unwrap_or(0).to_be_bytes());
+        metadata.extend(id.to_be_bytes());
+        let mut batch = WriteBatch::default();
+        for (key, value) in tree.records() {
+            batch.put_cf(&cf, key, value);
+        }
+        batch.put_cf(&cf, NEXT_KEY, tree.next_id().to_be_bytes());
+        batch.put_cf(&cf, key(root, METADATA_LEVEL, 0), metadata);
         let mut options = WriteOptions::default();
         options.set_sync(true);
         options.disable_wal(false);
         self.inner.db.write_opt(batch, &options)?;
-        Ok(())
+        *state = tree.into_committed_cache();
+        Ok(true)
     }
 }
 

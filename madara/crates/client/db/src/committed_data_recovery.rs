@@ -1,0 +1,327 @@
+//! Versioned private-import backups. Local payloads exist only until Mongo acknowledgement.
+//! Durable manifests retain replay identities without duplicating historical prices.
+//! Each record contains only the submitted upserts, bound to an exact retained base.
+use crate::{MadaraBackend, MadaraStorage, MadaraStorageRead};
+use anyhow::{ensure, Context, Result};
+use mp_convert::{Felt, ToFelt};
+use mp_gateway::committed_data::CommittedDataUpdate;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::{io::Read, sync::Arc};
+
+/// Maximum entries in one independently compressed backup chunk.
+pub const CHUNK_ENTRIES: usize = 8192;
+/// Use the same admission bound as the commitment implementation.
+pub const MAX_ENTRIES: usize = blockifier::execution::syscalls::committed_data::MAX_COMMITTED_DATA_VALUES;
+/// Compressed payload budget awaiting remote acknowledgement; excludes permanent tree nodes.
+pub const MAX_PENDING_BYTES: u64 = 512 * 1024 * 1024;
+
+pub fn digest(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RecoveryManifest {
+    pub version: u32,
+    pub chain_id: Felt,
+    pub update: Option<CommittedDataUpdate>,
+    pub root: Felt,
+    pub base: Option<String>,
+    pub entries: u32,
+    pub chunks: Vec<String>,
+}
+impl RecoveryManifest {
+    pub fn id(&self) -> Result<String> {
+        Ok(digest(&serde_json::to_vec(self)?))
+    }
+    pub fn validate(&self) -> Result<()> {
+        ensure!(self.version == 1, "Unsupported recovery version");
+        ensure!((1..=MAX_ENTRIES).contains(&(self.entries as usize)), "Invalid recovery entry count");
+        ensure!(self.chunks.len() == (self.entries as usize).div_ceil(CHUNK_ENTRIES), "Invalid chunk count");
+        ensure!(self.update.and_then(|u| u.base_root).is_some() == self.base.is_some(), "Missing or unexpected base");
+        for id in self.chunks.iter().chain(self.base.iter()) {
+            ensure!(id.len() == 64 && id.bytes().all(|b| b.is_ascii_hexdigit()), "Invalid recovery digest");
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RecoveryRecord {
+    pub manifest: RecoveryManifest,
+    pub chunks: Vec<Vec<u8>>,
+}
+impl RecoveryRecord {
+    pub fn encode(
+        chain_id: Felt,
+        update: Option<CommittedDataUpdate>,
+        root: Felt,
+        base: Option<String>,
+        mut entries: Vec<(Felt, Felt)>,
+    ) -> Result<Self> {
+        ensure!((1..=MAX_ENTRIES).contains(&entries.len()), "Invalid recovery entry count");
+        entries.sort_unstable_by_key(|e| e.0);
+        ensure!(entries.windows(2).all(|w| w[0].0 < w[1].0), "Duplicate recovery key");
+        let mut chunks = Vec::new();
+        for part in entries.chunks(CHUNK_ENTRIES) {
+            let mut raw = Vec::with_capacity(part.len() * 64);
+            for (key, value) in part {
+                raw.extend_from_slice(&key.to_bytes_be());
+                raw.extend_from_slice(&value.to_bytes_be());
+            }
+            chunks.push(zstd::stream::encode_all(raw.as_slice(), 3)?);
+        }
+        let manifest = RecoveryManifest {
+            version: 1,
+            chain_id,
+            update,
+            root,
+            base,
+            entries: entries.len() as u32,
+            chunks: chunks.iter().map(|c| digest(c)).collect(),
+        };
+        manifest.validate()?;
+        Ok(Self { manifest, chunks })
+    }
+    pub fn decode(&self) -> Result<Vec<(Felt, Felt)>> {
+        self.manifest.validate()?;
+        ensure!(self.chunks.len() == self.manifest.chunks.len(), "Incomplete recovery record");
+        let mut entries = Vec::with_capacity(self.manifest.entries as usize);
+        for (chunk, hash) in self.chunks.iter().zip(&self.manifest.chunks) {
+            ensure!(chunk.len() <= CHUNK_ENTRIES * 64 + 1024 && digest(chunk) == *hash, "Corrupt recovery chunk");
+            let mut bytes = Vec::new();
+            zstd::stream::read::Decoder::new(chunk.as_slice())?
+                .take((CHUNK_ENTRIES * 64 + 1) as u64)
+                .read_to_end(&mut bytes)?;
+            ensure!(
+                !bytes.is_empty() && bytes.len() <= CHUNK_ENTRIES * 64 && bytes.len() % 64 == 0,
+                "Invalid decoded chunk length"
+            );
+            for pair in bytes.chunks_exact(64) {
+                let key_bytes: [u8; 32] = pair[..32].try_into()?;
+                let value_bytes: [u8; 32] = pair[32..].try_into()?;
+                let key = Felt::from_bytes_be(&key_bytes);
+                let value = Felt::from_bytes_be(&value_bytes);
+                ensure!(key.to_bytes_be() == key_bytes && value.to_bytes_be() == value_bytes, "Noncanonical felt");
+                entries.push((key, value));
+            }
+        }
+        ensure!(entries.len() == self.manifest.entries as usize, "Recovery count mismatch");
+        ensure!(entries.windows(2).all(|w| w[0].0 < w[1].0), "Unsorted recovery keys");
+        Ok(entries)
+    }
+}
+
+pub fn namespace_key(update: Option<CommittedDataUpdate>, root: Felt) -> Result<Vec<u8>> {
+    // base_root is not part of a version's identity; branches keep their explicit dependency in the manifest.
+    Ok(serde_json::to_vec(&(update.map(|u| (u.application_id, u.dataset_id)), root))?)
+}
+impl<D: MadaraStorageRead> MadaraBackend<D> {
+    /// Conservative preflight before importing a new tree. The atomic journal write rechecks
+    /// actual compressed bytes; this prevents rejected imports growing trees during a full backlog.
+    pub fn check_recovery_capacity(
+        &self,
+        update: Option<CommittedDataUpdate>,
+        root: Felt,
+        entries: usize,
+    ) -> Result<()> {
+        if self.db.find_recovery_record(&namespace_key(update, root)?)?.is_some() {
+            return Ok(());
+        }
+        ensure!((1..=MAX_ENTRIES).contains(&entries), "Invalid recovery entry count");
+        let worst_case = (entries * 64 + entries.div_ceil(CHUNK_ENTRIES) * 1024 + 65536) as u64;
+        ensure!(
+            self.db.recovery_pending_bytes()?.saturating_add(worst_case) <= MAX_PENDING_BYTES,
+            "Committed-data backup backlog full; retry after export"
+        );
+        Ok(())
+    }
+
+    pub fn recovery_reference(&self, update: Option<CommittedDataUpdate>, root: Felt) -> Result<String> {
+        self.db
+            .find_recovery_record(&namespace_key(update, root)?)?
+            .context("Dataset has no recovery record; import a checkpoint first")
+    }
+}
+impl<D: MadaraStorage> MadaraBackend<D> {
+    /// Call only after the normal authenticated import and Merkle-root verification succeeds.
+    pub async fn journal_committed_data(
+        self: &Arc<Self>,
+        update: Option<CommittedDataUpdate>,
+        root: Felt,
+        entries: Vec<(Felt, Felt)>,
+    ) -> Result<String> {
+        let backend = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let key = namespace_key(update, root)?;
+            if let Some(id) = backend.db.find_recovery_record(&key)? {
+                return Ok(id);
+            }
+            let base =
+                update.and_then(|u| u.base_root).map(|base| backend.recovery_reference(update, base)).transpose()?;
+            let record =
+                RecoveryRecord::encode(backend.chain_config().chain_id.to_felt(), update, root, base, entries)?;
+            backend.db.store_recovery_record(&record)
+        })
+        .await?
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn recovery_admission_wal_survives_without_drop_or_flush() {
+        use crate::MadaraStorageWrite;
+        use crate::{rocksdb::RocksDBConfig, MadaraBackendConfig};
+        use blockifier::execution::syscalls::committed_data::CommittedDataSet;
+        use mp_chain_config::ChainConfig;
+        use mp_transactions::{InvokeTransaction, Transaction};
+        if let Ok(path) = std::env::var("MADARA_RECOVERY_CRASH_FIXTURE") {
+            let backend = MadaraBackend::open_rocksdb(
+                std::path::Path::new(&path),
+                Arc::new(ChainConfig::madara_test()),
+                MadaraBackendConfig::default(),
+                RocksDBConfig::default(),
+                Default::default(),
+            )
+            .unwrap();
+            let entries = vec![(Felt::ONE, Felt::TWO)];
+            let root = CommittedDataSet::new(entries.clone()).unwrap().root();
+            backend.import_committed_data_snapshot(root, entries.clone()).await.unwrap();
+            let id = backend.journal_committed_data(None, root, entries).await.unwrap();
+            let sender = crate::test_utils::devnet_account_address();
+            let tx = crate::test_utils::validated_transaction(
+                Transaction::Invoke(InvokeTransaction::V3(crate::test_utils::invoke_v3(sender, Felt::ZERO))),
+                Felt::THREE,
+                sender,
+                None,
+            );
+            backend.db.write_recovery_admission(&tx, &[id.clone()], true).unwrap();
+            if std::env::var_os("MADARA_RECOVERY_ACKED").is_some() {
+                backend.db.mark_recovery_exported(&id).unwrap();
+            }
+            std::fs::write(std::path::Path::new(&path).join("expected.json"), serde_json::to_vec(&(root, id)).unwrap())
+                .unwrap();
+            // process::exit deliberately skips RocksDB Drop, shutdown flush and background-task cleanup.
+            std::process::exit(0);
+        }
+        for acked in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+            if acked {
+                command.env("MADARA_RECOVERY_ACKED", "1");
+            }
+            let status = command
+                .args([
+                    "--exact",
+                    "committed_data_recovery::tests::recovery_admission_wal_survives_without_drop_or_flush",
+                    "--nocapture",
+                ])
+                .env("MADARA_RECOVERY_CRASH_FIXTURE", dir.path())
+                .status()
+                .unwrap();
+            assert!(status.success());
+            let (root, id): (Felt, String) =
+                serde_json::from_slice(&std::fs::read(dir.path().join("expected.json")).unwrap()).unwrap();
+            let backend = MadaraBackend::open_rocksdb(
+                dir.path(),
+                Arc::new(ChainConfig::madara_test()),
+                MadaraBackendConfig::default(),
+                RocksDBConfig::default(),
+                Default::default(),
+            )
+            .unwrap();
+            assert!(backend.committed_data_witness(root, Felt::ONE).unwrap().unwrap().verify());
+            assert_eq!(backend.db.recovery_dependencies(Felt::THREE).unwrap(), vec![id.clone()]);
+            assert_eq!(backend.get_saved_mempool_transactions().count(), 1);
+            assert_eq!(backend.get_external_outbox_transactions(10).count(), 1);
+            assert_eq!(backend.db.get_recovery_manifest(&id).unwrap().unwrap().root, root);
+            if acked {
+                assert!(backend.db.get_recovery_record(&id).unwrap().is_none());
+                assert_eq!(backend.db.recovery_pending_bytes().unwrap(), 0);
+            } else {
+                assert_eq!(
+                    backend.db.get_recovery_record(&id).unwrap().unwrap().decode().unwrap(),
+                    vec![(Felt::ONE, Felt::TWO)]
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn acknowledged_payload_removed_but_parent_and_replay_references_survive() {
+        use crate::MadaraStorageWrite;
+        use mp_gateway::committed_data::CommittedDataUpdate;
+        let backend = MadaraBackend::open_for_testing(mp_chain_config::ChainConfig::madara_test().into());
+        let update = CommittedDataUpdate { application_id: Felt::ONE, dataset_id: Felt::TWO, base_root: None };
+        let record =
+            RecoveryRecord::encode(Felt::ONE, Some(update), Felt::THREE, None, vec![(Felt::ONE, Felt::TWO)]).unwrap();
+        let id = backend.db.store_recovery_record(&record).unwrap();
+        assert!(backend.db.recovery_pending_bytes().unwrap() > 0);
+        backend.db.mark_recovery_exported(&id).unwrap();
+        backend.db.mark_recovery_exported(&id).unwrap();
+        assert!(backend.db.get_recovery_record(&id).unwrap().is_none());
+        assert_eq!(backend.db.get_recovery_manifest(&id).unwrap().unwrap().id().unwrap(), id);
+        assert_eq!(backend.db.recovery_pending_bytes().unwrap(), 0);
+        assert_eq!(backend.db.store_recovery_record(&record).unwrap(), id);
+        assert!(backend.db.get_recovery_record(&id).unwrap().is_none());
+        let child = RecoveryRecord::encode(
+            Felt::ONE,
+            Some(CommittedDataUpdate { base_root: Some(Felt::THREE), ..update }),
+            Felt::from(4u64),
+            Some(id.clone()),
+            vec![(Felt::ONE, Felt::THREE)],
+        )
+        .unwrap();
+        let child_id = backend.db.store_recovery_record(&child).unwrap();
+        assert!(backend.db.get_recovery_record(&child_id).unwrap().is_some());
+        let sender = crate::test_utils::devnet_account_address();
+        let tx = crate::test_utils::validated_transaction(
+            mp_transactions::Transaction::Invoke(mp_transactions::InvokeTransaction::V3(crate::test_utils::invoke_v3(
+                sender,
+                Felt::ZERO,
+            ))),
+            Felt::THREE,
+            sender,
+            None,
+        );
+        backend.db.write_recovery_admission(&tx, &[id.clone()], true).unwrap();
+        assert_eq!(backend.db.recovery_dependencies(Felt::THREE).unwrap(), vec![id]);
+        assert_eq!(backend.get_saved_mempool_transactions().count(), 1);
+        assert!(backend.db.mark_recovery_exported("missing").is_err());
+    }
+
+    #[tokio::test]
+    async fn backlog_preflight_rejects_new_tree_but_allows_idempotent_retry() {
+        use blockifier::execution::syscalls::committed_data::CommittedDataSet;
+        let backend = MadaraBackend::open_for_testing(mp_chain_config::ChainConfig::madara_test().into());
+        let entries = vec![(Felt::ONE, Felt::TWO)];
+        let root = CommittedDataSet::new(entries.clone()).unwrap().root();
+        backend.import_committed_data_snapshot(root, entries.clone()).await.unwrap();
+        backend.journal_committed_data(None, root, entries).await.unwrap();
+        let db = backend.db.inner_db();
+        let cf = db.cf_handle("committed_data_recovery").unwrap();
+        db.put_cf(&cf, b"bytes", bincode::serialize(&MAX_PENDING_BYTES).unwrap()).unwrap();
+        assert!(backend.check_recovery_capacity(None, Felt::ZERO, 1).is_err());
+        assert!(backend.db.get_committed_data_count(Felt::ZERO).unwrap().is_none());
+        assert!(backend.check_recovery_capacity(None, root, 1).is_ok());
+    }
+
+    #[test]
+    fn codec_roundtrip_and_corruption() {
+        let entries: Vec<_> = (0..20_000).map(|i| (Felt::from(i as u64), Felt::from((i * 11) as u64))).collect();
+        let mut record = RecoveryRecord::encode(Felt::ONE, None, Felt::TWO, None, entries.clone()).unwrap();
+        assert_eq!(record.decode().unwrap(), entries);
+        record.chunks[0][0] ^= 1;
+        assert!(record.decode().is_err());
+    }
+    #[test]
+    fn rejects_incomplete_and_duplicate_inputs() {
+        assert!(RecoveryRecord::encode(Felt::ONE, None, Felt::TWO, None, vec![(Felt::ONE, Felt::ZERO); 2]).is_err());
+        let mut record =
+            RecoveryRecord::encode(Felt::ONE, None, Felt::TWO, None, vec![(Felt::ONE, Felt::ZERO)]).unwrap();
+        record.chunks.clear();
+        assert!(record.decode().is_err());
+    }
+}

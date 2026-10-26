@@ -55,6 +55,7 @@ mod mempool;
 mod meta;
 mod metrics;
 mod options;
+mod recovery;
 mod reorg;
 mod rocksdb_snapshot;
 mod snapshots;
@@ -90,11 +91,11 @@ fn serialize_to_smallvec<A: smallvec::Array<Item = u8>>(
     Ok(v)
 }
 
-fn serialize(value: &impl serde::Serialize) -> Result<Vec<u8>, bincode::Error> {
+pub(crate) fn serialize(value: &impl serde::Serialize) -> Result<Vec<u8>, bincode::Error> {
     bincode_opts().serialize(value) // this calls serialized_size under the hood to get the vec capacity beforehand
 }
 
-fn deserialize<T: serde::de::DeserializeOwned>(bytes: impl AsRef<[u8]>) -> Result<T, bincode::Error> {
+pub(crate) fn deserialize<T: serde::de::DeserializeOwned>(bytes: impl AsRef<[u8]>) -> Result<T, bincode::Error> {
     bincode_opts().deserialize(bytes.as_ref())
 }
 
@@ -102,7 +103,7 @@ pub(crate) struct RocksDBStorageInner {
     db: DB,
     global_opts: RocksDBOptions,
     // Serializes first-import metadata and repairs across cloned storage handles.
-    committed_data_write: std::sync::Mutex<()>,
+    committed_data_write: std::sync::Mutex<crate::persistent_committed_data::NodeCache>,
     writeopts: WriteOptions,
     config: RocksDBConfig,
 }

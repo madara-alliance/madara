@@ -262,6 +262,8 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("🌐 Network: {} (chain id `{}`)", chain_config.chain_name, chain_config.chain_id);
     run_cmd.args_preset.greet();
 
+    run_cmd.validate_committed_data_recovery()?;
+
     let external_db_requested = run_cmd.external_db_params.is_enabled();
     if external_db_requested && !run_cmd.should_run_mempool() {
         tracing::warn!(
@@ -327,6 +329,33 @@ async fn main() -> anyhow::Result<()> {
 
     let chain_head_state = backend.chain_head_state();
     tracing::info!("💼 Starting chain with head state: {:?}", chain_head_state);
+
+    if !run_cmd.external_db_params.restore_committed_data_records.is_empty()
+        || !run_cmd.external_db_params.restore_committed_data_transactions.is_empty()
+    {
+        anyhow::ensure!(run_cmd.should_save_mempool_to_db(), "Committed-data recovery requires mempool saving");
+        let config = run_cmd
+            .external_db_params
+            .to_config()
+            .context("Committed-data restore requires external DB configuration")?
+            .with_chain_id(&chain_config.chain_id.to_string());
+        let mongo = mc_external_db::mongodb::MongoClient::new(&config).await?;
+        let archive = mc_external_db::recovery::RecoveryArchive::new(
+            &mongo.client().database(&config.database_name),
+            &config.collection_name,
+        );
+        let count = archive
+            .restore(&backend, &run_cmd.external_db_params.restore_committed_data_records)
+            .await
+            .context("Restoring committed-data dependencies before startup")?;
+        let transactions = mc_external_db::recovery::restore_transactions(
+            &backend,
+            &config,
+            &run_cmd.external_db_params.restore_committed_data_transactions,
+        )
+        .await?;
+        tracing::info!(count, transactions, "Verified committed-data archive restored before transaction replay");
+    }
 
     let service_mempool = MempoolService::new(&run_cmd, backend.clone());
 

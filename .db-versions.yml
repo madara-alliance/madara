@@ -18,7 +18,7 @@
 # Current database schema version.
 # This is the version that new databases will be created with,
 # and the version that existing databases will be migrated to.
-current_version: 16
+current_version: 19
 
 # Minimum version that can be migrated from.
 # Databases older than this must be deleted and re-synced from scratch.
@@ -31,6 +31,12 @@ base_version: 8
 #   - pr: The PR number that introduced this version
 #   - description: (optional) Brief description of changes
 versions:
+  - version: 19
+    description: "Retain recovery manifests and remove acknowledged local upload payloads"
+  - version: 18
+    description: "Durable committed-data recovery journal and transaction dependencies"
+  - version: 17
+    description: "Immutable shared committed-data nodes; legacy snapshots remain readable"
   - version: 16
     description: "Record root-keyed committed-data pages in meta (no-op migration; no chain-data rewrite)"
   - version: 15

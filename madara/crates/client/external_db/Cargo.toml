@@ -53,8 +53,11 @@ uuid = { workspace = true }
 
 # Other
 async-trait.workspace = true
+futures.workspace = true
+mp-gateway.workspace = true
 
 [dev-dependencies]
+mp-utils = { workspace = true, features = ["testing"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 rstest = { workspace = true }
 futures = { workspace = true }

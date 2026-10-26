@@ -228,6 +228,26 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
     /// This uses RocksDB internal properties and is intended for observability (metrics),
     /// not for correctness-critical logic.
     fn get_external_outbox_size_estimate(&self) -> Result<u64>;
+
+    fn recovery_pending_bytes(&self) -> Result<u64> {
+        Ok(0)
+    }
+    fn find_recovery_record(&self, _key: &[u8]) -> Result<Option<String>> {
+        Ok(None)
+    }
+    fn get_recovery_record(&self, _id: &str) -> Result<Option<crate::committed_data_recovery::RecoveryRecord>> {
+        Ok(None)
+    }
+    /// Small durable identity retained after the upload payload is acknowledged and removed.
+    fn get_recovery_manifest(&self, id: &str) -> Result<Option<crate::committed_data_recovery::RecoveryManifest>> {
+        Ok(self.get_recovery_record(id)?.map(|record| record.manifest))
+    }
+    fn pending_recovery_records(&self, _limit: usize) -> Result<Vec<String>> {
+        Ok(Vec::new())
+    }
+    fn recovery_dependencies(&self, _hash: Felt) -> Result<Vec<String>> {
+        Ok(Vec::new())
+    }
 }
 
 /// Trait abstracting over the storage interface.
@@ -253,6 +273,18 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
         _imported_after_block: Option<u64>,
     ) -> Result<()> {
         anyhow::bail!("Committed-data storage is unsupported by this backend")
+    }
+
+    /// Apply upserts using persistent subtree sharing. False means the backend/base uses the
+    /// legacy snapshot format; the caller must authenticate and migrate the full base instead.
+    fn patch_committed_data_dataset(
+        &self,
+        _base: Felt,
+        _root: Felt,
+        _entries: Vec<(Felt, Felt)>,
+        _checkpoint: Option<u64>,
+    ) -> Result<bool> {
+        Ok(false)
     }
 
     fn write_header(&self, header: BlockHeaderWithSignatures) -> Result<()>;
@@ -326,6 +358,21 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     fn write_mempool_transaction(&self, tx: &ValidatedTransaction) -> Result<()>;
     fn write_external_outbox(&self, tx: &ValidatedTransaction) -> Result<ExternalOutboxId>;
     fn delete_external_outbox(&self, id: ExternalOutboxId) -> Result<()>;
+
+    fn store_recovery_record(&self, _record: &crate::committed_data_recovery::RecoveryRecord) -> Result<String> {
+        anyhow::bail!("Recovery storage unsupported")
+    }
+    fn mark_recovery_exported(&self, _id: &str) -> Result<()> {
+        anyhow::bail!("Recovery storage unsupported")
+    }
+    fn write_recovery_admission(
+        &self,
+        _tx: &ValidatedTransaction,
+        _dependencies: &[String],
+        _export: bool,
+    ) -> Result<()> {
+        anyhow::bail!("Recovery storage unsupported")
+    }
 
     /// Write a state diff to the global tries.
     /// Returns the new state root and timing information.

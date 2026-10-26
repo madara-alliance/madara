@@ -9591,6 +9591,7 @@ dependencies = [
  "lazy_static",
  "libc",
  "librocksdb-sys",
+ "lru 0.12.5",
  "m-cairo-test-contracts",
  "mc-class-exec",
  "mc-telemetry",
@@ -9621,6 +9622,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "sha2",
  "siphasher",
  "smallvec",
  "starknet-rust-core 0.19.0-rc.2",
@@ -9635,6 +9637,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid 1.23.0",
+ "zstd",
 ]
 
 [[package]]
@@ -9776,6 +9779,7 @@ dependencies = [
  "mp-chain-config",
  "mp-class",
  "mp-convert",
+ "mp-gateway",
  "mp-receipt",
  "mp-rpc",
  "mp-transactions",

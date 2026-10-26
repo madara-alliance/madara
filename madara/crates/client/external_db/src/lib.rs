@@ -67,6 +67,7 @@
 pub mod config;
 pub mod metrics;
 pub mod mongodb;
+pub mod recovery;
 pub mod service;
 pub mod writer;
 

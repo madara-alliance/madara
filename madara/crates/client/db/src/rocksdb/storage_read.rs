@@ -221,6 +221,25 @@ impl MadaraStorageRead for RocksDBStorage {
         self.inner.iter_external_outbox(limit).map(|res| res.context("Getting external outbox transactions"))
     }
 
+    fn recovery_pending_bytes(&self) -> Result<u64> {
+        self.inner.pending_recovery_bytes()
+    }
+    fn find_recovery_record(&self, key: &[u8]) -> Result<Option<String>> {
+        self.inner.find_recovery_record(key)
+    }
+    fn get_recovery_record(&self, id: &str) -> Result<Option<crate::committed_data_recovery::RecoveryRecord>> {
+        self.inner.get_recovery_record(id)
+    }
+    fn get_recovery_manifest(&self, id: &str) -> Result<Option<crate::committed_data_recovery::RecoveryManifest>> {
+        self.inner.get_recovery_manifest(id)
+    }
+    fn pending_recovery_records(&self, limit: usize) -> Result<Vec<String>> {
+        self.inner.pending_recovery_records(limit)
+    }
+    fn recovery_dependencies(&self, hash: Felt) -> Result<Vec<String>> {
+        self.inner.recovery_dependencies(hash)
+    }
+
     fn get_external_outbox_size_estimate(&self) -> Result<u64> {
         self.inner.external_outbox_size_estimate().context("Getting external outbox size estimate")
     }

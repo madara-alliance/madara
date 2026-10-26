@@ -92,6 +92,24 @@ pub fn get_migrations() -> &'static [Migration] {
             name: "v15→v16: additive committed-data storage (no-op)",
             migrate: super::revisions::revision_0016::migrate,
         },
+        Migration {
+            from_version: 16,
+            to_version: 17,
+            name: "v16→v17: persistent committed-data subtree sharing (no-op)",
+            migrate: super::revisions::revision_0017::migrate,
+        },
+        Migration {
+            from_version: 17,
+            to_version: 18,
+            name: "v17→v18: committed-data recovery",
+            migrate: super::revisions::revision_0018::migrate,
+        },
+        Migration {
+            from_version: 18,
+            to_version: 19,
+            name: "v18→v19: temporary committed-data upload payloads",
+            migrate: super::revisions::revision_0019::migrate,
+        },
     ]
 }
 

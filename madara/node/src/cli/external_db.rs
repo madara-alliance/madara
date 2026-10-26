@@ -5,6 +5,16 @@ use serde::{Deserialize, Serialize};
 /// Parameters used to configure external database storage for mempool transactions.
 #[derive(Debug, Clone, Args, Deserialize, Serialize)]
 pub struct ExternalDbParams {
+    /// Operator-only: restore these complete committed-data manifest IDs before services start.
+    /// Use alongside an older chain DB snapshot, then replay its missing backed-up transactions.
+    #[arg(long, value_delimiter = ',')]
+    #[serde(default)]
+    pub restore_committed_data_records: Vec<String>,
+    /// Explicit transaction hashes to restore (data first) from Mongo before normal mempool reload.
+    #[arg(long, value_delimiter = ',')]
+    #[serde(default)]
+    pub restore_committed_data_transactions: Vec<mp_convert::Felt>,
+
     /// Enable external database storage for mempool transactions.
     #[arg(env = "MADARA_EXTERNAL_DB_ENABLED", long, default_value = "false")]
     pub external_db_enabled: bool,
@@ -61,6 +71,8 @@ pub struct ExternalDbParams {
 impl Default for ExternalDbParams {
     fn default() -> Self {
         Self {
+            restore_committed_data_records: Vec::new(),
+            restore_committed_data_transactions: Vec::new(),
             external_db_enabled: false,
             external_db_mongodb_uri: None,
             external_db_database: None,

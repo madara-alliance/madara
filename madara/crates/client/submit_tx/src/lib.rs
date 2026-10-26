@@ -275,6 +275,15 @@ pub trait TransactionLookup: Send + Sync {
 /// and is usuallt used by the RPC, gateway and p2p interfaces.
 #[async_trait]
 pub trait SubmitTransaction: Send + Sync {
+    /// Local-only admission with durable dataset dependencies. Remote backends must fail closed.
+    async fn submit_committed_data_transaction(
+        &self,
+        _tx: mp_rpc::v0_10_2::BroadcastedTxn,
+        _dependencies: Vec<String>,
+    ) -> Result<mp_convert::Felt, SubmitTransactionError> {
+        Err(SubmitTransactionError::Unsupported)
+    }
+
     /// Madara specific.
     async fn submit_declare_v0_transaction(
         &self,
@@ -312,6 +321,14 @@ pub trait SubmitL1HandlerTransaction: Send + Sync {
 /// This should never be directly exposed to users.
 #[async_trait]
 pub trait SubmitValidatedTransaction: Send + Sync {
+    async fn submit_validated_with_committed_data(
+        &self,
+        _tx: ValidatedTransaction,
+        _dependencies: Vec<String>,
+    ) -> Result<(), SubmitTransactionError> {
+        Err(SubmitTransactionError::Unsupported)
+    }
+
     async fn submit_validated_transaction(&self, tx: ValidatedTransaction) -> Result<(), SubmitTransactionError>;
 }
 
@@ -363,6 +380,14 @@ impl<D: MadaraStorage> TransactionLookup for Mempool<D> {
 
 #[async_trait]
 impl<D: MadaraStorage> SubmitValidatedTransaction for Mempool<D> {
+    async fn submit_validated_with_committed_data(
+        &self,
+        tx: ValidatedTransaction,
+        dependencies: Vec<String>,
+    ) -> Result<(), SubmitTransactionError> {
+        Ok(self.accept_tx_with_committed_data(tx, dependencies).await?)
+    }
+
     async fn submit_validated_transaction(&self, tx: ValidatedTransaction) -> Result<(), SubmitTransactionError> {
         Ok(self.accept_tx(tx).await?)
     }

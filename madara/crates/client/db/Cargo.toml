@@ -50,6 +50,7 @@ dashmap.workspace = true
 futures = { workspace = true }
 itertools.workspace = true
 libc.workspace = true
+lru = "0.12.5"
 librocksdb-sys = { workspace = true }
 # Optional deps used by `feature = "testing"` so downstream crates can enable
 # `mc-db/testing` without relying on `dev-dependencies`.
@@ -59,6 +60,8 @@ rayon = { workspace = true }
 rocksdb.workspace = true
 serde = { workspace = true }
 siphasher.workspace = true
+sha2 = "0.10"
+zstd = "0.13"
 smallvec.workspace = true
 # Optional for the same reason as `m-cairo-test-contracts` above.
 starknet-core = { workspace = true, optional = true }

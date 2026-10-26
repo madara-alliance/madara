@@ -3,8 +3,10 @@
 use crate::config::ExternalDbConfig;
 use crate::metrics::ExternalDbMetrics;
 use crate::mongodb::{indexes::get_index_models, MempoolTransactionDocument, MongoClient, ResourceBoundsDoc};
+use crate::recovery::RecoveryArchive;
 use anyhow::Context;
-use mc_db::MadaraBackend;
+use mc_db::committed_data_recovery::RecoveryRecord;
+use mc_db::{MadaraBackend, MadaraStorageRead, MadaraStorageWrite};
 use mongodb::{bson, error::ErrorKind, options::InsertManyOptions};
 use mp_convert::FeltHexDisplay;
 use mp_transactions::{
@@ -23,6 +25,13 @@ const DUPLICATE_KEY_ERROR_CODE: i32 = 11000;
 
 #[async_trait::async_trait]
 trait ExternalDbSink: Send + Sync {
+    async fn backup_complete(&self, _id: &str) -> anyhow::Result<bool> {
+        anyhow::bail!("Dataset backup unsupported")
+    }
+    async fn backup_dataset(&self, _record: &RecoveryRecord) -> anyhow::Result<()> {
+        anyhow::bail!("Dataset backup unsupported")
+    }
+
     async fn ensure_indexes(&self) -> anyhow::Result<()>;
     async fn insert_many(&self, docs: Vec<MempoolTransactionDocument>) -> anyhow::Result<InsertManySummary>;
     async fn delete_by_hashes(&self, chain_id: &str, hashes: Vec<String>) -> anyhow::Result<u64>;
@@ -42,11 +51,19 @@ struct DrainSummary {
 }
 
 struct MongoSink {
+    recovery: RecoveryArchive,
     collection: mongodb::Collection<MempoolTransactionDocument>,
 }
 
 #[async_trait::async_trait]
 impl ExternalDbSink for MongoSink {
+    async fn backup_complete(&self, id: &str) -> anyhow::Result<bool> {
+        self.recovery.complete(id).await
+    }
+    async fn backup_dataset(&self, record: &RecoveryRecord) -> anyhow::Result<()> {
+        self.recovery.upload(record).await
+    }
+
     async fn ensure_indexes(&self) -> anyhow::Result<()> {
         let indexes = get_index_models();
         self.collection.create_indexes(indexes).await?;
@@ -60,10 +77,28 @@ impl ExternalDbSink for MongoSink {
 
         let total = docs.len();
         let options = InsertManyOptions::builder().ordered(false).build();
-        match self.collection.insert_many(docs).with_options(options).await {
+        match self.collection.insert_many(&docs).with_options(options).await {
             Ok(result) => Ok(InsertManySummary { inserted: result.inserted_ids.len(), duplicates: 0 }),
             Err(err) => match classify_duplicate_only_error(&err) {
-                Some(duplicates) => Ok(InsertManySummary { inserted: total.saturating_sub(duplicates), duplicates }),
+                Some(duplicates) => {
+                    // A duplicate can be visible on the primary after a previous write timed out.
+                    // Require majority-visible matching replay data before deleting the local outbox.
+                    for expected in &docs {
+                        let stored = self
+                            .collection
+                            .find_one(bson::doc! {"_id": expected.id.clone()})
+                            .await?
+                            .context("Transaction backup is not majority-visible; retaining outbox")?;
+                        anyhow::ensure!(
+                            stored.tx_hash == expected.tx_hash
+                                && stored.chain_id == expected.chain_id
+                                && stored.raw_transaction == expected.raw_transaction
+                                && stored.committed_data == expected.committed_data,
+                            "Conflicting transaction backup; retaining outbox"
+                        );
+                    }
+                    Ok(InsertManySummary { inserted: total.saturating_sub(duplicates), duplicates })
+                }
                 None => Err(err.into()),
             },
         }
@@ -80,7 +115,7 @@ impl ExternalDbSink for MongoSink {
     }
 }
 
-/// Count duplicate-key errors when all write errors are duplicates (safe to delete outbox).
+/// Classify duplicate-only failures; durable matching-document readback is still required.
 fn classify_duplicate_only_error(err: &mongodb::error::Error) -> Option<usize> {
     let ErrorKind::InsertMany(failure) = &*err.kind else { return None };
     if failure.write_concern_error.is_some() {
@@ -305,26 +340,51 @@ impl ExternalDbWorker {
         self.metrics.batch_size.record(self.config.batch_size as u64, &[]);
         self.metrics.mongodb_up.record(0, &[]);
 
-        let mongo = MongoClient::new(&self.config).await;
-        let mongo = match mongo {
-            Ok(mongo) => {
-                self.metrics.mongodb_up.record(1, &[]);
-                mongo
+        // Remote availability must not gate same-volume recovery or local durable admission.
+        let mut startup_backoff = RetryBackoff::new(
+            Duration::from_millis(self.config.retry_backoff_ms),
+            Duration::from_millis(self.config.retry_backoff_max_ms),
+        );
+        let sink = loop {
+            if let Ok(bytes) = self.backend.db.recovery_pending_bytes() {
+                self.metrics.committed_data_pending_bytes.record(bytes, &[]);
             }
-            Err(err) => {
-                self.metrics.mongodb_write_errors.add(1, &[]);
-                self.metrics.mongodb_up.record(0, &[]);
-                return Err(err).context("Connecting to MongoDB");
+            let connect = async {
+                let mongo = MongoClient::new(&self.config).await?;
+                let sink = MongoSink {
+                    collection: mongo.collection().clone(),
+                    recovery: RecoveryArchive::new(
+                        &mongo.client().database(&self.config.database_name),
+                        &self.config.collection_name,
+                    ),
+                };
+                sink.ensure_indexes().await?;
+                Ok::<_, anyhow::Error>(sink)
+            };
+            let result = tokio::select! { _=ctx.cancelled()=>return Ok(()), result=connect=>result };
+            match result {
+                Ok(sink) => {
+                    self.metrics.mongodb_up.record(1, &[]);
+                    break sink;
+                }
+                Err(err) => {
+                    self.metrics.mongodb_up.record(0, &[]);
+                    self.metrics.mongodb_write_errors.add(1, &[]);
+                    self.metrics.retry_count.add(1, &[]);
+                    tracing::warn!("External backup unavailable during startup; keeping local outbox: {err:#}");
+                    tokio::select! { _=ctx.cancelled()=>return Ok(()), _=tokio::time::sleep(startup_backoff.next_delay())=>{} }
+                }
             }
         };
-        let sink = MongoSink { collection: mongo.collection().clone() };
-        if let Err(err) = sink.ensure_indexes().await {
-            self.metrics.mongodb_write_errors.add(1, &[]);
-            self.metrics.mongodb_up.record(0, &[]);
-            return Err(err).context("Ensuring external DB indexes");
+        // An interrupted upload is retried from the durable outbox; never wait on Mongo
+        // indefinitely while the node is shutting down.
+        let Some(startup) = ctx.run_until_cancelled(self.startup_sync(&sink)).await else { return Ok(()) };
+        match startup {
+            Ok(drained) => self.metrics.startup_sync_drained.add(drained as u64, &[]),
+            Err(err) => {
+                tracing::warn!("Initial backup drain interrupted; normal retry will retain pending data: {err:#}")
+            }
         }
-        let drained = self.startup_sync(&sink).await.context("External DB startup sync")?;
-        self.metrics.startup_sync_drained.add(drained as u64, &[]);
 
         let mut retention = RetentionScheduler::new(
             BackendL1ConfirmationSource::new(
@@ -366,12 +426,11 @@ impl ExternalDbWorker {
                         }
                     }
 
-                    match self.drain_outbox_once(&sink).await {
-                        Ok(summary) => {
-                            if summary.attempted > 0 {
-                                retry_backoff.reset();
-                                retry_at = None;
-                            }
+                    let Some(result) = ctx.run_until_cancelled(self.drain_outbox_once(&sink)).await else { break };
+                    match result {
+                        Ok(_) => {
+                            retry_backoff.reset();
+                            retry_at = None;
                         }
                         Err(err) => {
                             // External DB is optional for availability; on failure we backoff and retry.
@@ -383,7 +442,8 @@ impl ExternalDbWorker {
                     }
                 }
                 _ = retention_interval.tick() => {
-                    if let Err(err) = retention.tick(&sink).await {
+                    let Some(result) = ctx.run_until_cancelled(retention.tick(&sink)).await else { break };
+                    if let Err(err) = result {
                         self.metrics.retention_tick_errors.add(1, &[]);
                         tracing::warn!("External DB retention tick failed: {err:#}");
                     }
@@ -394,8 +454,37 @@ impl ExternalDbWorker {
         Ok(())
     }
 
+    async fn export_recovery_dependency(&self, sink: &dyn ExternalDbSink, target: &str) -> anyhow::Result<()> {
+        let mut path = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        let mut next = Some(target.to_owned());
+        while let Some(id) = next {
+            anyhow::ensure!(seen.insert(id.clone()), "Recovery dependency cycle");
+            if sink.backup_complete(&id).await? {
+                self.backend.db.mark_recovery_exported(&id)?;
+                break;
+            }
+            let record = self.backend.db.get_recovery_record(&id)?.context("Missing local recovery dependency")?;
+            next = record.manifest.base.clone();
+            path.push(id);
+        }
+        for id in path.into_iter().rev() {
+            let record = self.backend.db.get_recovery_record(&id)?.context("Missing recovery record")?;
+            let started = Instant::now();
+            sink.backup_dataset(&record).await?;
+            self.metrics.committed_data_backup_seconds.record(started.elapsed().as_secs_f64(), &[]);
+            self.backend.db.mark_recovery_exported(&id)?;
+        }
+        Ok(())
+    }
+
     /// Drain one outbox batch, write to Mongo, then delete local entries.
     async fn drain_outbox_once(&self, sink: &dyn ExternalDbSink) -> anyhow::Result<DrainSummary> {
+        self.metrics.committed_data_pending_bytes.record(self.backend.db.recovery_pending_bytes()?, &[]);
+        // Standalone imports are archived too. One record per pass bounds exporter working memory.
+        for id in self.backend.db.pending_recovery_records(1)? {
+            self.export_recovery_dependency(sink, &id).await?;
+        }
         let mut entries = Vec::new();
         for res in self.backend.get_external_outbox_transactions(self.config.batch_size) {
             match res {
@@ -415,8 +504,15 @@ impl ExternalDbWorker {
 
         let mut documents = Vec::with_capacity(entries.len());
         for entry in &entries {
+            let dependencies = self.backend.db.recovery_dependencies(entry.tx.hash)?;
+            for id in &dependencies {
+                self.export_recovery_dependency(sink, id).await?;
+            }
             match self.convert_to_document(&entry.tx) {
-                Ok(doc) => documents.push(doc),
+                Ok(mut doc) => {
+                    doc.committed_data = dependencies;
+                    documents.push(doc);
+                }
                 Err(err) => {
                     self.metrics.document_convert_errors.add(1, &[]);
                     return Err(err).context("Converting validated tx to MongoDB document");
@@ -485,6 +581,7 @@ impl ExternalDbWorker {
         let id = bson::Binary { subtype: bson::spec::BinarySubtype::Uuid, bytes: id.as_bytes().to_vec() };
 
         Ok(MempoolTransactionDocument {
+            committed_data: Vec::new(),
             id,
             tx_hash: format!("{}", tx.hash.hex_display()),
             tx_type,
@@ -677,6 +774,10 @@ mod tests {
     use std::sync::Mutex;
 
     struct FakeSink {
+        backups: Mutex<std::collections::HashSet<String>>,
+        fail_backup: std::sync::atomic::AtomicBool,
+        block_backup: std::sync::atomic::AtomicBool,
+        backup_entered: tokio::sync::Notify,
         responses: Mutex<Vec<anyhow::Result<InsertManySummary>>>,
         delete_responses: Mutex<Vec<anyhow::Result<u64>>>,
         calls: Mutex<Vec<Vec<MempoolTransactionDocument>>>,
@@ -693,6 +794,10 @@ mod tests {
             delete_responses: Vec<anyhow::Result<u64>>,
         ) -> Self {
             Self {
+                backups: Mutex::new(Default::default()),
+                fail_backup: std::sync::atomic::AtomicBool::new(false),
+                block_backup: std::sync::atomic::AtomicBool::new(false),
+                backup_entered: tokio::sync::Notify::new(),
                 responses: Mutex::new(responses),
                 delete_responses: Mutex::new(delete_responses),
                 calls: Mutex::new(Vec::new()),
@@ -703,11 +808,29 @@ mod tests {
 
     #[async_trait::async_trait]
     impl ExternalDbSink for FakeSink {
+        async fn backup_complete(&self, id: &str) -> anyhow::Result<bool> {
+            Ok(self.backups.lock().unwrap().contains(id))
+        }
+        async fn backup_dataset(&self, record: &RecoveryRecord) -> anyhow::Result<()> {
+            if self.block_backup.load(std::sync::atomic::Ordering::SeqCst) {
+                self.backup_entered.notify_one();
+                std::future::pending::<()>().await;
+            }
+            anyhow::ensure!(!self.fail_backup.load(std::sync::atomic::Ordering::SeqCst), "Interrupted dataset upload");
+            record.decode()?;
+            self.backups.lock().unwrap().insert(record.manifest.id()?);
+            Ok(())
+        }
         async fn ensure_indexes(&self) -> anyhow::Result<()> {
             Ok(())
         }
 
         async fn insert_many(&self, docs: Vec<MempoolTransactionDocument>) -> anyhow::Result<InsertManySummary> {
+            assert!(docs.iter().all(|doc| doc.committed_data.iter().all(|id| self
+                .backups
+                .lock()
+                .unwrap()
+                .contains(id))));
             self.calls.lock().unwrap().push(docs);
             self.responses.lock().unwrap().remove(0)
         }
@@ -732,6 +855,104 @@ mod tests {
             sender,
             None,
         )
+    }
+
+    #[tokio::test]
+    #[ignore = "requires disposable MongoDB in the isolated recovery worker"]
+    async fn mongo_duplicate_retry_requires_matching_recovery_data() {
+        let uri = std::env::var("RECOVERY_TEST_MONGO_URI").expect("isolated Mongo URI required");
+        let database_name = format!("recovery_duplicates_{}", uuid::Uuid::new_v4().simple());
+        let mut config = ExternalDbConfig::new(uri);
+        config.database_name = database_name.clone();
+        let client = MongoClient::new(&config).await.unwrap();
+        let database = client.client().database(&database_name);
+        let sink = MongoSink {
+            collection: client.collection().clone(),
+            recovery: RecoveryArchive::new(&database, &config.collection_name),
+        };
+        let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+        let worker =
+            ExternalDbWorker::new(config, backend, "MADARA_TEST".into(), Arc::new(ExternalDbMetrics::register()));
+        let document = worker.convert_to_document(&make_validated_tx(44)).unwrap();
+        let inserted = sink.insert_many(vec![document.clone()]).await.unwrap();
+        assert_eq!(inserted.inserted, 1);
+        let retried = sink.insert_many(vec![document.clone()]).await.unwrap();
+        assert_eq!(retried.duplicates, 1);
+        let mut conflict = document;
+        conflict.committed_data.push("different-recovery-dependency".into());
+        assert!(sink.insert_many(vec![conflict]).await.is_err());
+        assert_eq!(sink.collection.count_documents(bson::doc! {}).await.unwrap(), 1);
+        database.drop().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn recovery_cancelled_upload_keeps_payload_and_transaction_for_retry() {
+        use blockifier::execution::syscalls::committed_data::CommittedDataSet;
+        use std::sync::atomic::Ordering;
+        let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+        let entries = vec![(Felt::ONE, Felt::TWO)];
+        let root = CommittedDataSet::new(entries.clone()).unwrap().root();
+        backend.import_committed_data_snapshot(root, entries.clone()).await.unwrap();
+        let id = backend.journal_committed_data(None, root, entries).await.unwrap();
+        backend.db.write_recovery_admission(&make_validated_tx(43), &[id.clone()], true).unwrap();
+        let worker = ExternalDbWorker::new(
+            ExternalDbConfig::new("mongodb://localhost:27017".into()),
+            backend.clone(),
+            "MADARA_TEST".into(),
+            Arc::new(ExternalDbMetrics::register()),
+        );
+        let sink = FakeSink::new(vec![Ok(InsertManySummary { inserted: 1, duplicates: 0 })]);
+        sink.block_backup.store(true, Ordering::SeqCst);
+        let mut ctx = ServiceContext::new_for_testing();
+        let stop = ctx.clone();
+        let (result, ()) = tokio::time::timeout(Duration::from_secs(5), async {
+            tokio::join!(ctx.run_until_cancelled(worker.startup_sync(&sink)), async {
+                sink.backup_entered.notified().await;
+                stop.cancel_global();
+            })
+        })
+        .await
+        .unwrap();
+        assert!(result.is_none());
+        assert!(backend.db.get_recovery_record(&id).unwrap().is_some());
+        assert_eq!(backend.get_external_outbox_transactions(10).count(), 1);
+        assert!(sink.calls.lock().unwrap().is_empty());
+        sink.block_backup.store(false, Ordering::SeqCst);
+        worker.drain_outbox_once(&sink).await.unwrap();
+        assert!(backend.db.get_recovery_record(&id).unwrap().is_none());
+        assert_eq!(backend.get_external_outbox_transactions(10).count(), 0);
+    }
+
+    #[tokio::test]
+    async fn recovery_upload_failure_keeps_transaction_and_data_pending() {
+        use blockifier::execution::syscalls::committed_data::CommittedDataSet;
+        let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+        let entries = vec![(Felt::ONE, Felt::TWO)];
+        let root = CommittedDataSet::new(entries.clone()).unwrap().root();
+        backend.import_committed_data_snapshot(root, entries.clone()).await.unwrap();
+        let id = backend.journal_committed_data(None, root, entries).await.unwrap();
+        backend.db.write_recovery_admission(&make_validated_tx(42), &[id.clone()], true).unwrap();
+        let worker = ExternalDbWorker::new(
+            ExternalDbConfig::new("mongodb://localhost:27017".into()),
+            backend.clone(),
+            "MADARA_TEST".into(),
+            Arc::new(ExternalDbMetrics::register()),
+        );
+        let sink = FakeSink::new(vec![Ok(InsertManySummary { inserted: 1, duplicates: 0 })]);
+        sink.fail_backup.store(true, std::sync::atomic::Ordering::SeqCst);
+        assert!(worker.drain_outbox_once(&sink).await.is_err());
+        assert!(sink.calls.lock().unwrap().is_empty());
+        assert_eq!(backend.get_external_outbox_transactions(10).count(), 1);
+        assert_eq!(backend.db.pending_recovery_records(10).unwrap(), vec![id.clone()]);
+        assert!(backend.db.get_recovery_record(&id).unwrap().is_some());
+        assert!(backend.db.recovery_pending_bytes().unwrap() > 0);
+        sink.fail_backup.store(false, std::sync::atomic::Ordering::SeqCst);
+        worker.drain_outbox_once(&sink).await.unwrap();
+        assert_eq!(sink.calls.lock().unwrap()[0][0].committed_data, vec![id.clone()]);
+        assert!(backend.db.get_recovery_record(&id).unwrap().is_none());
+        assert!(backend.db.get_recovery_manifest(&id).unwrap().is_some());
+        assert_eq!(backend.get_external_outbox_transactions(10).count(), 0);
+        assert!(backend.db.pending_recovery_records(10).unwrap().is_empty());
     }
 
     /// Drain writes all tx types, then clears the outbox batch.
