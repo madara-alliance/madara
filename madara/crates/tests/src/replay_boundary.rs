@@ -115,7 +115,11 @@ fn replay_node_builder() -> MadaraCmdBuilder {
 }
 
 async fn start_replay_node() -> MadaraCmd {
-    let mut node = replay_node_builder().run();
+    start_replay_node_with(replay_node_builder()).await
+}
+
+async fn start_replay_node_with(builder: MadaraCmdBuilder) -> MadaraCmd {
+    let mut node = builder.run();
     node.wait_for_ready().await;
     node.wait_for_sync_to(0).await;
     node
@@ -297,8 +301,8 @@ fn replay_request(block: &BlockWithTxHashes, transaction_hash: Felt, invoke_tran
 #[tokio::test]
 async fn managed_replay_executes_nonempty_consecutive_blocks() {
     let _ = tracing_subscriber::fmt().with_test_writer().try_init();
-    let mut source = start_replay_node().await;
-    let mut target = start_replay_node().await;
+    let builder = replay_node_builder();
+    let mut source = start_replay_node_with(builder.clone()).await;
     let (start_block_n, tx_hashes, invoke_txs) = prepare_replay_transactions(&source, 2).await;
 
     for index in 0..2 {
@@ -317,6 +321,20 @@ async fn managed_replay_executes_nonempty_consecutive_blocks() {
         };
         source_blocks.push(block);
     }
+
+    // Restart from the exact source genesis rather than launching an independent devnet.
+    // Devnet genesis timestamps are wall-clock based, so two fresh nodes can have different
+    // genesis hashes even though their configured state is identical. Reverting the source DB
+    // also exercises the same recovery shape used by an operator before replaying canonical
+    // blocks after a divergence.
+    let genesis = source.json_rpc().get_block_with_tx_hashes(BlockId::Number(0)).await.unwrap();
+    let MaybePreConfirmedBlockWithTxHashes::Block(genesis) = genesis else {
+        panic!("genesis block should be confirmed");
+    };
+    admin_rpc_call(&source, "madara_revertToAndShutdown", json!([format!("{:#x}", genesis.block_hash)])).await.unwrap();
+    source.stop();
+
+    let mut target = start_replay_node_with(builder).await;
 
     let request_0 = replay_request(&source_blocks[0], tx_hashes[0], invoke_txs[0].clone());
     let request_1 = replay_request(&source_blocks[1], tx_hashes[1], invoke_txs[1].clone());
