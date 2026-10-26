@@ -341,6 +341,47 @@ async fn process_job_uses_configured_state_transition_verification_delay() {
     JobHandlerService::process_job(job.id, services.config).await.unwrap();
 }
 
+#[tokio::test]
+async fn process_job_queue_failure_marks_job_failed_and_preserves_external_id() {
+    let _test_lock = acquire_test_lock();
+    let mut queue = MockQueueClient::new();
+    queue
+        .expect_send_message()
+        .times(1)
+        .returning(|_, _, _| Err(QueueError::FailedToGetQueueUrl("test queue unavailable".to_string())));
+    let mut alerts = MockAlertClient::new();
+    alerts.expect_send_message().times(1).returning(|_| Ok(()));
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Mock(MockType::Queue(Box::new(queue))))
+        .configure_alerts(ConfigType::Mock(MockType::Alerts(Box::new(alerts))))
+        .build()
+        .await;
+    let job = build_job_item(JobType::ProofCreation, JobStatus::Created, 3);
+    services.config.database().create_job(job.clone()).await.unwrap();
+
+    let mut job_handler = MockJobHandlerTrait::new();
+    job_handler.expect_check_ready_to_process().times(1).returning(|_, _| Ok(()));
+    job_handler.expect_process_job().times(1).returning(|_, _| Ok("proof-task-id".to_string()));
+    job_handler.expect_verification_polling_delay_seconds().times(1).return_const(2u64);
+    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
+    let ctx = get_job_handler_context_safe();
+    ctx.expect().times(1).with(eq(JobType::ProofCreation)).returning(move |_| Arc::clone(&job_handler));
+
+    JobHandlerService::process_job(job.id, services.config.clone()).await.unwrap();
+
+    let failed_job = services.config.database().get_job_by_id(job.id).await.unwrap().unwrap();
+    assert_eq!(failed_job.status, JobStatus::Failed);
+    assert_eq!(failed_job.external_id, ExternalId::String(Box::from("proof-task-id")));
+    assert!(failed_job
+        .metadata
+        .common
+        .failure_reason
+        .as_deref()
+        .unwrap()
+        .contains("Failed to queue processed job for verification"));
+}
+
 #[rstest]
 #[case(JobType::StateTransition, false, QueueType::UpdateStateJobVerification, Some(Duration::from_secs(7)))]
 #[case(JobType::StateTransition, true, QueueType::PriorityVerificationQueue, None)]
