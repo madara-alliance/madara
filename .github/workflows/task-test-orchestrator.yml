@@ -113,6 +113,11 @@ jobs:
         with:
           python-version: ${{ env.BUILD_PYTHON_VERSION }}
 
+      # The acceptance fixture is compiled from the exact Sequencer dependency at runtime.
+      # nextest archives contain executables, but do not restore git dependency source trees.
+      - name: Restore pinned sources for the committed-data Cairo fixture
+        run: cargo fetch --locked --target x86_64-unknown-linux-gnu
+
       - name: Run tests
         continue-on-error: false
         env:
