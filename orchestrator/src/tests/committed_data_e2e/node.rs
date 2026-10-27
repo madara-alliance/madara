@@ -20,10 +20,6 @@ pub(super) struct Node {
     pub directory: tempfile::TempDir,
 }
 
-fn port() -> Result<u16> {
-    Ok(TcpListener::bind("127.0.0.1:0")?.local_addr()?.port())
-}
-
 pub(super) async fn rpc(url: &str, method: &str, params: Value) -> Result<Value> {
     let response: Value = reqwest::Client::new()
         .post(url)
@@ -51,10 +47,12 @@ impl Node {
             std::env::var("MADARA_ORCHESTRATOR_MADARA_BINARY_PATH")
                 .context("acceptance test requires the CI-built Madara binary")?,
         );
-        let rpc_port = port()?;
-        let admin_port = port()?;
-        let private_port = port()?;
-        let gateway_port = port()?;
+        // Hold all four reservations until spawn so the OS cannot reuse a port within this node.
+        let reservations = (0..4).map(|_| TcpListener::bind("127.0.0.1:0")).collect::<std::io::Result<Vec<_>>>()?;
+        let rpc_port = reservations[0].local_addr()?.port();
+        let admin_port = reservations[1].local_addr()?.port();
+        let private_port = reservations[2].local_addr()?.port();
+        let gateway_port = reservations[3].local_addr()?.port();
         let mut args: Vec<String> = [
             "--base-path",
             directory.path().to_str().unwrap(),
@@ -111,6 +109,7 @@ impl Node {
                 "1000".into(),
             ]),
         }
+        drop(reservations);
         let child = Self::spawn(&binary, &args, directory.path())?;
         let mut node = Self {
             child,
@@ -162,6 +161,37 @@ impl Node {
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
         anyhow::bail!("transaction confirmation deadline exceeded")
+    }
+
+    /// Sample the child process, not the test runner (which also constructs reference trees and
+    /// executes SNOS). On Linux VmHWM is peak RSS since this child started; a restart resets it.
+    /// Disk bytes include every file currently in the isolated directory, including WAL/logs.
+    pub fn footprint(&self) -> Result<Value> {
+        fn directory_bytes(path: &std::path::Path) -> std::io::Result<u64> {
+            let mut bytes = 0;
+            for entry in std::fs::read_dir(path)? {
+                let entry = entry?;
+                let metadata = match entry.metadata() {
+                    Ok(metadata) => metadata,
+                    // Compaction may unlink an obsolete SST between read_dir and stat.
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                    Err(error) => return Err(error),
+                };
+                bytes += if metadata.is_dir() { directory_bytes(&entry.path())? } else { metadata.len() };
+            }
+            Ok(bytes)
+        }
+        let status = std::fs::read_to_string(format!("/proc/{}/status", self.child.id())).ok();
+        let kib = |name: &str| {
+            status.as_ref().and_then(|status| {
+                status.lines().find_map(|line| {
+                    let mut fields = line.split_whitespace();
+                    (fields.next()? == name).then(|| fields.next()?.parse::<u64>().ok()).flatten()
+                })
+            })
+        };
+        Ok(json!({"directory_bytes_including_wal_and_logs": directory_bytes(self.directory.path())?,
+            "rss_kib": kib("VmRSS:"), "peak_rss_kib": kib("VmHWM:")}))
     }
 
     pub async fn restart_after_revert(&mut self, block_hash: Value) -> Result<()> {

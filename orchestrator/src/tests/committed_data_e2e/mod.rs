@@ -60,6 +60,7 @@ async fn import(node: &Node, tree: &CommittedDataSet) -> Result<()> {
 #[tokio::test(flavor = "multi_thread")]
 async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
     let mut source = Node::start(None).await?;
+    save("madara_baseline", &source.footprint()?)?;
     let provider = Arc::new(JsonRpcClient::new(HttpTransport::new(source.rpc.parse()?)));
     let chain: Felt = serde_json::from_value(rpc(&source.rpc, "starknet_chainId", json!([])).await?)?;
     let signer = LocalWallet::from(SigningKey::from_secret_scalar(Felt::from_hex(SECRET)?));
@@ -70,7 +71,7 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
         .ok()
         .map(|value| value.parse::<usize>())
         .transpose()?
-        .unwrap_or(2048);
+        .unwrap_or(100_000);
     ensure!((1024..=committed_data::MAX_COMMITTED_DATA_VALUES).contains(&entries), "invalid acceptance dataset size");
     let values: Vec<_> =
         (0..entries).map(|index| (Poseidon::hash(&Felt::from(index), &Felt::ONE), Felt::from(index + 10))).collect();
@@ -85,6 +86,7 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
     }
     let deep = CommittedDataSet::new(deep_values)?;
     import(&source, &deep).await?;
+    save("madara_after_import", &source.footprint()?)?;
     ensure!(deep.witness(Felt::ZERO).unwrap().siblings.len() == 252, "max-depth fixture drift");
     // Use the same caught-error contract as Blockifier's VM/native parity regression. The
     // fixture is compiled from the pinned Sequencer source, rather than copied stale bytecode.
@@ -178,6 +180,7 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
         observations.push(observation);
         accepted.push((submitted.transaction_hash, block));
     }
+    save("madara_after_execution", &source.footprint()?)?;
     let replica = Node::start(Some(&source)).await?;
     let target = accepted.last().unwrap().1;
     for _ in 0..180 {
@@ -196,6 +199,7 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
         let replicated = rpc(&replica.rpc, "starknet_traceTransaction", json!([hash])).await?;
         ensure!(original == replicated, "replicated historical trace differs");
     }
+    save("fullnode_after_trace", &replica.footprint()?)?;
     let legacy_reader = Node::start_with_data(Some(&source), false).await?;
     for _ in 0..180 {
         if rpc(&legacy_reader.rpc, "starknet_blockNumber", json!([]))
