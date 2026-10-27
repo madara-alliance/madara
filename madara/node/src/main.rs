@@ -133,6 +133,50 @@ static GLOBAL_ALLOCATOR: jemallocator::Jemalloc = jemallocator::Jemalloc;
 const GREET_IMPL_NAME: &str = "Madara";
 const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issues";
 
+/// Services that may start only after a warp receiver finishes replacing its database.
+fn warp_update_config(run_cmd: &RunCmd) -> Option<WarpUpdateConfig> {
+    if run_cmd.args_preset.warp_update_receiver {
+        let mut deferred_service_start = vec![];
+        let mut deferred_service_stop = vec![];
+
+        if !run_cmd.rpc_params.rpc_disable {
+            deferred_service_start.push(MadaraServiceId::RpcUser);
+        }
+
+        if run_cmd.rpc_params.rpc_admin {
+            deferred_service_start.push(MadaraServiceId::RpcAdmin);
+        }
+
+        if run_cmd.rpc_params.rpc_committed_data {
+            deferred_service_start.push(MadaraServiceId::RpcCommittedData);
+        }
+
+        if run_cmd.backend_params.committed_data_proof_retention_secs.is_some() {
+            deferred_service_start.push(MadaraServiceId::CommittedDataHistory);
+        }
+
+        if run_cmd.gateway_params.any_enabled() {
+            deferred_service_start.push(MadaraServiceId::Gateway);
+        }
+
+        if run_cmd.is_sequencer() {
+            deferred_service_start.push(MadaraServiceId::BlockProduction);
+            deferred_service_stop.push(MadaraServiceId::L2Sync);
+        }
+
+        Some(WarpUpdateConfig {
+            warp_update_port_rpc: run_cmd.l2_sync_params.warp_update_port_rpc,
+            warp_update_port_fgw: run_cmd.l2_sync_params.warp_update_port_fgw,
+            warp_update_shutdown_sender: run_cmd.l2_sync_params.warp_update_shutdown_sender,
+            warp_update_shutdown_receiver: run_cmd.l2_sync_params.warp_update_shutdown_receiver,
+            deferred_service_start,
+            deferred_service_stop,
+        })
+    } else {
+        None
+    }
+}
+
 /// Validates startup controls that require privileged administrative RPC access.
 /// This prevents a node from starting paused without an enabled path to resume intake.
 fn validate_runtime_controls(run_cmd: &RunCmd) -> anyhow::Result<()> {
@@ -374,42 +418,7 @@ async fn main() -> anyhow::Result<()> {
 
     // L2 Sync
 
-    let warp_update = if run_cmd.args_preset.warp_update_receiver {
-        let mut deferred_service_start = vec![];
-        let mut deferred_service_stop = vec![];
-
-        if !run_cmd.rpc_params.rpc_disable {
-            deferred_service_start.push(MadaraServiceId::RpcUser);
-        }
-
-        if run_cmd.rpc_params.rpc_admin {
-            deferred_service_start.push(MadaraServiceId::RpcAdmin);
-        }
-
-        if run_cmd.rpc_params.rpc_committed_data {
-            deferred_service_start.push(MadaraServiceId::RpcCommittedData);
-        }
-
-        if run_cmd.gateway_params.any_enabled() {
-            deferred_service_start.push(MadaraServiceId::Gateway);
-        }
-
-        if run_cmd.is_sequencer() {
-            deferred_service_start.push(MadaraServiceId::BlockProduction);
-            deferred_service_stop.push(MadaraServiceId::L2Sync);
-        }
-
-        Some(WarpUpdateConfig {
-            warp_update_port_rpc: run_cmd.l2_sync_params.warp_update_port_rpc,
-            warp_update_port_fgw: run_cmd.l2_sync_params.warp_update_port_fgw,
-            warp_update_shutdown_sender: run_cmd.l2_sync_params.warp_update_shutdown_sender,
-            warp_update_shutdown_receiver: run_cmd.l2_sync_params.warp_update_shutdown_receiver,
-            deferred_service_start,
-            deferred_service_stop,
-        })
-    } else {
-        None
-    };
+    let warp_update = warp_update_config(&run_cmd);
 
     let service_l2_sync = SyncService::new(
         &run_cmd.l2_sync_params,
@@ -616,4 +625,31 @@ async fn main() -> anyhow::Result<()> {
     }
 
     result
+}
+
+#[cfg(test)]
+mod warp_update_tests {
+    use super::*;
+
+    #[test]
+    fn proof_cleanup_is_deferred_only_for_receivers_with_retention() {
+        for receiver in [false, true] {
+            for retention in [None, Some(0), Some(21600)] {
+                let mut cmd = RunCmd::parse_from(["madara", "--sequencer", "--preset", "devnet"]);
+                cmd.args_preset.warp_update_receiver = receiver;
+                cmd.backend_params.committed_data_proof_retention_secs = retention;
+                let config = warp_update_config(&cmd);
+                assert_eq!(config.is_some(), receiver);
+                if let Some(config) = config {
+                    assert_eq!(
+                        config.deferred_service_start.contains(&MadaraServiceId::CommittedDataHistory),
+                        retention.is_some()
+                    );
+                    assert!(!config.deferred_service_stop.contains(&MadaraServiceId::CommittedDataHistory));
+                    assert!(config.deferred_service_start.contains(&MadaraServiceId::BlockProduction));
+                    assert!(config.deferred_service_stop.contains(&MadaraServiceId::L2Sync));
+                }
+            }
+        }
+    }
 }

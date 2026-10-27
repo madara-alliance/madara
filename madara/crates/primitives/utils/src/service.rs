@@ -459,6 +459,7 @@ impl From<PowerOfTwo> for MadaraServiceId {
             PowerOfTwo::P8 => Self::Mempool,
             PowerOfTwo::P9 => Self::ExternalDb,
             PowerOfTwo::P10 => Self::RpcCommittedData,
+            PowerOfTwo::P11 => Self::CommittedDataHistory,
             _ => Self::Monitor, // Default fallback for unknown values
         }
     }
@@ -602,24 +603,14 @@ impl MadaraServiceMask {
     }
 
     fn active_set(&self) -> Vec<MadaraServiceId> {
-        // NOTE: keep this cursor in sync with the highest `MadaraServiceId`
-        // variant. Any new variant added after `RpcCommittedData` MUST update this
-        // start value, otherwise it will be silently omitted from the iteration
-        // (only used by `tracing::debug!` so the impact is incomplete debug
-        // output, but the bug is easy to miss).
-        let mut i = MadaraServiceId::RpcCommittedData.svc_id() as u64;
-        let state = self.value();
+        let mut state = self.value();
         let mut set = Vec::with_capacity(SERVICE_COUNT_MAX);
-
-        while i > 0 {
-            let mask = state & i;
-
-            if mask > 0 {
-                let pow = PowerOfTwo::try_from(mask).expect("mask is a power of 2");
-                set.push(MadaraServiceId::from(pow));
-            }
-
-            i >>= 1;
+        // Walk the actual active bits so adding a service cannot hide it from diagnostics.
+        while state != 0 {
+            let mask = 1u64 << (63 - state.leading_zeros());
+            state ^= mask;
+            let pow = PowerOfTwo::try_from(mask).expect("mask is a power of 2");
+            set.push(MadaraServiceId::from(pow));
         }
 
         set
@@ -1430,6 +1421,20 @@ impl ServiceMonitor {
 #[cfg(test)]
 mod shutdown_tests {
     use super::*;
+
+    #[test]
+    fn proof_cleanup_roundtrips_and_appears_in_active_services() {
+        let cleanup = MadaraServiceId::CommittedDataHistory;
+        assert_eq!(MadaraServiceId::from(cleanup.svc_id()), cleanup);
+        let mask = MadaraServiceMask::default();
+        mask.activate(MadaraServiceId::RpcCommittedData);
+        mask.activate(cleanup);
+        assert_eq!(mask.active_set(), vec![cleanup, MadaraServiceId::RpcCommittedData]);
+        mask.deactivate(cleanup);
+        assert_eq!(mask.active_set(), vec![MadaraServiceId::RpcCommittedData]);
+        mask.deactivate(MadaraServiceId::RpcCommittedData);
+        assert!(mask.active_set().is_empty());
+    }
 
     #[tokio::test(start_paused = true)]
     async fn graceful_runner_stays_active_until_in_flight_work_finishes() {
