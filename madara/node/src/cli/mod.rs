@@ -465,6 +465,31 @@ mod tests {
     }
 
     #[test]
+    fn rocksdb_background_work_limits_are_opt_in() {
+        let defaults = RunCmd::parse_from(["madara", "--sequencer", "--preset", "devnet"]);
+        assert_eq!(defaults.backend_params.db_compaction_workers, None);
+        assert_eq!(defaults.backend_params.db_background_write_rate_limit_mib_per_sec, None);
+
+        let configured = RunCmd::parse_from([
+            "madara",
+            "--sequencer",
+            "--preset",
+            "devnet",
+            "--db-compaction-workers",
+            "2",
+            "--db-background-write-rate-limit-mib-per-sec",
+            "64",
+        ]);
+        configured.backend_params.validate().expect("positive background work limits should be valid");
+        assert_eq!(configured.backend_params.db_compaction_workers, Some(2));
+        assert_eq!(configured.backend_params.db_background_write_rate_limit_mib_per_sec, Some(64));
+        assert_eq!(
+            configured.backend_params.rocksdb_config().background_write_rate_limit_bytes_per_sec,
+            Some(64 * 1024 * 1024)
+        );
+    }
+
+    #[test]
     fn config_file_without_discard_preconfirmed_on_startup_defaults_to_false() {
         let config_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../configs/args/config.json");
         let run_cmd: RunCmd =
