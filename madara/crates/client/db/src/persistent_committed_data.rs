@@ -7,6 +7,7 @@ use blockifier::execution::syscalls::committed_data::{
     branch, key_bit, leaf, CommittedDataSibling, CommittedDataWitness,
 };
 use lru::LruCache;
+use rayon::prelude::*;
 use starknet_types_core::felt::Felt;
 use std::num::NonZeroUsize;
 
@@ -235,11 +236,11 @@ impl<F: FnMut(u64) -> Result<Option<Vec<u8>>>> Tree<F> {
         let r = self.get(right)?;
         ensure!(l.bit() < bit.into() && r.bit() < bit.into(), "Invalid new path order");
         let count = l.count().checked_add(r.count()).context("Subtree count overflow")?;
-        self.push(Node::Branch { bit, left, right, count, hash: branch(bit, l.hash(), r.hash()) })
+        self.push(Node::Branch { bit, left, right, count, hash: Felt::ZERO })
     }
     fn build_sorted(&mut self, entries: &[(Felt, Felt)]) -> Result<u64> {
         if entries.len() == 1 {
-            return self.push(Node::new_leaf(entries[0].0, entries[0].1));
+            return self.push(Node::Leaf { key: entries[0].0, value: entries[0].1, hash: Felt::ZERO });
         }
         let bit = differing_bit(entries[0].0, entries[entries.len() - 1].0) as u8;
         let split = entries.partition_point(|e| !key_bit(e.0, bit));
@@ -255,7 +256,48 @@ impl<F: FnMut(u64) -> Result<Option<Vec<u8>>>> Tree<F> {
     }
     pub(crate) fn build(&mut self, entries: &mut [(Felt, Felt)]) -> Result<u64> {
         Self::prepare(entries, self.limit)?;
-        self.build_sorted(entries)
+        let start = self.nodes.len();
+        let id = self.build_sorted(entries)?;
+        self.hash_new_nodes(start)?;
+        Ok(id)
+    }
+    /// Hash staged nodes before exposing the completed plan. Critical bits strictly increase
+    /// toward the root, so nodes at one level are independent and all children are ready.
+    /// Only pure hashing runs in Rayon; reads, validation and arena writes remain serialized.
+    fn hash_new_nodes(&mut self, start: usize) -> Result<()> {
+        let mut levels: [Vec<usize>; 253] = std::array::from_fn(|_| Vec::new());
+        for (index, node) in self.nodes.iter().enumerate().skip(start) {
+            levels[(node.bit() + 1) as usize].push(index);
+        }
+        for (level, indices) in levels.into_iter().enumerate() {
+            let mut inputs = Vec::with_capacity(indices.len());
+            for &index in &indices {
+                inputs.push(match self.nodes[index] {
+                    Node::Leaf { key, value, .. } => (key, value),
+                    Node::Branch { left, right, .. } => (self.get(left)?.hash(), self.get(right)?.hash()),
+                });
+            }
+            // ponytail: reuse the shared pool; small levels stay within one Rayon chunk.
+            let hashes: Vec<_> = inputs
+                .into_par_iter()
+                .with_min_len(256)
+                .map(
+                    |(left, right)| {
+                        if level == 0 {
+                            leaf(left, right)
+                        } else {
+                            branch((level - 1) as u8, left, right)
+                        }
+                    },
+                )
+                .collect();
+            for (index, hash) in indices.into_iter().zip(hashes) {
+                match &mut self.nodes[index] {
+                    Node::Leaf { hash: stored, .. } | Node::Branch { hash: stored, .. } => *stored = hash,
+                }
+            }
+        }
+        Ok(())
     }
     fn first_key(&mut self, mut id: u64) -> Result<Felt> {
         for _ in 0..=252 {
@@ -270,7 +312,10 @@ impl<F: FnMut(u64) -> Result<Option<Vec<u8>>>> Tree<F> {
     /// Omitted leaves and explicit zeros are retained. Unchanged values allocate no nodes.
     pub(crate) fn update(&mut self, base: u64, entries: &mut [(Felt, Felt)]) -> Result<u64> {
         Self::prepare(entries, self.limit)?;
-        self.merge(base, entries)
+        let start = self.nodes.len();
+        let id = self.merge(base, entries)?;
+        self.hash_new_nodes(start)?;
+        Ok(id)
     }
     fn merge(&mut self, id: u64, patch: &[(Felt, Felt)]) -> Result<u64> {
         if patch.is_empty() {
@@ -286,7 +331,7 @@ impl<F: FnMut(u64) -> Result<Option<Vec<u8>>>> Tree<F> {
             }
             self.replaced.push(id);
             self.changes.push((first, value, patch[0].1));
-            return self.push(Node::new_leaf(first, patch[0].1));
+            return self.push(Node::Leaf { key: first, value: patch[0].1, hash: Felt::ZERO });
         }
         let split = patch.partition_point(|e| !key_bit(e.0, bit as u8));
         if bit == old.bit() {

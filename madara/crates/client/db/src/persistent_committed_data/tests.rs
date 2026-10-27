@@ -170,3 +170,51 @@ fn committed_node_cache_enforces_bytes_and_recent_blocks() {
     cache.put(1, Node::new_leaf(Felt::ONE, Felt::ONE), true);
     assert!(cache.0.is_empty());
 }
+
+#[test]
+fn batched_hashing_matches_canonical_roots_and_is_independent_of_thread_count() -> Result<()> {
+    fn run(threads: usize) -> Result<Vec<(Felt, Vec<Vec<u8>>)>> {
+        rayon::ThreadPoolBuilder::new().num_threads(threads).build()?.install(|| {
+            let mut disk = HashMap::new();
+            let mut next = 1;
+            let mut base = None;
+            let mut results = Vec::new();
+            let mut values: BTreeMap<_, _> = (0..4096u64).map(|key| (Felt::from(key), Felt::ZERO)).collect();
+            values.insert(Felt::MAX, Felt::MAX);
+            for tick in 0..4u64 {
+                let mut patch = match tick {
+                    0 | 3 => values.iter().map(|(&k, &v)| (k, v)).collect::<Vec<_>>(),
+                    1 => values.keys().map(|&k| (k, Felt::MAX - k)).collect(),
+                    _ => vec![
+                        (Felt::ONE, Felt::ZERO),
+                        (Felt::from_hex_unchecked("0x100000000000000000000000000000000000000000000000000"), Felt::TWO),
+                    ],
+                };
+                values.extend(patch.iter().copied());
+                let canonical = CommittedDataSet::new(values.iter().map(|(&k, &v)| (k, v)).collect())?;
+                let mut tree = Tree::new(next, 8192, |id| Ok(disk.get(&id).cloned()));
+                let id = match base {
+                    None => tree.build(&mut patch)?,
+                    Some(id) => tree.update(id, &mut patch)?,
+                };
+                assert_eq!(tree.root(id)?, (canonical.root(), values.len() as u32));
+                for key in [Felt::ZERO, Felt::ONE, Felt::MAX] {
+                    assert_eq!(tree.witness(id, canonical.root(), key)?, canonical.witness(key));
+                }
+                if tick == 3 {
+                    assert!(tree.nodes.is_empty(), "Unchanged maps allocate no nodes");
+                }
+                let encoded: Vec<_> = tree.nodes.iter().map(|node| node.encode()).collect();
+                let end = tree.next_id();
+                drop(tree);
+                disk.extend(encoded.iter().enumerate().map(|(i, bytes)| (next + i as u64, bytes.clone())));
+                next = end;
+                base = Some(id);
+                results.push((canonical.root(), encoded));
+            }
+            Ok(results)
+        })
+    }
+    assert_eq!(run(1)?, run(4)?, "Parallel hashing must preserve roots and durable node bytes");
+    Ok(())
+}

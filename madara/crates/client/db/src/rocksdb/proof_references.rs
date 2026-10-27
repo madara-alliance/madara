@@ -96,8 +96,8 @@ impl<'a> References<'a> {
             // Bound temporary read buffers while amortizing RocksDB lookups across a frontier.
             let ids = pending.split_off(pending.len().saturating_sub(1024));
             let missing: Vec<_> = ids.iter().copied().filter(|id| !self.changes.contains_key(id)).collect();
-            let values =
-                self.db.db.multi_get_cf(missing.iter().map(|id| (&cf, [REFERENCES, &id.to_be_bytes()].concat())));
+            let keys: Vec<_> = missing.iter().map(|id| [REFERENCES, &id.to_be_bytes()].concat()).collect();
+            let values = self.db.db.batched_multi_get_cf(&cf, &keys, false);
             for (id, value) in missing.into_iter().zip(values) {
                 let bytes = value?.context("Unregistered proof node")?;
                 self.changes.insert(id, Reference::decode(id, &bytes)?);

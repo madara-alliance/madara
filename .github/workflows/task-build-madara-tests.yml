@@ -58,6 +58,13 @@ jobs:
             --package mc-rpc \
             --archive-file target/nextest/madara-tests.tar.zst
 
+      - name: Check tree and pruning regressions
+        run: |
+          cargo nextest run --archive-file target/nextest/madara-tests.tar.zst \
+            --workspace-remap "$GITHUB_WORKSPACE" \
+            -E 'package(mc-db) & (test(persistent_committed_data) | test(committed_history) | test(committed_data_initialization) | test(committed_data_catalog))' \
+            --no-fail-fast
+
       - name: Generate archive hash
         id: generate-hash
         run: |
