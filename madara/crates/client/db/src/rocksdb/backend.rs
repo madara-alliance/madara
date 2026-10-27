@@ -169,6 +169,7 @@ impl RocksDBStorage {
             db,
             config: config.clone(),
             committed_data_write: Default::default(),
+            committed_data_records_write: Default::default(),
             committed_data_reconstruction: Default::default(),
             committed_data_config: Default::default(),
         });

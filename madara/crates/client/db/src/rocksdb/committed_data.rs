@@ -111,7 +111,7 @@ impl RocksDBStorage {
         // requests cannot both create distinct first roots. Existing-root retries remain harmless.
         let _write = self
             .inner
-            .committed_data_write
+            .committed_data_records_write
             .lock()
             .map_err(|_| anyhow::anyhow!("Committed-data write lock poisoned"))?;
         if initializing && !self.contains_committed_data_version(version)? {

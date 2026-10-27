@@ -65,7 +65,8 @@ impl RocksDBStorageInner {
             .unwrap_or(0))
     }
     pub(super) fn store_recovery_record(&self, record: &RecoveryRecord) -> Result<String> {
-        let _lock = self.committed_data_write.lock().map_err(|_| anyhow::anyhow!("Committed-data lock poisoned"))?;
+        let _lock =
+            self.committed_data_records_write.lock().map_err(|_| anyhow::anyhow!("Committed-data lock poisoned"))?;
         let namespace = namespace_key(record.manifest.update, record.manifest.root)?;
         if let Some(id) = self.find_recovery_record(&namespace)? {
             return Ok(id);
@@ -98,7 +99,8 @@ impl RocksDBStorageInner {
         Ok(id)
     }
     pub(super) fn mark_recovery_exported(&self, id: &str) -> Result<()> {
-        let _lock = self.committed_data_write.lock().map_err(|_| anyhow::anyhow!("Committed-data lock poisoned"))?;
+        let _lock =
+            self.committed_data_records_write.lock().map_err(|_| anyhow::anyhow!("Committed-data lock poisoned"))?;
         let cf = self.get_column(RECOVERY_COLUMN);
         anyhow::ensure!(self.get_recovery_manifest(id)?.is_some(), "Missing recovery manifest");
         let k = key(b'p', id.as_bytes());
