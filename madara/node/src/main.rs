@@ -632,7 +632,7 @@ mod warp_update_tests {
     use super::*;
 
     #[test]
-    fn proof_cleanup_is_deferred_only_for_receivers_with_retention() {
+    fn committed_data_proof_cleanup_is_deferred_only_for_receivers_with_retention() {
         for receiver in [false, true] {
             for retention in [None, Some(0), Some(21600)] {
                 let mut cmd = RunCmd::parse_from(["madara", "--sequencer", "--preset", "devnet"]);
