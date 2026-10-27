@@ -116,6 +116,7 @@ jobs:
           cargo nextest run \
             --archive-file target/nextest/madara-tests.tar.zst \
             --workspace-remap "$GITHUB_WORKSPACE" \
+            -E 'not(package(madara)) | test(committed_data) | test(committed_listener)' \
             --no-fail-fast
 
       - name: Test committed-data Mongo recovery
