@@ -1,4 +1,7 @@
 //! Resumable-by-presence replication of immutable datasets. No partial dataset is advertised.
+#[cfg(test)]
+mod tests;
+
 use anyhow::Context;
 use blockifier::execution::syscalls::committed_data::MAX_COMMITTED_DATA_VALUES;
 use mc_db::{MadaraBackend, MadaraStorageRead, MadaraStorageWrite};
@@ -28,7 +31,7 @@ fn append_page(
 
 /// Repeats discovery from the start on every pass: lexical cursors can miss concurrent lower roots.
 /// Imported datasets are skipped after restart; interrupted downloads are retried in full. The
-/// upstream gateway is a configured availability source, not an authority for Oracle publication.
+/// upstream gateway is a configured availability source, not an authority for application root publication.
 pub(crate) async fn sync_available(backend: &Arc<MadaraBackend>, client: &GatewayProvider) -> anyhow::Result<()> {
     sync_datasets(backend, client).await?;
     sync_versions(backend, client).await
@@ -111,6 +114,3 @@ async fn sync_versions(backend: &Arc<MadaraBackend>, client: &GatewayProvider) -
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

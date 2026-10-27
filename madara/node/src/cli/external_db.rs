@@ -7,10 +7,14 @@ use serde::{Deserialize, Serialize};
 pub struct ExternalDbParams {
     /// Operator-only: restore these complete committed-data manifest IDs before services start.
     /// Use alongside an older chain DB snapshot, then replay its missing backed-up transactions.
+    /// Empty by default. Explicit restore runs before services start and aborts startup on failure;
+    /// ordinary external-DB export instead retries asynchronously during normal operation.
     #[arg(long, value_delimiter = ',')]
     #[serde(default)]
     pub restore_committed_data_records: Vec<String>,
     /// Explicit transaction hashes to restore (data first) from Mongo before normal mempool reload.
+    /// Restores only selected admissions, refreshes their local TTL, then normal mempool startup
+    /// reconciles them against the restored chain. Does not replay transactions automatically.
     #[arg(long, value_delimiter = ',')]
     #[serde(default)]
     pub restore_committed_data_transactions: Vec<mp_convert::Felt>,

@@ -1033,7 +1033,8 @@ mod tests {
     /// falls back to compilation. The timeout duration is configurable via
     /// `native_disk_cache_load_timeout_secs` in the config.
     ///
-    /// Holds the disk worker's response until the caller times out. The test validates:
+    /// Uses an extremely short timeout (1 microsecond) to reliably trigger the timeout,
+    /// since loading .so files takes significantly longer. The test validates:
     /// - Timeout configuration is respected
     /// - Fallback to compilation occurs after disk cache timeout
     /// - Timeout metric (`CACHE_DISK_LOAD_TIMEOUT`) is recorded
@@ -1046,11 +1047,13 @@ mod tests {
 
         let class_hash = create_unique_test_class_hash();
 
+        // Configure an extremely short disk cache timeout to reliably trigger timeout
+        // 1 microsecond timeout ensures timeout occurs since disk I/O operations take longer
         let config = Arc::new(
             config::NativeConfig::builder()
                 .with_cache_dir(temp_dir.path().to_path_buf())
                 .with_compilation_mode(config::NativeCompilationMode::Async)
-                .with_disk_cache_load_timeout(Duration::from_millis(1))
+                .with_disk_cache_load_timeout(Duration::from_micros(1)) // Extremely short timeout to force timeout
                 .build(),
         );
 
@@ -1058,9 +1061,9 @@ mod tests {
         assert!(!cache::cache_contains(&class_hash), "Class should not be in memory cache initially");
 
         // Pre-populate disk cache to enable testing timeout during disk load operation
+        // With 1 microsecond timeout, disk load will timeout since loading .so files takes longer
         create_native_class(&sierra_class, &temp_dir, class_hash, false)
             .expect("Failed to create and save native class to disk");
-        let disk_response = cache::block_test_disk_cache_response(cache::get_native_cache_path(&class_hash, &config));
 
         // Memory cache misses, disk cache load times out (file exists but load operation times out),
         // triggering fallback to compilation
@@ -1071,7 +1074,6 @@ mod tests {
             &sierra_class.info,
             config.clone(),
         );
-        drop(disk_response);
 
         // Async mode returns VM immediately while compilation happens in background
         assert!(result.is_ok(), "Should return VM class immediately in async mode");

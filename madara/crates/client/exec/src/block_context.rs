@@ -140,3 +140,67 @@ impl<D: MadaraStorageRead> MadaraBackendExecutionExt<D> for MadaraBackend<D> {
         ))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use blockifier::execution::syscalls::committed_data::{read_value, CommittedDataSet};
+    use mc_db::{committed_data_retention::CommittedDataRetentionConfig, MadaraBackendConfig, MadaraStorageWrite};
+    use mp_convert::Felt;
+
+    /// Exercise the exact block-start context used by traceTransaction/traceBlockTransactions,
+    /// including the real syscall read path after the durable proof index is pruned.
+    /// This covers trace context/provider integration, not HTTP trace serialization.
+    #[rstest::rstest]
+    #[case::sequencer(false)]
+    #[case::replica(true)]
+    #[tokio::test]
+    async fn committed_data_historical_trace_context_reads_pruned_values(#[case] replica: bool) {
+        let backend = MadaraBackend::open_for_testing_with_config(
+            mp_chain_config::ChainConfig::madara_test().into(),
+            MadaraBackendConfig {
+                use_committed_data: true,
+                committed_data_retention: CommittedDataRetentionConfig {
+                    proof_retention_secs: Some(0),
+                    cache_bytes: 0,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        );
+        let entries = vec![(Felt::ONE, Felt::MAX), (Felt::TWO, Felt::ZERO)];
+        let tree = CommittedDataSet::new(entries.clone()).unwrap();
+        // A replica imports the complete map through the same authenticated snapshot path.
+        if replica {
+            backend.import_committed_data_snapshot(tree.root(), entries).await.unwrap();
+        } else {
+            backend.db.write_committed_data_dataset(&tree, None).unwrap();
+        }
+        mc_db::test_utils::add_test_block(&backend, 0, vec![]);
+        mc_db::test_utils::add_test_block(&backend, 1, vec![]);
+        backend.set_latest_l1_confirmed(Some(1)).unwrap();
+        let view = backend.view_on_confirmed(0).unwrap();
+        let context = view.block_view_on_latest().unwrap().new_execution_context_at_block_start().unwrap();
+        let read = || {
+            let mut gas = u64::MAX;
+            let mut failure = None;
+            let result = read_value(
+                context.block_context.use_committed_data,
+                &context.block_context.committed_data_witnesses,
+                starknet_api::abi::abi_utils::selector_from_name("get_value").0,
+                &[tree.root(), Felt::ONE],
+                &mut gas,
+                &mut failure,
+            )
+            .unwrap();
+            assert!(failure.is_none());
+            result
+        };
+        let before = read();
+        assert!(backend.db.maintain_committed_data_history(Some(u64::MAX)).unwrap());
+        assert_eq!(read(), before);
+        assert_eq!(before.0, Felt::MAX);
+        // Historical execution below the cutoff must not reactivate the proof index.
+        assert!(!backend.db.maintain_committed_data_history(Some(u64::MAX)).unwrap());
+    }
+}

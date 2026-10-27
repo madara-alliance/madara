@@ -27,7 +27,9 @@ pub struct ServerConfig {
     pub name: String,
     pub addr: SocketAddr,
     pub cors: Option<Vec<String>>,
-    /// Restrict HTTP Host independently from browser-origin policy.
+    /// Private committed-data listener: reject DNS-rebinding Host values independently of CORS.
+    /// Public/admin listeners retain their existing policy; CORS alone does not stop a browser
+    /// from sending a request to a loopback-only endpoint.
     pub restrict_hosts: bool,
     pub rpc_version_default: mp_chain_config::RpcVersion,
     pub max_connections: u32,

@@ -205,3 +205,54 @@ async fn missing_dataset_does_not_publish_a_root_or_namespace() {
     assert!(replica.db.list_committed_data_versions(None).unwrap().is_empty());
     versions.assert_hits_async(0).await;
 }
+
+/// Compatibility is controlled by the full node's local opt-in, never an upstream flag.
+/// Legacy callers keep using existing endpoints. Opted-in callers wait on missing data;
+/// a new sequencer with an empty (but supported) catalog remains syncable.
+#[rstest::rstest]
+#[case::legacy_upstream_opt_out(false, false, true)]
+#[case::new_upstream_opt_out(false, true, true)]
+#[case::legacy_upstream_opt_in(true, false, false)]
+#[case::empty_new_upstream_opt_in(true, true, true)]
+#[tokio::test]
+async fn committed_data_latest_probe_compatibility(
+    #[case] enabled: bool,
+    #[case] supported: bool,
+    #[case] advances: bool,
+) {
+    let server = httpmock::MockServer::start_async().await;
+    let latest = mp_gateway::block::ProviderBlockHeader { block_number: 10, block_hash: Felt::from(10u32) };
+    server
+        .mock_async(|when, then| {
+            when.path("/feeder_gateway/get_block").query_param("headerOnly", "true");
+            then.json_body_obj(&latest);
+        })
+        .await;
+    let catalogs = server
+        .mock_async(|when, then| {
+            when.path_contains("get_committed_data_");
+            if supported {
+                then.json_body_obj(&Vec::<Felt>::new());
+            } else {
+                then.status(404);
+            }
+        })
+        .await;
+    let backend = MadaraBackend::open_for_testing(mp_chain_config::ChainConfig::madara_test().into());
+    let client = Arc::new(GatewayProvider::new(
+        server.url("/gateway/").parse().unwrap(),
+        server.url("/feeder_gateway/").parse().unwrap(),
+    ));
+    let probe = Arc::new(super::super::GatewayLatestProbe::new(client, backend, enabled));
+    let previous = mp_gateway::block::ProviderBlockHeader { block_number: 9, block_hash: Felt::ONE };
+    assert_eq!(probe.probe(Some(previous.clone())).await.unwrap(), Some(if advances { latest } else { previous }));
+    catalogs
+        .assert_hits_async(if !enabled {
+            0
+        } else if supported {
+            2
+        } else {
+            1
+        })
+        .await;
+}

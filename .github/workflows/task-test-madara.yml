@@ -26,7 +26,7 @@ on:
         description: "Proof versions to retain after simulated settlement"
         default: "8"
         type: string
-      price-values:
+      integer-values:
         description: "Use synthetic price values matching captured price-width deciles"
         default: false
         type: boolean
@@ -214,7 +214,7 @@ jobs:
           CD_MEASURE_UPDATES: ${{ inputs.updates }}
           CD_MEASURE_VERSIONS: ${{ inputs.versions }}
           CD_MEASURE_RETAINED: ${{ inputs.retained }}
-          CD_MEASURE_PRICE_VALUES: ${{ inputs.price-values }}
+          CD_MEASURE_INTEGER_VALUES: ${{ inputs.integer-values }}
           CD_MEASURE_LARGE_MOVES: ${{ inputs.large-moves }}
           CD_MEASURE_ROLLING_VERSIONS: ${{ inputs.rolling-versions }}
           CD_MEASURE_REPORT: ${{ github.workspace }}/retention-measurement.json

@@ -134,7 +134,7 @@ async fn combined_rpc_validates_and_persists_exact_admission(
 
 #[tokio::test]
 async fn full_backlog_rejects_import_before_writing_but_allows_exact_retry() {
-    use mc_db::committed_data_recovery::MAX_PENDING_BYTES;
+    use mc_db::committed_data_recovery::DEFAULT_PENDING_BACKUP_BYTES;
     let (backend, rpc) = crate::test_utils::rpc_test_setup();
     let module = crate::rpc_api_committed_data(&rpc).unwrap();
     let entries = vec![(Felt::ONE, Felt::TWO)];
@@ -148,8 +148,8 @@ async fn full_backlog_rejects_import_before_writing_but_allows_exact_retry() {
     let (response, _) = module.raw_json_request(&request, 1).await.unwrap();
     assert!(serde_json::from_str::<serde_json::Value>(&response).unwrap().get("error").is_none(), "{response}");
     let id = backend.recovery_reference(None, root).unwrap();
-    mc_db::test_utils::set_recovery_pending_bytes(&backend, MAX_PENDING_BYTES);
-    assert_eq!(backend.db.recovery_pending_bytes().unwrap(), MAX_PENDING_BYTES);
+    mc_db::test_utils::set_recovery_pending_bytes(&backend, DEFAULT_PENDING_BACKUP_BYTES);
+    assert_eq!(backend.db.recovery_pending_bytes().unwrap(), DEFAULT_PENDING_BACKUP_BYTES);
     let next_entries = vec![(Felt::ONE, Felt::THREE)];
     let next = CommittedDataSet::new(next_entries.clone()).unwrap().root();
     let (response, _) = module.raw_json_request(&call(next, next_entries), 1).await.unwrap();
@@ -161,5 +161,114 @@ async fn full_backlog_rejects_import_before_writing_but_allows_exact_retry() {
     let (response, _) = module.raw_json_request(&request, 1).await.unwrap();
     assert!(serde_json::from_str::<serde_json::Value>(&response).unwrap().get("error").is_none(), "{response}");
     assert_eq!(backend.recovery_reference(None, root).unwrap(), id);
-    assert_eq!(backend.db.recovery_pending_bytes().unwrap(), MAX_PENDING_BYTES);
+    assert_eq!(backend.db.recovery_pending_bytes().unwrap(), DEFAULT_PENDING_BACKUP_BYTES);
+}
+
+/// Reexecute a signed account call to the reserved committed-data reader through both public
+/// trace methods. The replica case imports the same map through the replication import path.
+#[rstest::rstest]
+#[case::sequencer(false)]
+#[case::replica(true)]
+#[tokio::test]
+async fn committed_data_public_traces_survive_proof_pruning(#[case] replica: bool) {
+    use crate::versions::user::v0_10_2::StarknetTraceRpcApiV0_10_2Server;
+    use blockifier::execution::syscalls::committed_data::COMMITTED_DATA_ADDRESS;
+    use mc_db::{committed_data_retention::CommittedDataRetentionConfig, MadaraBackendConfig, MadaraStorageWrite};
+    use mp_rpc::v0_9_0::{BroadcastedInvokeTxn as OldInvoke, BroadcastedTxn as OldTxn};
+    let backend = MadaraBackend::open_for_testing_with_config(
+        mp_chain_config::ChainConfig::madara_devnet().into(),
+        MadaraBackendConfig {
+            use_committed_data: true,
+            committed_data_retention: CommittedDataRetentionConfig {
+                proof_retention_secs: Some(0),
+                cache_bytes: 0,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    );
+    backend.set_l1_gas_quote_for_testing();
+    let mut genesis = mc_devnet::ChainGenesisDescription::base_config().unwrap();
+    let keys = genesis.add_devnet_contracts(1).unwrap();
+    genesis.build_and_store(&backend).await.unwrap();
+    let account = &keys.0[0];
+    let entries = vec![(Felt::ONE, Felt::from(424242u32))];
+    let tree = CommittedDataSet::new(entries.clone()).unwrap();
+    if replica {
+        backend.import_committed_data_snapshot(tree.root(), entries).await.unwrap();
+    } else {
+        backend.db.write_committed_data_dataset(&tree, Some(0)).unwrap();
+    }
+    let OldTxn::Invoke(OldInvoke::V3(mut tx)) =
+        crate::test_utils::devnet_transfer_tx(&backend, account, Felt::ZERO, false)
+    else {
+        unreachable!()
+    };
+    tx.calldata = Multicall::default()
+        .with(Call {
+            to: COMMITTED_DATA_ADDRESS,
+            selector: Selector::from("get_value"),
+            calldata: vec![tree.root(), Felt::ONE],
+        })
+        .flatten()
+        .collect::<Vec<_>>()
+        .into();
+    let validated = |tx| {
+        OldTxn::Invoke(OldInvoke::V3(tx))
+            .into_validated_tx(
+                backend.chain_config().chain_id.to_felt(),
+                backend.chain_config().latest_protocol_version,
+                TxTimestamp::now(),
+            )
+            .unwrap()
+    };
+    let hash = validated(tx.clone()).hash;
+    let signature = account.secret.sign(&hash).unwrap();
+    tx.signature = vec![signature.r, signature.s].into();
+    let transaction = validated(tx).transaction;
+    mc_db::test_utils::add_test_block(
+        &backend,
+        1,
+        vec![mp_block::TransactionWithReceipt {
+            transaction,
+            receipt: mp_receipt::TransactionReceipt::Invoke(mp_receipt::InvokeTransactionReceipt {
+                transaction_hash: hash,
+                ..Default::default()
+            }),
+        }],
+    );
+    mc_db::test_utils::add_test_block(&backend, 2, vec![]);
+    backend.set_latest_l1_confirmed(Some(2)).unwrap();
+    let provider = Arc::new(crate::test_utils::TestTransactionProvider);
+    let rpc = crate::Starknet::new(
+        backend.clone(),
+        provider.clone(),
+        provider,
+        Default::default(),
+        None,
+        mp_utils::service::ServiceContext::new_for_testing(),
+    );
+    let before = serde_json::to_value(rpc.trace_transaction(hash).await.unwrap()).unwrap();
+    // Require the syscall's successful return, not merely a trace containing a reverted invoke.
+    fn has_return(value: &serde_json::Value) -> bool {
+        match value {
+            serde_json::Value::Object(fields) => {
+                fields.get("result") == Some(&serde_json::json!([Felt::from(424242u32)]))
+                    || fields.values().any(has_return)
+            }
+            serde_json::Value::Array(values) => values.iter().any(has_return),
+            _ => false,
+        }
+    }
+    assert!(has_return(&before), "{before}");
+    let block_id = mp_rpc::v0_10_0::BlockId::Number(1);
+    let block_before =
+        serde_json::to_value(rpc.trace_block_transactions(block_id.clone(), None).await.unwrap()).unwrap();
+    while backend.db.maintain_committed_data_history(Some(u64::MAX)).unwrap() {}
+    assert_eq!(serde_json::to_value(rpc.trace_transaction(hash).await.unwrap()).unwrap(), before);
+    assert_eq!(
+        serde_json::to_value(rpc.trace_block_transactions(block_id, None).await.unwrap()).unwrap(),
+        block_before
+    );
+    assert!(!backend.db.maintain_committed_data_history(Some(u64::MAX)).unwrap());
 }

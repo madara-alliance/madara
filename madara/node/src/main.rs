@@ -374,6 +374,9 @@ async fn main() -> anyhow::Result<()> {
     let chain_head_state = backend.chain_head_state();
     tracing::info!("💼 Starting chain with head state: {:?}", chain_head_state);
 
+    // Explicit disaster recovery is a startup prerequisite: continuing after an unavailable or
+    // corrupt archive would run an incomplete restored chain. Normal export startup remains
+    // asynchronous/retrying when both restore lists are empty (the default).
     if !run_cmd.external_db_params.restore_committed_data_records.is_empty()
         || !run_cmd.external_db_params.restore_committed_data_transactions.is_empty()
     {
@@ -384,7 +387,7 @@ async fn main() -> anyhow::Result<()> {
             .context("Committed-data restore requires external DB configuration")?
             .with_chain_id(&chain_config.chain_id.to_string());
         let mongo = mc_external_db::mongodb::MongoClient::new(&config).await?;
-        let archive = mc_external_db::recovery::RecoveryArchive::new(
+        let archive = mc_external_db::committed_data_recovery::CommittedDataArchive::new(
             &mongo.client().database(&config.database_name),
             &config.collection_name,
         );
@@ -392,7 +395,7 @@ async fn main() -> anyhow::Result<()> {
             .restore(&backend, &run_cmd.external_db_params.restore_committed_data_records)
             .await
             .context("Restoring committed-data dependencies before startup")?;
-        let transactions = mc_external_db::recovery::restore_transactions(
+        let transactions = mc_external_db::committed_data_recovery::restore_transactions(
             &backend,
             &config,
             &run_cmd.external_db_params.restore_committed_data_transactions,

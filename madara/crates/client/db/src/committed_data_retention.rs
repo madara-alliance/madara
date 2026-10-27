@@ -20,7 +20,7 @@ impl Default for CommittedDataRetentionConfig {
             proof_retention_secs: None,
             memory_blocks: 7200,
             cache_bytes: 256 * 1024 * 1024,
-            pending_backup_bytes: 512 * 1024 * 1024,
+            pending_backup_bytes: crate::committed_data_recovery::DEFAULT_PENDING_BACKUP_BYTES,
         }
     }
 }

@@ -1,12 +1,16 @@
 //! Permanent values and a reclaimable proof index. All updates share the import write lock.
 //! Reference counts count incoming node edges plus retained root pointers, never historical values.
-use super::proof_references::References;
+use super::proof_references::ProofNodeReferences;
 use super::{committed_data::*, meta, rocksdb_snapshot::SnapshotWithDBArc, *};
 use crate::persistent_committed_data::Node;
 use blockifier::execution::syscalls::committed_data::{CommittedDataSet, MAX_COMMITTED_DATA_VALUES};
 use rocksdb::WriteBatch;
 mod archive;
 mod codec;
+#[cfg(test)]
+mod measurement;
+#[cfg(test)]
+mod tests;
 use archive::{history_chain, reconstruct};
 #[cfg(test)]
 use archive::{ValueHistory, HISTORY};
@@ -25,7 +29,8 @@ fn root_key(prefix: &[u8], root: Felt) -> Vec<u8> {
 fn age_key(block: u64, root: Felt) -> Vec<u8> {
     [AGE, &block.to_be_bytes(), &root.to_bytes_be()].concat()
 }
-fn sync_options() -> WriteOptions {
+/// Every acknowledged committed-data write survives a process crash, independent of chain WAL policy.
+pub(super) fn sync_options() -> WriteOptions {
     let mut options = WriteOptions::default();
     options.set_sync(true);
     options.disable_wal(false);
@@ -41,7 +46,8 @@ pub(super) fn with_reconstructed<T>(
     // One cold rebuild per backend. Hold the permit through proof generation and tree destruction.
     let _permit = snapshot
         .db
-        .committed_data_reconstruction
+        .committed_data
+        .reconstruction
         .lock()
         .map_err(|_| anyhow::anyhow!("Historical reconstruction lock poisoned"))?;
     let tree = reconstruct(snapshot, root)?;
@@ -57,7 +63,7 @@ impl RocksDBStorage {
         first: u64,
         nodes: &[Node],
     ) -> Result<()> {
-        let mut refs = References::new(&self.inner, first, nodes);
+        let mut refs = ProofNodeReferences::new(&self.inner, first, nodes);
         refs.add(id)?;
         if let Some(old) = old {
             refs.remove(old)?;
@@ -65,9 +71,10 @@ impl RocksDBStorage {
         refs.write(batch);
         Ok(())
     }
+    /// Retain a root used by recent execution; reactivate its proof index if it was pruned.
     pub(super) fn note_root_use(&self, root: Felt, block: u64) -> Result<()> {
         let mut cache =
-            self.inner.committed_data_write.lock().map_err(|_| anyhow::anyhow!("Committed-data lock poisoned"))?;
+            self.inner.committed_data.tree.lock().map_err(|_| anyhow::anyhow!("Committed-data lock poisoned"))?;
         let cf = self.inner.get_column(meta::META_COLUMN);
         let metadata = self
             .inner
@@ -101,7 +108,7 @@ impl RocksDBStorage {
     /// One root per call lets the maintenance service check cancellation between roots.
     pub(super) fn maintain_history(&self, cutoff: Option<u64>) -> Result<bool> {
         let cache =
-            self.inner.committed_data_write.lock().map_err(|_| anyhow::anyhow!("Committed-data lock poisoned"))?;
+            self.inner.committed_data.tree.lock().map_err(|_| anyhow::anyhow!("Committed-data lock poisoned"))?;
         let cf = self.inner.get_column(meta::META_COLUMN);
         let Some(cutoff) = cutoff else { return Ok(false) };
         let candidate =
@@ -128,7 +135,7 @@ impl RocksDBStorage {
         }
         drop(snapshot);
         let mut cache =
-            self.inner.committed_data_write.lock().map_err(|_| anyhow::anyhow!("Committed-data lock poisoned"))?;
+            self.inner.committed_data.tree.lock().map_err(|_| anyhow::anyhow!("Committed-data lock poisoned"))?;
         // Recheck under the write lock: a concurrent import/use/repair may have retained this root.
         if self.inner.db.get_cf(&cf, &key)?.is_none()
             || self.inner.db.get_cf(&cf, metadata_key(root, METADATA_LEVEL, 0))?.as_deref() != Some(metadata.as_slice())
@@ -137,9 +144,9 @@ impl RocksDBStorage {
         }
         let mut batch = WriteBatch::default();
         if id != 0 {
-            let mut refs = References::new(&self.inner, u64::MAX, &[]);
+            let mut refs = ProofNodeReferences::new(&self.inner, u64::MAX, &[]);
             refs.remove(id)?;
-            for &deleted in refs.deleted() {
+            for &deleted in refs.deleted_node_ids() {
                 cache.remove(deleted);
             }
             refs.write(&mut batch);
@@ -151,6 +158,7 @@ impl RocksDBStorage {
         Ok(true)
     }
 
+    /// Advance last-use monotonically and maintain its age index in the same caller-owned batch.
     pub(super) fn stage_root_use(&self, batch: &mut WriteBatch, root: Felt, block: u64) -> Result<()> {
         let cf = self.inner.get_column(meta::META_COLUMN);
         let key = root_key(USED, root);
@@ -175,9 +183,3 @@ impl RocksDBStorage {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests;
-
-#[cfg(test)]
-mod measurement;

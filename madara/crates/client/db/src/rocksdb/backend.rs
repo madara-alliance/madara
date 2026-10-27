@@ -168,10 +168,7 @@ impl RocksDBStorage {
             writeopts,
             db,
             config: config.clone(),
-            committed_data_write: Default::default(),
-            committed_data_records_write: Default::default(),
-            committed_data_reconstruction: Default::default(),
-            committed_data_config: Default::default(),
+            committed_data: Default::default(),
         });
 
         let head_block_n = inner.get_head_projection_without_content()?.and_then(|c| match c {
@@ -770,8 +767,5 @@ impl RocksDBStorage {
         self.inner.db.write_opt(batch, &self.inner.writeopts).context("Committing canonical reorg head")
     }
 }
-
-#[cfg(test)]
-mod tests;
 
 mod recovery;

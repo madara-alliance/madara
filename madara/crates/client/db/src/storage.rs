@@ -305,6 +305,8 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
         anyhow::bail!("Committed-data storage is unsupported by this backend")
     }
 
+    /// The default rejects unsupported storage implementations; RocksDB overrides this method.
+    /// A successful no-op would falsely acknowledge durable data, so failure is intentional.
     /// Authenticate and persist a complete value map in the persistent tree, without building
     /// a second in-memory snapshot. Reject missing/duplicate entries and a mismatched root.
     fn import_committed_data_values(
@@ -316,6 +318,7 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
         anyhow::bail!("Committed-data storage is unsupported by this backend")
     }
 
+    /// RocksDB implements this capability; the default fails closed for other backends.
     /// Apply authenticated upserts using persistent subtree sharing; missing bases fail closed.
     fn patch_committed_data_dataset(
         &self,

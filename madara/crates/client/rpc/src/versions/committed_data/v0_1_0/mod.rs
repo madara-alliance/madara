@@ -1,5 +1,8 @@
 //! Dataset ingestion and signed transaction submission on the private Committed Data listener.
 //! Imports are durable before transaction admission. Rejected transactions can leave unused datasets.
+#[cfg(test)]
+mod tests;
+
 use crate::{Starknet, StarknetRpcApiError};
 use jsonrpsee::core::{async_trait, RpcResult};
 use jsonrpsee::types::ErrorObjectOwned;
@@ -194,6 +197,3 @@ impl CommittedDataRpcApiV0_1_0Server for Starknet {
         Ok(ImportAndSubmitResult { transaction_hash })
     }
 }
-
-#[cfg(test)]
-mod tests;

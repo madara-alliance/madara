@@ -836,6 +836,9 @@ mod errors;
 mod metrics;
 mod types;
 
+#[cfg(test)]
+mod tests;
+
 use jsonrpsee::RpcModule;
 use mc_db::MadaraBackend;
 use mc_mempool::{
@@ -1412,6 +1415,3 @@ impl Drop for WsSubscriptionGuard {
         );
     }
 }
-
-#[cfg(test)]
-mod tests;

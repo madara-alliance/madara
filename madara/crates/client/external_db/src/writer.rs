@@ -1,9 +1,12 @@
 //! Outbox drainer and batch writer for external database.
 
+#[cfg(test)]
+mod recovery_tests;
+
+use crate::committed_data_recovery::CommittedDataArchive;
 use crate::config::ExternalDbConfig;
 use crate::metrics::ExternalDbMetrics;
 use crate::mongodb::{indexes::get_index_models, MempoolTransactionDocument, MongoClient, ResourceBoundsDoc};
-use crate::recovery::RecoveryArchive;
 use anyhow::Context;
 use mc_db::committed_data_recovery::RecoveryRecord;
 use mc_db::{MadaraBackend, MadaraStorageRead, MadaraStorageWrite};
@@ -25,12 +28,10 @@ const DUPLICATE_KEY_ERROR_CODE: i32 = 11000;
 
 #[async_trait::async_trait]
 trait ExternalDbSink: Send + Sync {
-    async fn backup_complete(&self, _id: &str) -> anyhow::Result<bool> {
-        anyhow::bail!("Dataset backup unsupported")
-    }
-    async fn backup_dataset(&self, _record: &RecoveryRecord) -> anyhow::Result<()> {
-        anyhow::bail!("Dataset backup unsupported")
-    }
+    /// Verify the immutable manifest before allowing the last local payload to be removed.
+    async fn backup_complete(&self, id: &str) -> anyhow::Result<bool>;
+    /// Acknowledge only after all chunks and their manifest are durably stored.
+    async fn backup_dataset(&self, record: &RecoveryRecord) -> anyhow::Result<()>;
 
     async fn ensure_indexes(&self) -> anyhow::Result<()>;
     async fn insert_many(&self, docs: Vec<MempoolTransactionDocument>) -> anyhow::Result<InsertManySummary>;
@@ -51,7 +52,7 @@ struct DrainSummary {
 }
 
 struct MongoSink {
-    recovery: RecoveryArchive,
+    recovery: CommittedDataArchive,
     collection: mongodb::Collection<MempoolTransactionDocument>,
 }
 
@@ -353,7 +354,7 @@ impl ExternalDbWorker {
                 let mongo = MongoClient::new(&self.config).await?;
                 let sink = MongoSink {
                     collection: mongo.collection().clone(),
-                    recovery: RecoveryArchive::new(
+                    recovery: CommittedDataArchive::new(
                         &mongo.client().database(&self.config.database_name),
                         &self.config.collection_name,
                     ),
@@ -868,7 +869,7 @@ mod tests {
         let database = client.client().database(&database_name);
         let sink = MongoSink {
             collection: client.collection().clone(),
-            recovery: RecoveryArchive::new(&database, &config.collection_name),
+            recovery: CommittedDataArchive::new(&database, &config.collection_name),
         };
         let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
         let worker =
@@ -1238,6 +1239,3 @@ mod tests {
         assert_eq!(backoff.next_delay(), Duration::from_millis(100));
     }
 }
-
-#[cfg(test)]
-mod recovery_tests;

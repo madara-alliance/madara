@@ -1,5 +1,5 @@
 use super::*;
-use crate::recovery::restore_transactions;
+use crate::committed_data_recovery::restore_transactions;
 use blockifier::execution::syscalls::committed_data::CommittedDataSet;
 use mc_db::test_utils;
 use mc_mempool::{Mempool, MempoolConfig};
@@ -30,7 +30,7 @@ impl ArchivedTransaction {
         let database = client.client().database(&config.database_name);
         let sink = MongoSink {
             collection: client.collection().clone(),
-            recovery: RecoveryArchive::new(&database, &config.collection_name),
+            recovery: CommittedDataArchive::new(&database, &config.collection_name),
         };
         let (source, keys) = recovery_backend().await;
         let account = &keys.0[0];
@@ -70,7 +70,7 @@ impl ArchivedTransaction {
 }
 
 #[tokio::test]
-#[ignore = "requires disposable MongoDB"]
+#[ignore = "requires disposable MongoDB; explicitly run by task-test-madara.yml"]
 async fn mongo_transaction_recovery_restores_admission_and_reconciles_executed_nonce() {
     let archive = ArchivedTransaction::new().await;
     let mut duplicate = archive.document.clone();
@@ -130,71 +130,70 @@ async fn mongo_transaction_recovery_restores_admission_and_reconciles_executed_n
     archive.drop_database().await;
 }
 
+/// Each rejection starts with its own valid archive and must leave no transaction admission.
+#[rstest::rstest]
+#[case::missing("missing", "Missing recoverable transaction")]
+#[case::wrong_chain("wrong_chain", "Missing recoverable transaction")]
+#[case::conflicting_payload("conflicting_payload", "Conflicting transaction archive records")]
+#[case::conflicting_dependencies("conflicting_dependencies", "Conflicting transaction archive records")]
+#[case::stored_hash("stored_hash", "Recovery transaction hash mismatch")]
+#[case::computed_hash("computed_hash", "Recovery transaction hash mismatch")]
+#[case::too_many_dependencies("too_many_dependencies", "Invalid recovery dependency count")]
+#[case::missing_dependency("missing_dependency", "Missing complete recovery manifest")]
+#[case::corrupt_dependency("corrupt_dependency", "Recovery chunk digest mismatch")]
 #[tokio::test]
-#[ignore = "requires disposable MongoDB"]
-async fn mongo_transaction_recovery_rejects_invalid_archives_before_admission() {
+#[ignore = "requires disposable MongoDB; explicitly run by task-test-madara.yml"]
+async fn mongo_transaction_recovery_rejects_invalid_archives_before_admission(#[case] case: &str, #[case] error: &str) {
     let archive = ArchivedTransaction::new().await;
-    for (case, error) in [
-        ("missing", "Missing recoverable transaction"),
-        ("wrong_chain", "Missing recoverable transaction"),
-        ("conflicting_payload", "Conflicting transaction archive records"),
-        ("conflicting_dependencies", "Conflicting transaction archive records"),
-        ("stored_hash", "Recovery transaction hash mismatch"),
-        ("computed_hash", "Recovery transaction hash mismatch"),
-        ("too_many_dependencies", "Invalid recovery dependency count"),
-        ("missing_dependency", "Missing complete recovery manifest"),
-        ("corrupt_dependency", "Recovery chunk digest mismatch"),
-    ] {
-        // Each case starts with the same valid document, so failures cannot mask each other.
-        archive.client.collection().delete_many(bson::doc! {}).await.unwrap();
-        let mut document = archive.document.clone();
-        let mut tx = archive.tx.clone();
-        match case {
-            "missing" => {}
-            "wrong_chain" => document.chain_id = "other-chain".into(),
-            "conflicting_payload" | "conflicting_dependencies" => {
-                archive.client.collection().insert_one(document.clone()).await.unwrap();
-                document.id.bytes = Uuid::new_v4().as_bytes().to_vec();
-                if case == "conflicting_payload" {
-                    tx.charge_fee = !tx.charge_fee;
-                } else {
-                    document.committed_data = vec!["a".repeat(64)];
-                }
+    // Each case starts with the same valid document, so failures cannot mask each other.
+    archive.client.collection().delete_many(bson::doc! {}).await.unwrap();
+    let mut document = archive.document.clone();
+    let mut tx = archive.tx.clone();
+    match case {
+        "missing" => {}
+        "wrong_chain" => document.chain_id = "other-chain".into(),
+        "conflicting_payload" | "conflicting_dependencies" => {
+            archive.client.collection().insert_one(document.clone()).await.unwrap();
+            document.id.bytes = Uuid::new_v4().as_bytes().to_vec();
+            if case == "conflicting_payload" {
+                tx.charge_fee = !tx.charge_fee;
+            } else {
+                document.committed_data = vec!["a".repeat(64)];
             }
-            "stored_hash" => tx.hash = Felt::ZERO,
-            "computed_hash" => {
-                let Transaction::Invoke(InvokeTransaction::V3(invoke)) = &mut tx.transaction else { unreachable!() };
-                invoke.nonce = Felt::ONE;
-            }
-            "too_many_dependencies" => document.committed_data = vec![document.committed_data[0].clone(); 5],
-            "missing_dependency" => document.committed_data = vec!["a".repeat(64)],
-            "corrupt_dependency" => {
-                let database = archive.client.client().database(&archive.config.database_name);
-                let recovery = RecoveryArchive::new(&database, &archive.config.collection_name);
-                let record = recovery.download(&document.committed_data[0]).await.unwrap();
-                database
-                    .collection::<bson::Document>(&format!("{}_committed_chunks_v1", archive.config.collection_name))
-                    .update_one(
-                        bson::doc! {"_id": &record.manifest.chunks[0]},
-                        bson::doc! {"$set":{"payload":bson::Binary {
-                            subtype:bson::spec::BinarySubtype::Generic, bytes:vec![0,1,2],
-                        }}},
-                    )
-                    .await
-                    .unwrap();
-            }
-            _ => unreachable!(),
         }
-        if case != "missing" {
-            document.raw_transaction.bytes = bincode::serialize(&tx).unwrap();
-            archive.client.collection().insert_one(document).await.unwrap();
+        "stored_hash" => tx.hash = Felt::ZERO,
+        "computed_hash" => {
+            let Transaction::Invoke(InvokeTransaction::V3(invoke)) = &mut tx.transaction else { unreachable!() };
+            invoke.nonce = Felt::ONE;
         }
-        let (target, _) = recovery_backend().await;
-        let failure = restore_transactions(&target, &archive.config, &[archive.tx.hash]).await.unwrap_err();
-        assert!(format!("{failure:#}").contains(error), "{case}: {failure:#}");
-        assert_eq!(target.get_saved_mempool_transactions().count(), 0, "{case}");
-        assert!(target.db.recovery_dependencies(archive.tx.hash).unwrap().is_empty(), "{case}");
-        assert_eq!(target.get_external_outbox_transactions(10).count(), 0, "{case}");
+        "too_many_dependencies" => document.committed_data = vec![document.committed_data[0].clone(); 5],
+        "missing_dependency" => document.committed_data = vec!["a".repeat(64)],
+        "corrupt_dependency" => {
+            let database = archive.client.client().database(&archive.config.database_name);
+            let recovery = CommittedDataArchive::new(&database, &archive.config.collection_name);
+            let record = recovery.download(&document.committed_data[0]).await.unwrap();
+            database
+                .collection::<bson::Document>(&format!("{}_committed_chunks_v1", archive.config.collection_name))
+                .update_one(
+                    bson::doc! {"_id": &record.manifest.chunks[0]},
+                    bson::doc! {"$set":{"payload":bson::Binary {
+                        subtype:bson::spec::BinarySubtype::Generic, bytes:vec![0,1,2],
+                    }}},
+                )
+                .await
+                .unwrap();
+        }
+        _ => unreachable!(),
     }
+    if case != "missing" {
+        document.raw_transaction.bytes = bincode::serialize(&tx).unwrap();
+        archive.client.collection().insert_one(document).await.unwrap();
+    }
+    let (target, _) = recovery_backend().await;
+    let failure = restore_transactions(&target, &archive.config, &[archive.tx.hash]).await.unwrap_err();
+    assert!(format!("{failure:#}").contains(error), "{case}: {failure:#}");
+    assert_eq!(target.get_saved_mempool_transactions().count(), 0, "{case}");
+    assert!(target.db.recovery_dependencies(archive.tx.hash).unwrap().is_empty(), "{case}");
+    assert_eq!(target.get_external_outbox_transactions(10).count(), 0, "{case}");
     archive.drop_database().await;
 }

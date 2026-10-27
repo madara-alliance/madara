@@ -4,18 +4,21 @@ use blockifier::execution::syscalls::committed_data::{CommittedDataBatchProof, C
 use mc_db::MadaraStorageWrite;
 use std::time::Instant;
 
+const SYNTHETIC_VALUE_BITS: [u32; 8] = [8, 16, 24, 32, 40, 48, 56, 60];
+const RELATIVE_CHANGE_DIVISOR: u64 = 65_536;
+
 fn parameter(name: &str, default: usize) -> usize {
     std::env::var(name).map(|s| s.parse().expect("integer benchmark parameter")).unwrap_or(default)
 }
 fn random(key: usize, tick: usize) -> Felt {
-    starknet_core::utils::starknet_keccak(format!("rpc-price-{key}-{tick}").as_bytes())
+    starknet_core::utils::starknet_keccak(format!("rpc-value-{key}-{tick}").as_bytes())
 }
-fn changed_price(key: usize, tick: usize, previous: Option<Felt>, large_moves: bool) -> Felt {
+fn changed_value(key: usize, tick: usize, previous: Option<Felt>, large_moves: bool) -> Felt {
     let random = u64::from_be_bytes(random(key, tick).to_bytes_be()[24..].try_into().unwrap());
     let value = Felt::from(match previous.filter(|_| !large_moves) {
         Some(old) => {
             let old = u64::from_be_bytes(old.to_bytes_be()[24..].try_into().unwrap());
-            let change = 1 + random % (old / 65536).max(1);
+            let change = 1 + random % (old / RELATIVE_CHANGE_DIVISOR).max(1);
             if random & 1 == 0 {
                 old + change
             } else {
@@ -23,7 +26,7 @@ fn changed_price(key: usize, tick: usize, previous: Option<Felt>, large_moves: b
             }
         }
         None => {
-            let bits = [23, 27, 29, 30, 32, 33, 35, 36, 38, 41][key % 10];
+            let bits = SYNTHETIC_VALUE_BITS[key % SYNTHETIC_VALUE_BITS.len()];
             (1 << (bits - 1)) | (random & ((1 << (bits - 1)) - 1))
         }
     });
@@ -35,9 +38,9 @@ fn changed_price(key: usize, tick: usize, previous: Option<Felt>, large_moves: b
 }
 
 #[test]
-fn committed_data_rpc_price_redraw_collision_still_changes_value() {
-    let drawn = changed_price(0, 1, None, true);
-    assert_eq!(changed_price(0, 1, Some(drawn), true), drawn + Felt::ONE);
+fn committed_data_rpc_value_redraw_collision_still_changes_value() {
+    let drawn = changed_value(0, 1, None, true);
+    assert_eq!(changed_value(0, 1, Some(drawn), true), drawn + Felt::ONE);
 }
 
 #[tokio::test]
@@ -47,13 +50,18 @@ async fn committed_data_measure_signed_rpc_imports() {
     let versions = parameter("CD_MEASURE_VERSIONS", 16);
     let retained = parameter("CD_MEASURE_RETAINED", 8);
     let large_moves = std::env::var("CD_MEASURE_LARGE_MOVES").is_ok_and(|v| v == "true");
-    assert!((1..=524288).contains(&entries) && versions <= 1000 && versions > retained && retained > 0);
+    assert!(
+        (1..=blockifier::execution::syscalls::committed_data::MAX_COMMITTED_DATA_VALUES).contains(&entries)
+            && versions <= 1000
+            && versions > retained
+            && retained > 0
+    );
     let (backend, mut rpc) = crate::test_utils::rpc_test_setup();
     let public_key = starknet_types_core::curve::AffinePoint::generator().x();
     rpc.set_committed_data_signers(vec![public_key]).unwrap();
     let module = crate::rpc_api_committed_data(&rpc).unwrap();
     let mut values: Vec<_> =
-        (0..entries).map(|key| (random(key, usize::MAX), changed_price(key, 0, None, false))).collect();
+        (0..entries).map(|key| (random(key, usize::MAX), changed_value(key, 0, None, false))).collect();
     let mut base_root = None;
     let chain = backend.chain_config().chain_id.to_felt();
     let mut timings = Vec::new();
@@ -62,10 +70,10 @@ async fn committed_data_measure_signed_rpc_imports() {
     let keys: Vec<_> = values.iter().take(32).map(|(key, _)| *key).collect();
     for tick in 0..=versions {
         if tick > 0 {
-            for (key, (_, price)) in values.iter_mut().enumerate() {
-                let old = *price;
-                *price = changed_price(key, tick, Some(old), large_moves);
-                assert_ne!(*price, old);
+            for (key, (_, value)) in values.iter_mut().enumerate() {
+                let old = *value;
+                *value = changed_value(key, tick, Some(old), large_moves);
+                assert_ne!(*value, old);
             }
         }
         let tree = CommittedDataSet::new(values.clone()).unwrap(); // Client work, outside server timer.
@@ -102,8 +110,8 @@ async fn committed_data_measure_signed_rpc_imports() {
     assert_eq!(backend.db.get_committed_data_batch(root, &keys).unwrap(), proof);
     let report = serde_json::json!({"entries": entries, "versions": versions + 1, "large_moves": large_moves,
         "initial_signed_rpc_ms": timings[0], "signed_rpc_ms": &timings[1..], "cycle_including_pruning_ms": &cycles[1..],
-        "all_prices_changed": true, "historical_proof_matches": true,
-        "limitations": "In-process raw JSON dispatch with real signature validation and RocksDB WAL sync; excludes network transport, account transaction submission and actual Mongo export. Client root/signature construction is outside timing. Synthetic changing prices, not captured transactions."});
+        "all_values_changed": true, "historical_proof_matches": true,
+        "limitations": "In-process raw JSON dispatch with real signature validation and RocksDB WAL sync; excludes network transport, account transaction submission and actual Mongo export. Client root/signature construction is outside timing. Synthetic changing values, not captured transactions."});
     println!("{}", serde_json::to_string_pretty(&report).unwrap());
     if let Ok(path) = std::env::var("CD_MEASURE_RPC_REPORT") {
         std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();

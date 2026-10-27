@@ -10,7 +10,7 @@ async fn mongo_recovery_restores_bases_and_rejects_corruption() {
     let uri = std::env::var("RECOVERY_TEST_MONGO_URI").expect("isolated Mongo URI required");
     let client = mongodb::Client::with_uri_str(uri).await.unwrap();
     let db = client.database(&format!("recovery_faults_{}", uuid::Uuid::new_v4().simple()));
-    let archive = RecoveryArchive::new(&db, "transactions");
+    let archive = CommittedDataArchive::new(&db, "transactions");
     let source = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
     let target = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
     let namespace = CommittedDataUpdate { application_id: Felt::ONE, dataset_id: Felt::TWO, base_root: None };
@@ -20,7 +20,7 @@ async fn mongo_recovery_restores_bases_and_rejects_corruption() {
     let base = source.journal_committed_data(Some(namespace), root, entries.clone()).await.unwrap();
     let base_record = source.db.get_recovery_record(&base).unwrap().unwrap();
     // Simulate interruption after uploading bytes but before committing the manifest.
-    RecoveryArchive::immutable(&archive.chunks, &base_record.manifest.chunks[0], base_record.chunks[0].clone())
+    CommittedDataArchive::immutable(&archive.chunks, &base_record.manifest.chunks[0], base_record.chunks[0].clone())
         .await
         .unwrap();
     assert!(!archive.complete(&base).await.unwrap());
@@ -126,16 +126,16 @@ fn completion_manifest_requires_valid_bounded_bytes_and_exact_identity() {
     let manifest = checkpoint().manifest;
     let id = manifest.id().unwrap();
     let document = doc! {"payload":binary(serde_json::to_vec(&manifest).unwrap())};
-    assert_eq!(RecoveryArchive::decode_manifest(&document, &id).unwrap().id().unwrap(), id);
-    assert!(RecoveryArchive::decode_manifest(&document, &"0".repeat(64)).is_err());
+    assert_eq!(CommittedDataArchive::decode_manifest(&document, &id).unwrap().id().unwrap(), id);
+    assert!(CommittedDataArchive::decode_manifest(&document, &"0".repeat(64)).is_err());
     for bytes in [vec![0; 65537], b"invalid json".to_vec()] {
-        assert!(RecoveryArchive::decode_manifest(&doc! {"payload":binary(bytes)}, &id).is_err());
+        assert!(CommittedDataArchive::decode_manifest(&doc! {"payload":binary(bytes)}, &id).is_err());
     }
     let mut invalid = manifest;
     invalid.version += 1;
     let document = doc! {"payload":binary(serde_json::to_vec(&invalid).unwrap())};
-    assert!(RecoveryArchive::decode_manifest(&document, &invalid.id().unwrap()).is_err());
-    assert!(RecoveryArchive::decode_manifest(&doc! {}, &id).is_err());
+    assert!(CommittedDataArchive::decode_manifest(&document, &invalid.id().unwrap()).is_err());
+    assert!(CommittedDataArchive::decode_manifest(&doc! {}, &id).is_err());
 }
 
 #[tokio::test]

@@ -110,3 +110,27 @@ pub struct MempoolTransactionDocument {
     /// Whether fee charging is enabled
     pub charge_fee: bool,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Documents written before committed-data support contain no dependency field.
+    /// Empty dependencies also preserve the old serialized shape for ordinary transactions.
+    #[test]
+    fn committed_data_is_optional_in_legacy_mongo_documents() {
+        let binary = bson::Binary { subtype: bson::spec::BinarySubtype::Generic, bytes: vec![0; 16] };
+        let legacy = bson::doc! {
+            "_id": binary.clone(), "tx_hash": "0x1", "tx_type": "INVOKE", "tx_version": "V3",
+            "sender_address": "0x2", "contract_address": "0x2", "nonce": "0x0",
+            "arrived_at": bson::DateTime::from_millis(0), "inserted_at": bson::DateTime::from_millis(0),
+            "signature": [], "raw_transaction": binary, "chain_id": "test", "status": "PENDING", "charge_fee": true,
+        };
+        let mut decoded: MempoolTransactionDocument = bson::from_document(legacy).unwrap();
+        assert!(decoded.committed_data.is_empty());
+        assert!(!bson::to_document(&decoded).unwrap().contains_key("committed_data"));
+        decoded.committed_data = vec!["a".repeat(64)];
+        let restored: MempoolTransactionDocument = bson::from_document(bson::to_document(&decoded).unwrap()).unwrap();
+        assert_eq!(restored.committed_data, decoded.committed_data);
+    }
+}

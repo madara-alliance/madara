@@ -1,5 +1,5 @@
 //! Restore selected transaction admissions after authenticating their dataset dependencies.
-use super::RecoveryArchive;
+use super::CommittedDataArchive;
 use anyhow::{ensure, Context, Result};
 use bincode::Options;
 use mc_db::{MadaraBackend, MadaraStorageWrite};
@@ -8,10 +8,14 @@ use mp_convert::{Felt, FeltHexDisplay, ToFelt};
 use mp_transactions::validated::{TxTimestamp, ValidatedTransaction};
 use std::sync::Arc;
 
+/// Mongo BSON documents are limited to 16 MiB including metadata; a stored binary payload
+/// cannot be larger. Keep a decode allocation bound even for malformed archived bincode.
+const MAX_RECOVERY_TRANSACTION_BYTES: u64 = 16 * 1024 * 1024;
+
 fn decode_recovery_transaction(bytes: &[u8]) -> Result<ValidatedTransaction> {
     let mut tx: ValidatedTransaction = bincode::DefaultOptions::new()
         .with_fixint_encoding()
-        .with_limit(16 * 1024 * 1024)
+        .with_limit(MAX_RECOVERY_TRANSACTION_BYTES)
         .reject_trailing_bytes()
         .deserialize(bytes)?;
     // Resubmissions have different admission times. Recovery assigns a fresh time after comparison.
@@ -30,7 +34,7 @@ pub async fn restore_transactions(
 ) -> Result<usize> {
     use futures::TryStreamExt;
     let client = crate::mongodb::MongoClient::new(config).await?;
-    let archive = RecoveryArchive::new(&client.client().database(&config.database_name), &config.collection_name);
+    let archive = CommittedDataArchive::new(&client.client().database(&config.database_name), &config.collection_name);
     let chain_id = backend.chain_config().chain_id.to_string();
     let mut restored = 0;
     for hash in hashes {

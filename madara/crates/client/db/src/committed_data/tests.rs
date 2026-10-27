@@ -1,3 +1,5 @@
+//! Backend contracts: authenticate before publishing, preserve immutable history, and bound work.
+//! Reopen tests exercise durable cold state; parameterized rejection tests each use a fresh backend.
 use super::*;
 use crate::rocksdb::RocksDBConfig;
 
@@ -26,29 +28,6 @@ async fn committed_data_updates_retain_omitted_keys_history_and_namespaces_after
     let patch = vec![(Felt::TWO, Felt::from(250_u32)), (Felt::MAX, Felt::ZERO)];
     let next = Felt::from_hex_unchecked("0x6f7b24abc22284b8724b96d0a157b7096a1a289bb76bb0a2b2d1a175fe870b0");
     let update = CommittedDataUpdate { base_root: Some(root), ..namespace };
-    for bad in [
-        CommittedDataUpdate { application_id: Felt::THREE, ..update },
-        CommittedDataUpdate { dataset_id: Felt::THREE, ..update },
-        CommittedDataUpdate { base_root: Some(Felt::ZERO), ..update },
-    ] {
-        assert!(backend.update_committed_data(bad, next, patch.clone()).await.is_err());
-    }
-    assert!(backend.update_committed_data(update, next, vec![(Felt::TWO, Felt::ZERO); 2]).await.is_err());
-    assert!(backend.update_committed_data(update, Felt::ZERO, patch.clone()).await.is_err());
-    assert!(backend.db.get_committed_data_count(next).unwrap().is_none());
-    // A mistaken initial request must not register a replacement root in this namespace.
-    let replacement = vec![(Felt::TWO, Felt::from(250_u32))];
-    let replacement_root = CommittedDataSet::new(replacement.clone()).unwrap().root();
-    let error = backend.update_committed_data(namespace, replacement_root, replacement).await.unwrap_err();
-    assert!(error.to_string().contains("already initialized"));
-    assert!(!backend
-        .db
-        .has_committed_data_version(CommittedDataVersion {
-            application_id: namespace.application_id,
-            dataset_id: namespace.dataset_id,
-            root: replacement_root,
-        })
-        .unwrap());
     // The first response might have been lost: resending the identical initialization is safe.
     backend
         .update_committed_data(
@@ -487,4 +466,116 @@ async fn committed_data_initialization_authenticates_the_complete_map_before_wri
         assert_eq!(proof.value, value);
         assert!(proof.verify());
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum InvalidPatch {
+    WrongApplication,
+    WrongDataset,
+    UnknownBase,
+    DuplicateKeys,
+    WrongRoot,
+}
+
+/// Every invalid patch is isolated so one rejection cannot conceal another scenario's side effects.
+#[rstest::rstest]
+#[case::wrong_application(InvalidPatch::WrongApplication)]
+#[case::wrong_dataset(InvalidPatch::WrongDataset)]
+#[case::unknown_base(InvalidPatch::UnknownBase)]
+#[case::duplicate_keys(InvalidPatch::DuplicateKeys)]
+#[case::wrong_result_root(InvalidPatch::WrongRoot)]
+#[tokio::test]
+async fn committed_data_invalid_patch_does_not_publish(#[case] scenario: InvalidPatch) {
+    let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+    let namespace = CommittedDataUpdate { application_id: Felt::ONE, dataset_id: Felt::TWO, base_root: None };
+    let values = vec![(Felt::ONE, Felt::TWO)];
+    let root = CommittedDataSet::new(values.clone()).unwrap().root();
+    backend.update_committed_data(namespace, root, values).await.unwrap();
+    let mut update = CommittedDataUpdate { base_root: Some(root), ..namespace };
+    let mut patch = vec![(Felt::ONE, Felt::THREE)];
+    let mut next = CommittedDataSet::new(patch.clone()).unwrap().root();
+    match scenario {
+        InvalidPatch::WrongApplication => update.application_id = Felt::THREE,
+        InvalidPatch::WrongDataset => update.dataset_id = Felt::THREE,
+        InvalidPatch::UnknownBase => update.base_root = Some(Felt::ZERO),
+        InvalidPatch::DuplicateKeys => patch.push(patch[0]),
+        InvalidPatch::WrongRoot => next = Felt::ZERO,
+    }
+    assert!(backend.update_committed_data(update, next, patch).await.is_err());
+    assert!(backend.db.get_committed_data_count(next).unwrap().is_none());
+    assert_eq!(backend.db.list_committed_data_versions(None).unwrap().len(), 1);
+    assert_eq!(backend.committed_data_witness(root, Felt::ONE).unwrap().unwrap().value, Felt::TWO);
+}
+
+/// Initialization may be retried, but cannot silently replace an existing namespace's first root.
+#[tokio::test]
+async fn committed_data_initialization_cannot_replace_existing_namespace() {
+    let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+    let namespace = CommittedDataUpdate { application_id: Felt::ONE, dataset_id: Felt::TWO, base_root: None };
+    let first = vec![(Felt::ONE, Felt::TWO)];
+    let root = CommittedDataSet::new(first.clone()).unwrap().root();
+    backend.update_committed_data(namespace, root, first).await.unwrap();
+    let replacement = vec![(Felt::ONE, Felt::THREE)];
+    let replacement_root = CommittedDataSet::new(replacement.clone()).unwrap().root();
+    let error = backend.update_committed_data(namespace, replacement_root, replacement).await.unwrap_err();
+    assert!(error.to_string().contains("already initialized"));
+    assert!(!backend
+        .db
+        .has_committed_data_version(CommittedDataVersion {
+            application_id: namespace.application_id,
+            dataset_id: namespace.dataset_id,
+            root: replacement_root,
+        })
+        .unwrap());
+}
+
+/// Revert changes chain publication/state, not content-addressed imports. Both retained and pruned
+/// datasets must remain readable, and an explicit patch can branch from the pre-revert root.
+#[rstest::rstest]
+#[case::retained(false)]
+#[case::pruned(true)]
+#[tokio::test]
+async fn committed_data_survives_real_chain_revert_and_reopen(#[case] prune: bool) {
+    let directory = tempfile::tempdir().unwrap();
+    let open = || {
+        MadaraBackend::open_rocksdb(
+            directory.path(),
+            Arc::new(ChainConfig::madara_test()),
+            MadaraBackendConfig::default(),
+            RocksDBConfig::default(),
+            Arc::new(NativeConfig::default()),
+        )
+        .unwrap()
+    };
+    let backend = open();
+    let genesis = crate::test_utils::add_test_block(&backend, 0, vec![]);
+    let namespace = CommittedDataUpdate { application_id: Felt::ONE, dataset_id: Felt::TWO, base_root: None };
+    let values = vec![(Felt::ONE, Felt::TWO)];
+    let root = CommittedDataSet::new(values.clone()).unwrap().root();
+    backend.update_committed_data(namespace, root, values.clone()).await.unwrap();
+    let recovery_id = backend.journal_committed_data(Some(namespace), root, values).await.unwrap();
+    crate::test_utils::add_test_block(&backend, 1, vec![]);
+    crate::test_utils::add_test_block(&backend, 2, vec![]);
+    backend.set_latest_l1_confirmed(Some(2)).unwrap();
+    let versions = backend.db.list_committed_data_versions(None).unwrap();
+    if prune {
+        while backend.db.maintain_committed_data_history(Some(u64::MAX)).unwrap() {}
+    }
+    backend.revert_to(&genesis).unwrap();
+    assert_eq!(backend.latest_confirmed_block_n(), Some(0));
+    assert_eq!(backend.latest_l1_confirmed_block_n(), Some(0));
+    assert_eq!(backend.db.list_committed_data_versions(None).unwrap(), versions);
+    assert_eq!(backend.db.get_recovery_manifest(&recovery_id).unwrap().unwrap().root, root);
+    assert!(backend.committed_data_witness(root, Felt::ONE).unwrap().unwrap().verify());
+    let patch = vec![(Felt::ONE, Felt::THREE)];
+    let next = CommittedDataSet::new(patch.clone()).unwrap().root();
+    backend
+        .update_committed_data(CommittedDataUpdate { base_root: Some(root), ..namespace }, next, patch)
+        .await
+        .unwrap();
+    drop(backend);
+    let backend = open();
+    assert_eq!(backend.committed_data_witness(root, Felt::ONE).unwrap().unwrap().value, Felt::TWO);
+    assert_eq!(backend.committed_data_witness(next, Felt::ONE).unwrap().unwrap().value, Felt::THREE);
+    assert_eq!(backend.db.list_committed_data_versions(None).unwrap().len(), 2);
 }

@@ -107,7 +107,7 @@ fn committed_cache_retains_current_frontier_not_obsolete_versions() -> Result<()
         next = tree.next_id();
         cache = tree.into_committed_cache();
         disk.extend(records);
-        assert_eq!(cache.0.len(), 255, "Obsolete nodes must not displace the current frontier");
+        assert_eq!(cache.entries.len(), 255, "Obsolete nodes must not displace the current frontier");
     }
     // Eviction is only a performance change; persisted history remains authoritative.
     let mut tiny = NodeCache::default();
@@ -152,21 +152,21 @@ fn committed_node_cache_enforces_bytes_and_recent_blocks() {
     for id in 1..=3 {
         cache.put(id, Node::new_leaf(Felt::from(id), Felt::ONE), true);
     }
-    assert_eq!(cache.0.len(), 2); // half the shared budget belongs to the node cache
-    assert!(!cache.0.contains(&1));
+    assert_eq!(cache.entries.len(), 2); // half the shared budget belongs to the node cache
+    assert!(!cache.entries.contains(&1));
     cache.configure(&config, 11);
-    assert_eq!(cache.0.len(), 2);
+    assert_eq!(cache.entries.len(), 2);
     cache.configure(&config, 12);
-    assert!(cache.0.is_empty());
+    assert!(cache.entries.is_empty());
     cache.configure(&config, 5); // a reorg cannot move the cache clock backwards
-    assert_eq!(cache.1, 12);
+    assert_eq!(cache.observed_block, 12);
     config.cache_bytes = 0;
     cache.configure(&config, 12);
     cache.put(1, Node::new_leaf(Felt::ONE, Felt::ONE), true);
-    assert!(cache.0.is_empty());
+    assert!(cache.entries.is_empty());
     config.cache_bytes = 10000;
     config.memory_blocks = 0;
     cache.configure(&config, 12);
     cache.put(1, Node::new_leaf(Felt::ONE, Felt::ONE), true);
-    assert!(cache.0.is_empty());
+    assert!(cache.entries.is_empty());
 }

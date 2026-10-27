@@ -17,6 +17,11 @@ pub struct GatewayParams {
     #[serde(default)]
     pub feeder_gateway_gzip_responses: bool,
 
+    /// Maximum simultaneous committed-data replication/proof reads on this server.
+    #[arg(env = "MADARA_COMMITTED_DATA_MAX_CONCURRENT_READS", long, default_value_t = default_committed_data_reads(), value_parser = clap::value_parser!(u32).range(1..))]
+    #[serde(default = "default_committed_data_reads")]
+    pub committed_data_max_concurrent_reads: u32,
+
     /// Enable the gateway server.
     #[arg(env = "MADARA_GATEWAY_ENABLE", long)]
     pub gateway_enable: bool,
@@ -38,10 +43,15 @@ pub struct GatewayParams {
     pub gateway_port: u16,
 }
 
+fn default_committed_data_reads() -> u32 {
+    GatewayServerConfig::default().committed_data_max_concurrent_reads as u32
+}
+
 impl GatewayParams {
     pub fn as_gateway_server_config(&self) -> GatewayServerConfig {
         GatewayServerConfig {
             feeder_gateway_enable: self.feeder_gateway_enable,
+            committed_data_max_concurrent_reads: self.committed_data_max_concurrent_reads as usize,
             feeder_gateway_gzip_responses: self.feeder_gateway_gzip_responses,
             gateway_enable: self.gateway_enable,
             gateway_external: self.gateway_external,

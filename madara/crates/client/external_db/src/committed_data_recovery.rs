@@ -1,8 +1,15 @@
 //! Operator recovery and permanent, content-addressed committed-data backups.
 //! Mongo access is trusted administration; this module does not expose a public restore RPC.
+mod transactions;
+pub use transactions::restore_transactions;
+#[cfg(test)]
+mod tests;
+
 use anyhow::{ensure, Context, Result};
 use mc_db::{
-    committed_data_recovery::{digest, RecoveryManifest, RecoveryRecord, CHUNK_ENTRIES},
+    committed_data_recovery::{
+        digest, RecoveryManifest, RecoveryRecord, MAX_COMPRESSED_CHUNK_BYTES, MAX_MANIFEST_BYTES,
+    },
     MadaraBackend, MadaraStorageRead, MadaraStorageWrite,
 };
 use mongodb::{
@@ -14,14 +21,16 @@ use mp_convert::ToFelt;
 use std::{collections::HashSet, sync::Arc};
 
 #[derive(Clone)]
-pub struct RecoveryArchive {
+/// Mongo collections containing immutable committed-data manifests and payload chunks.
+pub struct CommittedDataArchive {
     manifests: Collection<Document>,
     chunks: Collection<Document>,
 }
 fn binary(bytes: Vec<u8>) -> Bson {
     Bson::Binary(Binary { subtype: BinarySubtype::Generic, bytes })
 }
-impl RecoveryArchive {
+impl CommittedDataArchive {
+    /// Use majority reads and journaled majority writes before acknowledging backup completion.
     pub fn new(database: &mongodb::Database, prefix: &str) -> Self {
         let opts = CollectionOptions::builder()
             // A retry must not mistake a primary-only visible manifest for durable completion
@@ -34,6 +43,7 @@ impl RecoveryArchive {
             chunks: database.collection_with_options(&format!("{prefix}_committed_chunks_v1"), opts),
         }
     }
+    /// Validate a durable manifest before deleting the last local upload payload.
     pub async fn complete(&self, id: &str) -> Result<bool> {
         // Completion permits deleting the last local upload payload. A document at this
         // key is insufficient: authenticate its manifest before acknowledging the backup.
@@ -41,6 +51,7 @@ impl RecoveryArchive {
         Self::decode_manifest(&document, id)?;
         Ok(true)
     }
+    /// Insert once; retries must match exact bytes and cannot overwrite conflicting content.
     async fn immutable(collection: &Collection<Document>, id: &str, bytes: Vec<u8>) -> Result<()> {
         let document = doc! {"_id":id,"payload":binary(bytes)};
         collection.update_one(doc! {"_id":id}, doc! {"$setOnInsert":document.clone()}).upsert(true).await?;
@@ -50,6 +61,7 @@ impl RecoveryArchive {
         );
         Ok(())
     }
+    /// Upload parent-dependent chunks first, then publish the complete manifest as the commit marker.
     pub async fn upload(&self, record: &RecoveryRecord) -> Result<()> {
         record.manifest.validate()?;
         if let Some(base) = &record.manifest.base {
@@ -57,7 +69,7 @@ impl RecoveryArchive {
         }
         ensure!(record.chunks.len() == record.manifest.chunks.len(), "Incomplete local backup record");
         for (hash, chunk) in record.manifest.chunks.iter().zip(&record.chunks) {
-            ensure!(chunk.len() <= CHUNK_ENTRIES * 64 + 1024 && digest(chunk) == *hash, "Invalid backup chunk");
+            ensure!(chunk.len() <= MAX_COMPRESSED_CHUNK_BYTES && digest(chunk) == *hash, "Invalid backup chunk");
             Self::immutable(&self.chunks, hash, chunk.clone()).await?;
         }
         // Only complete manifests are visible, after majority+journal acknowledgement of every chunk.
@@ -69,12 +81,13 @@ impl RecoveryArchive {
     }
     fn decode_manifest(doc: &Document, id: &str) -> Result<RecoveryManifest> {
         let bytes = doc.get_binary_generic("payload")?;
-        ensure!(bytes.len() <= 65536, "Oversized recovery manifest");
+        ensure!(bytes.len() <= MAX_MANIFEST_BYTES, "Oversized recovery manifest");
         let manifest: RecoveryManifest = serde_json::from_slice(bytes)?;
         manifest.validate()?;
         ensure!(manifest.id()? == id, "Recovery manifest digest mismatch");
         Ok(manifest)
     }
+    /// Fetch bounded, digest-verified chunks for one manifest; the importer verifies the MPT root.
     pub async fn download(&self, id: &str) -> Result<RecoveryRecord> {
         let manifest = self.manifest(id).await?;
         let mut chunks = Vec::new();
@@ -82,7 +95,7 @@ impl RecoveryArchive {
             let doc = self.chunks.find_one(doc! {"_id":hash}).await?.context("Missing recovery chunk")?;
             let bytes = doc.get_binary_generic("payload")?;
             ensure!(
-                bytes.len() <= CHUNK_ENTRIES * 64 + 1024 && digest(bytes) == *hash,
+                bytes.len() <= MAX_COMPRESSED_CHUNK_BYTES && digest(bytes) == *hash,
                 "Recovery chunk digest mismatch"
             );
             chunks.push(bytes.to_vec());
@@ -185,9 +198,3 @@ async fn restore_record(backend: &Arc<MadaraBackend>, expected_id: String, recor
     })
     .await?
 }
-
-mod transactions;
-pub use transactions::restore_transactions;
-
-#[cfg(test)]
-mod tests;

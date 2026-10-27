@@ -389,7 +389,7 @@ fn committed_data_catalog_and_outbox_do_not_wait_for_proof_pruning() {
             .unwrap();
     let version = CommittedDataVersion { application_id: Felt::ONE, dataset_id: Felt::TWO, root };
     std::thread::scope(|scope| {
-        let pruning = backend.db.inner.committed_data_write.lock().unwrap();
+        let pruning = backend.db.inner.committed_data.tree.lock().unwrap();
         let (send, receive) = std::sync::mpsc::channel();
         let db = &backend.db;
         let writer = scope.spawn(move || {

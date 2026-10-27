@@ -6,12 +6,14 @@ use mp_gateway::committed_data::CommittedDataUpdate;
 use std::collections::HashSet;
 
 const MAX_SIGNATURES: usize = 32;
+const IMPORT_SIGNATURE_DOMAIN: &[u8] = b"MADARA_COMMITTED_DATA_IMPORT_V1";
+const UPDATE_SIGNATURE_DOMAIN: &[u8] = b"MADARA_COMMITTED_DATA_UPDATE_V1";
 
 /// Canonical signing preimage: ASCII domain || chain-id felt (32 BE) || root (32 BE) || count (4 BE).
 /// Starknet Keccak produces a 250-bit message supported by Stark ECDSA. Replay of the same dataset
 /// is intentionally idempotent; there is no expiry or off-chain clock dependency.
 pub fn import_message_hash(chain_id: Felt, root: Felt, count: u32) -> Felt {
-    let mut bytes = b"MADARA_COMMITTED_DATA_IMPORT_V1".to_vec();
+    let mut bytes = IMPORT_SIGNATURE_DOMAIN.to_vec();
     bytes.extend_from_slice(&chain_id.to_bytes_be());
     bytes.extend_from_slice(&root.to_bytes_be());
     bytes.extend_from_slice(&count.to_be_bytes());
@@ -37,7 +39,7 @@ pub(super) fn validate_import_signatures(
 /// Update signatures authorize the resulting map in a namespace, not its publication on-chain.
 /// The base presence byte distinguishes an empty base from the felt zero root.
 pub fn update_message_hash(chain_id: Felt, update: CommittedDataUpdate, root: Felt, count: u32) -> Felt {
-    let mut bytes = b"MADARA_COMMITTED_DATA_UPDATE_V1".to_vec();
+    let mut bytes = UPDATE_SIGNATURE_DOMAIN.to_vec();
     for value in [chain_id, update.application_id, update.dataset_id] {
         bytes.extend_from_slice(&value.to_bytes_be());
     }
@@ -48,6 +50,7 @@ pub fn update_message_hash(chain_id: Felt, update: CommittedDataUpdate, root: Fe
     starknet_core::utils::starknet_keccak(&bytes)
 }
 
+/// Apply the signer policy and reject duplicates, excessive work, or invalid ECDSA signatures.
 pub(super) fn validate_signatures(allowed: &[Felt], message: Felt, signatures: &[ImportSignature]) -> RpcResult<()> {
     let reject = || CommittedDataRpcError::UnauthorizedImport.into();
     if signatures.len() > MAX_SIGNATURES {

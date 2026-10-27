@@ -2,6 +2,9 @@
 //!
 //! IDs are append-only arena offsets, not protocol identifiers. Hashing and witnesses retain the
 //! existing committed-data format. A writer publishes nodes, allocator and root pointer atomically.
+#[cfg(test)]
+mod tests;
+
 use anyhow::{ensure, Context, Result};
 use blockifier::execution::syscalls::committed_data::{
     branch, key_bit, leaf, CommittedDataSibling, CommittedDataWitness,
@@ -12,10 +15,16 @@ use std::num::NonZeroUsize;
 
 /// Bounded decoded-node cache. Block age controls eligibility; a byte estimate caps occupancy.
 /// The estimate includes hash-table/list bookkeeping, but is not a process RSS guarantee.
-pub(crate) struct NodeCache(LruCache<u64, (Node, bool, u64)>, u64, u64, bool);
+pub(crate) struct NodeCache {
+    entries: LruCache<u64, (Node, bool, u64)>,
+    observed_block: u64,
+    memory_blocks: u64,
+    enabled: bool,
+}
 impl Default for NodeCache {
     fn default() -> Self {
-        let mut cache = Self(LruCache::unbounded(), 0, u64::MAX, true);
+        let mut cache =
+            Self { entries: LruCache::unbounded(), observed_block: 0, memory_blocks: u64::MAX, enabled: true };
         cache.configure(&Default::default(), 0);
         cache
     }
@@ -27,37 +36,43 @@ impl NodeCache {
         config: &crate::committed_data_retention::CommittedDataRetentionConfig,
         block: u64,
     ) {
-        self.1 = self.1.max(block);
-        self.2 = config.memory_blocks;
-        self.3 = config.cache_bytes / 2 >= Self::ENTRY_BYTES && config.memory_blocks > 0;
-        self.0
+        self.observed_block = self.observed_block.max(block);
+        self.memory_blocks = config.memory_blocks;
+        self.enabled = config.cache_bytes / 2 >= Self::ENTRY_BYTES && config.memory_blocks > 0;
+        self.entries
             .resize(NonZeroUsize::new((config.cache_bytes / 2 / Self::ENTRY_BYTES).max(1)).expect("nonzero capacity"));
-        if !self.3 {
-            self.0.clear();
+        if !self.enabled {
+            self.entries.clear();
         }
         // Stamps use a monotonic observed head, so LRU order is also block-age order.
-        while self.0.peek_lru().is_some_and(|(_, (_, _, used))| self.1.saturating_sub(*used) >= self.2) {
-            self.0.pop_lru();
+        while self
+            .entries
+            .peek_lru()
+            .is_some_and(|(_, (_, _, used))| self.observed_block.saturating_sub(*used) >= self.memory_blocks)
+        {
+            self.entries.pop_lru();
         }
     }
     fn disabled() -> Self {
-        Self(LruCache::unbounded(), 0, 0, false)
+        Self { entries: LruCache::unbounded(), observed_block: 0, memory_blocks: 0, enabled: false }
     }
     pub(crate) fn remove(&mut self, id: u64) {
-        self.0.pop(&id);
+        self.entries.pop(&id);
     }
     fn put(&mut self, id: u64, node: Node, checked: bool) {
-        if self.3 {
-            self.0.put(id, (node, checked, self.1));
+        if self.enabled {
+            self.entries.put(id, (node, checked, self.observed_block));
         }
     }
 }
 
+pub(crate) const NODE_PREFIX: &[u8] = b"cdm/n/";
+pub(crate) const NODE_KEY_BYTES: usize = NODE_PREFIX.len() + size_of::<u64>();
 pub(crate) const NEXT_KEY: &[u8] = b"cdm/next";
-pub(crate) fn node_key(id: u64) -> [u8; 14] {
-    let mut key = [0; 14];
-    key[..6].copy_from_slice(b"cdm/n/");
-    key[6..].copy_from_slice(&id.to_be_bytes());
+pub(crate) fn node_key(id: u64) -> [u8; NODE_KEY_BYTES] {
+    let mut key = [0; NODE_KEY_BYTES];
+    key[..NODE_PREFIX.len()].copy_from_slice(NODE_PREFIX);
+    key[NODE_PREFIX.len()..].copy_from_slice(&id.to_be_bytes());
     key
 }
 
@@ -179,7 +194,7 @@ impl<F: FnMut(u64) -> Result<Option<Vec<u8>>>> Tree<F> {
         // Prior versions remain on disk. Prefer the current tree in RAM so obsolete paths do
         // not displace its still-live nodes merely because each tick creates a new version.
         for id in self.replaced {
-            self.cache.0.pop(&id);
+            self.cache.entries.pop(&id);
         }
         for (i, node) in self.nodes.into_iter().enumerate() {
             self.cache.put(self.first_id + i as u64, node, true);
@@ -191,8 +206,8 @@ impl<F: FnMut(u64) -> Result<Option<Vec<u8>>>> Tree<F> {
         if id >= self.first_id {
             return self.nodes.get(usize::try_from(id - self.first_id)?).copied().context("Missing staged node");
         }
-        if let Some((node, _, used)) = self.cache.0.get_mut(&id) {
-            *used = self.cache.1;
+        if let Some((node, _, used)) = self.cache.entries.get_mut(&id) {
+            *used = self.cache.observed_block;
             return Ok(*node);
         }
         let bytes = (self.read)(id)?.context("Persistent node unavailable")?;
@@ -203,7 +218,7 @@ impl<F: FnMut(u64) -> Result<Option<Vec<u8>>>> Tree<F> {
     }
     fn get(&mut self, id: u64) -> Result<Node> {
         let node = self.raw(id)?;
-        if id >= self.first_id || self.cache.0.get(&id).is_some_and(|(_, checked, _)| *checked) {
+        if id >= self.first_id || self.cache.entries.get(&id).is_some_and(|(_, checked, _)| *checked) {
             return Ok(node);
         }
         if let Node::Branch { bit, left, right, hash, count } = node {
@@ -213,11 +228,12 @@ impl<F: FnMut(u64) -> Result<Option<Vec<u8>>>> Tree<F> {
             ensure!(l.count().checked_add(r.count()) == Some(count), "Invalid persistent subtree count");
             ensure!(branch(bit, l.hash(), r.hash()) == hash, "Persistent branch hash mismatch");
         }
-        if let Some(entry) = self.cache.0.get_mut(&id) {
+        if let Some(entry) = self.cache.entries.get_mut(&id) {
             entry.1 = true;
         }
         Ok(node)
     }
+    /// Authenticate the requested root identity and count before traversal or mutation.
     pub(crate) fn check_root(&mut self, id: u64, root: Felt, count: u32) -> Result<()> {
         let node = self.get(id)?;
         ensure!(node.hash() == root && node.count() == count, "Persistent root mismatch");
@@ -356,6 +372,3 @@ impl<F: FnMut(u64) -> Result<Option<Vec<u8>>>> Tree<F> {
         self.first_id + self.nodes.len() as u64
     }
 }
-
-#[cfg(test)]
-mod tests;

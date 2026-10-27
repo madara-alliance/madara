@@ -12,7 +12,7 @@ impl MadaraStorageWrite for RocksDBStorage {
         &self,
         config: crate::committed_data_retention::CommittedDataRetentionConfig,
     ) -> Result<()> {
-        *self.inner.committed_data_config.write().map_err(|_| anyhow::anyhow!("Committed-data config poisoned"))? =
+        *self.inner.committed_data.config.write().map_err(|_| anyhow::anyhow!("Committed-data config poisoned"))? =
             config;
         Ok(())
     }

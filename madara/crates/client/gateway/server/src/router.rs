@@ -13,6 +13,7 @@ use mc_submit_tx::{SubmitTransaction, SubmitValidatedTransaction, TransactionLoo
 use std::{convert::Infallible, sync::Arc};
 
 // Main router to redirect to the appropriate sub-router
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn main_router(
     req: Request<Incoming>,
     path: &str,
@@ -21,12 +22,13 @@ pub(crate) async fn main_router(
     transaction_lookup: Arc<dyn TransactionLookup>,
     submit_validated: Option<Arc<dyn SubmitValidatedTransaction>>,
     config: GatewayServerConfig,
+    committed_data_reads: Arc<tokio::sync::Semaphore>,
 ) -> Result<Response<String>, Infallible> {
     match (path, config.feeder_gateway_enable, config.gateway_enable) {
         ("health", _, _) => Ok(Response::new("OK".to_string())),
         (path, _, true) if path.starts_with("gateway/") => Ok(gateway_router(req, path, transaction_submitter).await?),
         (path, true, _) if path.starts_with("feeder_gateway/") => {
-            Ok(feeder_gateway_router(req, path, backend, transaction_lookup).await?)
+            Ok(feeder_gateway_router(req, path, backend, transaction_lookup, committed_data_reads).await?)
         }
         (path, _, true)
             if path.starts_with("madara/trusted_add_validated_transaction")
@@ -49,19 +51,20 @@ async fn feeder_gateway_router(
     path: &str,
     backend: Arc<MadaraBackend>,
     transaction_lookup: Arc<dyn TransactionLookup>,
+    committed_data_reads: Arc<tokio::sync::Semaphore>,
 ) -> Result<Response<String>, Infallible> {
     match (req.method(), path) {
         (&Method::GET, "feeder_gateway/get_committed_data_versions") => {
-            Ok(crate::committed_data::get_versions(req, backend).await.unwrap_or_else(Into::into))
+            Ok(crate::committed_data::get_versions(req, backend, committed_data_reads).await.unwrap_or_else(Into::into))
         }
         (&Method::GET, "feeder_gateway/get_committed_data_roots") => {
-            Ok(crate::committed_data::get_roots(req, backend).await.unwrap_or_else(Into::into))
+            Ok(crate::committed_data::get_roots(req, backend, committed_data_reads).await.unwrap_or_else(Into::into))
         }
         (&Method::GET, "feeder_gateway/get_committed_data") => {
-            Ok(crate::committed_data::get_page(req, backend).await.unwrap_or_else(Into::into))
+            Ok(crate::committed_data::get_page(req, backend, committed_data_reads).await.unwrap_or_else(Into::into))
         }
         (&Method::GET, "feeder_gateway/get_committed_data_witness") => {
-            Ok(crate::committed_data::get_witness(req, backend).await.unwrap_or_else(Into::into))
+            Ok(crate::committed_data::get_witness(req, backend, committed_data_reads).await.unwrap_or_else(Into::into))
         }
         (&Method::GET, "feeder_gateway/get_preconfirmed_block") => {
             Ok(handle_get_preconfirmed_block(req, backend).await.unwrap_or_else(Into::into))
@@ -174,8 +177,15 @@ mod committed_data_tests {
                     let backend = backend.clone();
                     async move {
                         let path = req.uri().path().trim_start_matches('/').to_string();
-                        let response =
-                            feeder_gateway_router(req, &path, backend, Arc::new(NoTransactions)).await.unwrap();
+                        let response = feeder_gateway_router(
+                            req,
+                            &path,
+                            backend,
+                            Arc::new(NoTransactions),
+                            Arc::new(tokio::sync::Semaphore::new(4)),
+                        )
+                        .await
+                        .unwrap();
                         Ok::<_, Infallible>(response.map(|body| http_body_util::Full::new(bytes::Bytes::from(body))))
                     }
                 });

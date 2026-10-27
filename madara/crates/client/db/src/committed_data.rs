@@ -1,4 +1,7 @@
 //! Durable root-keyed datasets with bounded memory and bounded cold proof reads.
+#[cfg(test)]
+mod tests;
+
 use super::*;
 use blockifier::execution::syscalls::committed_data::{
     CommittedDataBatchProof, CommittedDataError, CommittedDataProvider, CommittedDataSet, CommittedDataWitness,
@@ -216,6 +219,3 @@ impl<D: MadaraStorageRead> CommittedDataProvider for BackendCommittedData<D> {
         read().map_err(|error| CommittedDataError::Provider(error.to_string()))
     }
 }
-
-#[cfg(test)]
-mod tests;

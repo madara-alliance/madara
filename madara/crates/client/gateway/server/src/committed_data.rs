@@ -11,11 +11,11 @@ use mp_gateway::{
     error::{StarknetError, StarknetErrorCode},
 };
 use starknet_types_core::felt::Felt;
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 use tokio::sync::Semaphore;
 
-const MAX_CONCURRENT_READS: usize = 4;
-static READS: LazyLock<Arc<Semaphore>> = LazyLock::new(|| Arc::new(Semaphore::new(MAX_CONCURRENT_READS)));
+/// Default per-server budget for blocking replication/proof reads.
+pub const DEFAULT_MAX_CONCURRENT_READS: usize = 4;
 
 fn invalid() -> GatewayError {
     StarknetError::new(StarknetErrorCode::MalformedRequest, "Invalid committed-data query".into()).into()
@@ -23,9 +23,10 @@ fn invalid() -> GatewayError {
 
 /// Keep the permit in the blocking task even if the HTTP client disconnects.
 async fn bounded_read(
+    reads: Arc<Semaphore>,
     read: impl FnOnce() -> Result<Response<String>, GatewayError> + Send + 'static,
 ) -> Result<Response<String>, GatewayError> {
-    let permit = READS.clone().try_acquire_owned().map_err(|_| GatewayError::from(StarknetError::rate_limited()))?;
+    let permit = reads.try_acquire_owned().map_err(|_| GatewayError::from(StarknetError::rate_limited()))?;
     tokio::task::spawn_blocking(move || {
         let _permit = permit;
         read()
@@ -38,10 +39,12 @@ async fn bounded_read(
 pub(crate) async fn get_roots(
     req: Request<Incoming>,
     backend: Arc<MadaraBackend>,
+    reads: Arc<Semaphore>,
 ) -> Result<Response<String>, GatewayError> {
     let params = get_params_from_request(&req);
     let after = params.get("after").map(|value| Felt::from_hex(value).map_err(|_| invalid())).transpose()?;
-    bounded_read(move || Ok(create_json_response(StatusCode::OK, &backend.db.list_committed_data_roots(after)?))).await
+    bounded_read(reads, move || Ok(create_json_response(StatusCode::OK, &backend.db.list_committed_data_roots(after)?)))
+        .await
 }
 
 /// Replicate namespace labels. The configured upstream is trusted for labels, never root publication.
@@ -49,6 +52,7 @@ pub(crate) async fn get_roots(
 pub(crate) async fn get_versions(
     req: Request<Incoming>,
     backend: Arc<MadaraBackend>,
+    reads: Arc<Semaphore>,
 ) -> Result<Response<String>, GatewayError> {
     let params = get_params_from_request(&req);
     let parse = |name| params.get(name).map(|value| Felt::from_hex(value).map_err(|_| invalid())).transpose();
@@ -59,14 +63,17 @@ pub(crate) async fn get_versions(
         }
         _ => return Err(invalid()),
     };
-    bounded_read(move || Ok(create_json_response(StatusCode::OK, &backend.db.list_committed_data_versions(after)?)))
-        .await
+    bounded_read(reads, move || {
+        Ok(create_json_response(StatusCode::OK, &backend.db.list_committed_data_versions(after)?))
+    })
+    .await
 }
 
 /// Return one bounded value slice; consumers authenticate the assembled root.
 pub(crate) async fn get_page(
     req: Request<Incoming>,
     backend: Arc<MadaraBackend>,
+    reads: Arc<Semaphore>,
 ) -> Result<Response<String>, GatewayError> {
     let params = get_params_from_request(&req);
     let root = params.get("root").ok_or_else(invalid).and_then(|value| Felt::from_hex(value).map_err(|_| invalid()))?;
@@ -74,7 +81,7 @@ pub(crate) async fn get_page(
     if (start as usize) % VALUES_PER_PAGE != 0 || (start as usize) >= MAX_COMMITTED_DATA_VALUES {
         return Err(invalid());
     }
-    bounded_read(move || {
+    bounded_read(reads, move || {
         let page = backend.db.get_committed_data_page(root, start)?.map(|(count, values)| CommittedDataPage {
             root,
             start,
@@ -90,9 +97,27 @@ pub(crate) async fn get_page(
 pub(crate) async fn get_witness(
     req: Request<Incoming>,
     backend: Arc<MadaraBackend>,
+    reads: Arc<Semaphore>,
 ) -> Result<Response<String>, GatewayError> {
     let params = get_params_from_request(&req);
     let root = params.get("root").ok_or_else(invalid).and_then(|value| Felt::from_hex(value).map_err(|_| invalid()))?;
     let index = params.get("key").ok_or_else(invalid).and_then(|value| Felt::from_hex(value).map_err(|_| invalid()))?;
-    bounded_read(move || Ok(create_json_response(StatusCode::OK, &backend.committed_data_witness(root, index)?))).await
+    bounded_read(reads, move || Ok(create_json_response(StatusCode::OK, &backend.committed_data_witness(root, index)?)))
+        .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Saturating one listener must not consume another listener's configured budget.
+    #[tokio::test]
+    async fn committed_data_read_budgets_are_independent() {
+        let busy = Arc::new(Semaphore::new(1));
+        let other = Arc::new(Semaphore::new(2));
+        let _held = busy.clone().acquire_owned().await.unwrap();
+        assert!(bounded_read(busy, || Ok(Response::new(String::new()))).await.is_err());
+        assert!(bounded_read(other.clone(), || Ok(Response::new("ok".into()))).await.is_ok());
+        assert_eq!(other.available_permits(), 2);
+    }
 }

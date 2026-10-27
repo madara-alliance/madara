@@ -27,6 +27,8 @@ const MAX_CONCURRENT_GZIP_COMPRESSIONS: usize = 4;
 #[derive(Debug, Clone)]
 pub struct GatewayServerConfig {
     pub feeder_gateway_enable: bool,
+    /// Per-server concurrency budget; each permit lives until blocking work actually finishes.
+    pub committed_data_max_concurrent_reads: usize,
     pub feeder_gateway_gzip_responses: bool,
     pub gateway_enable: bool,
     pub gateway_external: bool,
@@ -37,6 +39,7 @@ impl Default for GatewayServerConfig {
     fn default() -> Self {
         Self {
             feeder_gateway_enable: false,
+            committed_data_max_concurrent_reads: crate::committed_data::DEFAULT_MAX_CONCURRENT_READS,
             feeder_gateway_gzip_responses: false,
             gateway_enable: false,
             gateway_external: false,
@@ -68,6 +71,8 @@ pub async fn start_server(
 
     let addr = listener.local_addr().context("Getting the bound-to address.")?;
     tracing::info!("🌐 Gateway endpoint started at {}", addr);
+    anyhow::ensure!(config.committed_data_max_concurrent_reads > 0, "Committed-data read concurrency must be positive");
+    let committed_data_reads = Arc::new(Semaphore::new(config.committed_data_max_concurrent_reads));
     let gzip_compression_semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_GZIP_COMPRESSIONS));
     let gateway_metrics = GatewayMetrics::register();
 
@@ -82,6 +87,7 @@ pub async fn start_server(
             let submit_validated = submit_validated.clone();
             let config = config.clone();
             let gzip_compression_semaphore = Arc::clone(&gzip_compression_semaphore);
+            let committed_data_reads = Arc::clone(&committed_data_reads);
             let gateway_metrics = gateway_metrics.clone();
 
             tokio::task::spawn(async move {
@@ -92,6 +98,7 @@ pub async fn start_server(
                     let submit_validated = submit_validated.clone();
                     let config = config.clone();
                     let gzip_compression_semaphore = Arc::clone(&gzip_compression_semaphore);
+                    let committed_data_reads = Arc::clone(&committed_data_reads);
                     let gateway_metrics = gateway_metrics.clone();
                     async move {
                         let path = req
@@ -113,6 +120,7 @@ pub async fn start_server(
                             transaction_lookup,
                             submit_validated,
                             config,
+                            committed_data_reads,
                         )
                         .await;
 
