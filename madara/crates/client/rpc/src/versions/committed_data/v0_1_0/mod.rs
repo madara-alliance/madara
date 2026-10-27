@@ -102,6 +102,7 @@ impl CommittedDataRpcApiV0_1_0Server for Starknet {
         entries: CommittedDataEntries,
         signatures: Option<Vec<ImportSignature>>,
     ) -> RpcResult<()> {
+        let profile_start = std::time::Instant::now();
         let values = entries.into_inner();
         let allowed = Arc::clone(&self.committed_data_signers);
         let chain_id = Felt::try_from(&self.backend.chain_config().chain_id)
@@ -118,9 +119,19 @@ impl CommittedDataRpcApiV0_1_0Server for Starknet {
         })
         .await
         .map_err(|error| StarknetRpcApiError::from(anyhow::anyhow!(error)))??;
+        let profile_auth = profile_start.elapsed().as_secs_f64() * 1000.;
         self.backend.check_recovery_capacity(Some(update), root, values.len()).map_err(StarknetRpcApiError::from)?;
+        let profile_capacity = profile_start.elapsed().as_secs_f64() * 1000.;
         self.backend.update_committed_data(update, root, values.clone()).await.map_err(StarknetRpcApiError::from)?;
+        let profile_update = profile_start.elapsed().as_secs_f64() * 1000.;
         self.backend.journal_committed_data(Some(update), root, values).await.map_err(StarknetRpcApiError::from)?;
+        eprintln!(
+            "CD_PROFILE rpc_stages auth_ms={} capacity_ms={} update_ms={} journal_ms={}",
+            profile_auth,
+            profile_capacity - profile_auth,
+            profile_update - profile_capacity,
+            profile_start.elapsed().as_secs_f64() * 1000. - profile_update
+        );
         Ok(())
     }
 

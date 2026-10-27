@@ -129,7 +129,9 @@ impl<D: MadaraStorage> MadaraBackend<D> {
                 return backend.db.write_committed_data_version(version, false);
             }
             // The same constructor is used by full imports and clients; no new hash format.
+            let profile_start = std::time::Instant::now();
             let tree = Arc::new(CommittedDataSet::new(entries)?);
+            eprintln!("CD_PROFILE canonical_tree ms={}", profile_start.elapsed().as_secs_f64() * 1000.);
             anyhow::ensure!(tree.root() == root, "Committed-data root does not match updated dataset");
             backend.db.write_committed_data_dataset(&tree, imported_after_block)?;
             backend.db.write_committed_data_version(version, update.base_root.is_none())?;

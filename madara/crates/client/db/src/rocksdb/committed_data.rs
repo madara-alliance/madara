@@ -278,12 +278,20 @@ impl RocksDBStorage {
         checkpoint: Option<u64>,
         full_import: bool,
     ) -> Result<()> {
+        let profile_start = std::time::Instant::now();
         let mut state = self
             .inner
             .committed_data_write
             .lock()
             .map_err(|_| anyhow::anyhow!("Committed-data write lock poisoned"))?;
-        self.store_persistent_patch_locked(base, root, entries, checkpoint, full_import, &mut state)
+        let profile_wait = profile_start.elapsed().as_secs_f64() * 1000.;
+        let result = self.store_persistent_patch_locked(base, root, entries, checkpoint, full_import, &mut state);
+        eprintln!(
+            "CD_PROFILE import_lock wait_ms={} total_ms={}",
+            profile_wait,
+            profile_start.elapsed().as_secs_f64() * 1000.
+        );
+        result
     }
 
     pub(super) fn store_persistent_patch_locked(
@@ -295,6 +303,7 @@ impl RocksDBStorage {
         full_import: bool,
         state: &mut crate::persistent_committed_data::NodeCache,
     ) -> Result<()> {
+        let profile_start = std::time::Instant::now();
         let cf = self.inner.get_column(meta::META_COLUMN);
         let old_metadata = self.inner.db.get_pinned_cf(&cf, metadata_key(root, METADATA_LEVEL, 0))?;
         let base_root = base.unwrap_or(root);
@@ -352,6 +361,7 @@ impl RocksDBStorage {
             Err(error) => return Err(error),
         };
         let (actual_root, count) = tree.root(id)?;
+        let profile_tree = profile_start.elapsed().as_secs_f64() * 1000.;
         anyhow::ensure!(actual_root == root, "Committed-data root does not match updated dataset");
         // Retry/fork from an older base may reproduce a root already present. Authenticate the
         // request first, then discard its staged nodes instead of duplicating that version.
@@ -382,8 +392,10 @@ impl RocksDBStorage {
         metadata.extend(id.to_be_bytes());
         let mut batch = WriteBatch::default();
         self.stage_value_history(&mut batch, root, base, &mut tree, (id, count))?;
+        let profile_archive = profile_start.elapsed().as_secs_f64() * 1000.;
         let old_id = old_metadata.as_ref().map(|b| persistent_id(b)).transpose()?.filter(|id| *id != 0);
         self.stage_root_reference(&mut batch, old_id, id, first_id, &tree.nodes)?;
+        let profile_refs = profile_start.elapsed().as_secs_f64() * 1000.;
         self.stage_root_use(&mut batch, root, last_used)?;
         batch.put_cf(&cf, NEXT_KEY, tree.next_id().to_be_bytes());
         batch.put_cf(&cf, metadata_key(root, METADATA_LEVEL, 0), metadata);
@@ -391,7 +403,18 @@ impl RocksDBStorage {
         options.set_sync(true);
         options.disable_wal(false);
         self.inner.db.write_opt(batch, &options)?;
+        let profile_write = profile_start.elapsed().as_secs_f64() * 1000.;
         *state = tree.into_committed_cache();
+        eprintln!(
+            "CD_PROFILE import_stages full={} entries={} tree_ms={} archive_ms={} refs_ms={} write_ms={} cache_ms={}",
+            full_import,
+            entries.len(),
+            profile_tree,
+            profile_archive - profile_tree,
+            profile_refs - profile_archive,
+            profile_write - profile_refs,
+            profile_start.elapsed().as_secs_f64() * 1000. - profile_write
+        );
         Ok(())
     }
 }

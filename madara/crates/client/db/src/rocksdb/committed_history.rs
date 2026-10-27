@@ -100,6 +100,7 @@ impl RocksDBStorage {
 impl RocksDBStorage {
     /// One root per call lets the maintenance service check cancellation between roots.
     pub(super) fn maintain_history(&self, cutoff: Option<u64>) -> Result<bool> {
+        let profile_start = std::time::Instant::now();
         let cache =
             self.inner.committed_data_write.lock().map_err(|_| anyhow::anyhow!("Committed-data lock poisoned"))?;
         let cf = self.inner.get_column(meta::META_COLUMN);
@@ -135,6 +136,7 @@ impl RocksDBStorage {
         {
             return Ok(true);
         }
+        let profile_locked = profile_start.elapsed().as_secs_f64() * 1000.;
         let mut batch = WriteBatch::default();
         if id != 0 {
             let mut refs = References::new(&self.inner, u64::MAX, &[]);
@@ -148,6 +150,11 @@ impl RocksDBStorage {
         }
         batch.delete_cf(&cf, key);
         self.inner.db.write_opt(batch, &sync_options())?;
+        eprintln!(
+            "CD_PROFILE prune prelock_ms={} locked_ms={}",
+            profile_locked,
+            profile_start.elapsed().as_secs_f64() * 1000. - profile_locked
+        );
         Ok(true)
     }
 
