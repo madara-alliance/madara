@@ -56,11 +56,12 @@ async fn combined_rpc_validates_and_persists_exact_admission(
     let backend = MadaraBackend::open_for_testing(Arc::new(mp_chain_config::ChainConfig::madara_devnet()));
     backend.set_l1_gas_quote_for_testing();
     let mut genesis = mc_devnet::ChainGenesisDescription::base_config().unwrap();
+    let base_deployments = genesis.deployed_contracts.clone();
     let keys = genesis.add_devnet_contracts(1).unwrap();
     let account = &keys.0[0];
     if kind == "DEPLOY_ACCOUNT" {
         // Keep its funding and declared class, but let the real deployment validator run the constructor.
-        genesis.deployed_contracts.remove(&account.address);
+        genesis.deployed_contracts = base_deployments;
     }
     genesis.build_and_store(&backend).await.unwrap();
     let mempool = Arc::new(Mempool::new(backend.clone(), MempoolConfig::default()));
