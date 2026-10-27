@@ -268,9 +268,12 @@ fn committed_data_import_holds_capacity_until_blocking_work_finishes(#[case] can
             let mut first =
                 Box::pin(backend.import_committed_data_snapshot(dataset.root(), dataset.entries().to_vec()));
             assert!(futures::poll!(&mut first).is_pending());
-            if cancel {
+            let first = if cancel {
                 drop(first);
-            }
+                None
+            } else {
+                Some(first)
+            };
             // Cancellation of the caller must not release capacity owned by queued blocking work.
             let second = tokio::time::timeout(
                 std::time::Duration::from_secs(1),
@@ -281,6 +284,9 @@ fn committed_data_import_holds_capacity_until_blocking_work_finishes(#[case] can
             blocker.await.unwrap();
             // A barrier behind the queued import observes completion even when its caller was dropped.
             tokio::task::spawn_blocking(|| ()).await.unwrap();
+            if let Some(first) = first {
+                first.await.unwrap();
+            }
             assert!(backend.committed_data_witness(dataset.root(), Felt::ZERO).unwrap().unwrap().verify());
             backend.import_committed_data_snapshot(dataset.root(), dataset.entries().to_vec()).await.unwrap();
             assert!(second
