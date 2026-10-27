@@ -539,10 +539,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let mut app = ServiceMonitor::default()
-        .with(service::CommittedDataHistoryService(
-            Arc::clone(&backend),
-            std::time::Duration::from_secs(run_cmd.backend_params.committed_data_proof_sweep_secs.get()),
-        ))?
+        .with(service::CommittedDataHistoryService(Arc::clone(&backend)))?
         .with(service_telemetry)?
         .with(service_mempool)?
         .with(service_l1_sync)?
