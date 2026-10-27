@@ -64,6 +64,7 @@ impl SettlementClient for PendingFirstStateUpdateClient {
         _program_output: Vec<[u8; 32]>,
         _onchain_data_hash: [u8; 32],
         _onchain_data_size: [u8; 32],
+        _nonce: u64,
     ) -> color_eyre::Result<String> {
         unreachable!("update_state_calldata is not used by this test")
     }
@@ -99,7 +100,7 @@ impl SettlementClient for PendingFirstStateUpdateClient {
     }
 
     async fn get_nonce(&self) -> color_eyre::Result<u64> {
-        Ok(self.nonce)
+        Ok(self.nonce + self.submissions.load(Ordering::SeqCst) as u64)
     }
 }
 
@@ -118,6 +119,7 @@ async fn create_job_works() {
             da_segment_path: None,
             tx_hash: None,
             tx_nonce: None,
+            inflight_tx_nonce: None,
             tx_attempts: Vec::new(),
             context: SettlementContext::Block(SettlementContextData { to_settle: 1, last_failed: None }),
             storage_artifacts_tagged_at: None,
@@ -165,6 +167,7 @@ async fn process_job_invalid_input_gap_panics() {
             da_segment_path: None,
             tx_hash: None,
             tx_nonce: None,
+            inflight_tx_nonce: None,
             tx_attempts: Vec::new(),
             context: SettlementContext::Block(SettlementContextData {
                 to_settle: 6, // Gap between 4 and 6
@@ -265,9 +268,8 @@ async fn verify_job_rejects_when_contract_is_behind_previous_batch_boundary() {
     );
 }
 
-/// A shutdown after broadcast restores the job without immediately redelivering it. On the next
-/// delivery, Ethereum's latest confirmed nonce is reused so the client deliberately replaces the
-/// still-pending transaction instead of creating a second state transition.
+/// A shutdown after broadcast preserves the pinned nonce even if the provider's next nonce has
+/// advanced. The retry replaces the same transaction rather than creating a second transition.
 #[rstest]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[allow(clippy::await_holding_lock)]
@@ -326,6 +328,7 @@ async fn shutdown_after_state_update_broadcast_retries_with_the_same_nonce() {
             da_segment_path: Some(da_segment_path),
             tx_hash: None,
             tx_nonce: None,
+            inflight_tx_nonce: None,
             tx_attempts: Vec::new(),
             context: SettlementContext::Batch(SettlementContextData { to_settle: batch_index, last_failed: None }),
             storage_artifacts_tagged_at: None,
@@ -347,10 +350,29 @@ async fn shutdown_after_state_update_broadcast_retries_with_the_same_nonce() {
     broadcast_rx.await.expect("first state update transaction should be broadcast");
     shutdown_token.cancel();
 
-    assert_matches!(first_attempt.await.unwrap(), Err(JobError::ShutdownInterrupted { id }) if id == job.id);
+    let (mut locked_job, original_status, original_metadata) = match first_attempt.await.unwrap() {
+        Err(JobError::ShutdownCleanupPending { id, job: locked_job, original_status, original_metadata }) => {
+            assert_eq!(id, job.id);
+            (*locked_job, original_status, *original_metadata)
+        }
+        other => panic!("expected shutdown cleanup, got {other:?}"),
+    };
+    let locked_metadata: StateUpdateMetadata = locked_job.metadata.specific.clone().try_into().unwrap();
+    assert_eq!(locked_metadata.inflight_tx_nonce, Some(nonce));
+    assert_matches!(
+        JobHandlerService::restore_job_after_shutdown(
+            &mut locked_job,
+            services.config.clone(),
+            original_status,
+            original_metadata,
+        )
+        .await,
+        JobError::ShutdownInterrupted { .. }
+    );
     let restored_job = services.config.database().get_job_by_id(job.id).await.unwrap().unwrap();
     assert_eq!(restored_job.status, JobStatus::Created);
-    assert_eq!(restored_job.metadata, job.metadata);
+    let restored_metadata: StateUpdateMetadata = restored_job.metadata.specific.clone().try_into().unwrap();
+    assert_eq!(restored_metadata.inflight_tx_nonce, Some(nonce));
 
     JobHandlerService::process_job(job.id, services.config.clone()).await.unwrap();
 
@@ -359,6 +381,7 @@ async fn shutdown_after_state_update_broadcast_retries_with_the_same_nonce() {
     assert_eq!(retried_job.status, JobStatus::PendingVerification);
     assert_eq!(retried_metadata.tx_hash.as_deref(), Some("0xreplacement"));
     assert_eq!(retried_metadata.tx_nonce, Some(nonce));
+    assert_eq!(retried_metadata.inflight_tx_nonce, None);
     assert_eq!(*submitted_nonces.lock().unwrap(), vec![nonce, nonce]);
 }
 
@@ -427,6 +450,12 @@ async fn test_process_job_l2_with_da_segment(
             StarknetVersion::V0_14_1,
         )])
     });
+    database_client.expect_update_job().times(1).returning(|job, updates| {
+        let mut updated = job.clone();
+        updated.metadata = updates.metadata.expect("nonce intent must be persisted before submission");
+        updated.version += 1;
+        Ok(updated)
+    });
 
     // Mock settlement client
     settlement_client.expect_get_last_settled_block().returning(move || Ok(Some(start_block - 1)));
@@ -474,6 +503,7 @@ async fn test_process_job_l2_with_da_segment(
             da_segment_path: Some(da_segment_key),
             tx_hash: None,
             tx_nonce: None,
+            inflight_tx_nonce: None,
             tx_attempts: Vec::new(),
             context: SettlementContext::Batch(SettlementContextData { to_settle: batch_index, last_failed: None }),
             storage_artifacts_tagged_at: None,
@@ -511,6 +541,7 @@ async fn state_transition_job_for_batch(batch_index: u64) -> crate::types::jobs:
             da_segment_path: Some(format!("batch/{batch_index}/da_blob.json")),
             tx_hash: Some("0x1234".to_string()),
             tx_nonce: None,
+            inflight_tx_nonce: None,
             tx_attempts: Vec::new(),
             context: SettlementContext::Batch(SettlementContextData { to_settle: batch_index, last_failed: None }),
             storage_artifacts_tagged_at: None,

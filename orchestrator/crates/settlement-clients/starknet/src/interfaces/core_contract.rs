@@ -1,4 +1,4 @@
-use crate::utils::invoke_contract;
+use crate::utils::invoke_contract_with_nonce;
 use crate::utils::LocalWalletSignerMiddleware;
 use color_eyre::Result;
 use starknet::core::types::{Felt, InvokeTransactionResult};
@@ -17,6 +17,7 @@ impl CoreContract {
         &self,
         snos_output: Vec<Felt>,
         program_output: Vec<Felt>,
+        nonce: u64,
     ) -> Result<InvokeTransactionResult> {
         let mut calldata = Vec::with_capacity(snos_output.len() + program_output.len() + 5);
         calldata.push(Felt::from(snos_output.len()));
@@ -27,6 +28,6 @@ impl CoreContract {
         // calldata.push(onchain_data_size.low().into());
         // calldata.push(onchain_data_size.high().into());
 
-        invoke_contract(&self.signer, self.address, "update_state", calldata).await
+        invoke_contract_with_nonce(&self.signer, self.address, "update_state", calldata, Some(nonce)).await
     }
 }

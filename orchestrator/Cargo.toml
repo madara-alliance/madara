@@ -138,6 +138,7 @@ with_sqs = ["omniqueue"]
 testing = ["orchestrator-ethereum-settlement-client/testing"]
 
 [dev-dependencies]
+omniqueue = { workspace = true, features = ["in_memory"] }
 hyper = { version = "0.14", features = ["full"] }
 rstest = { workspace = true }
 httpmock = { version = "0.8.0-alpha.1", features = ["proxy", "remote"] }

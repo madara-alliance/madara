@@ -149,14 +149,15 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
     match shutdown_result {
         Ok(()) => {
             info!("Orchestrator service shutdown completed gracefully");
-            Ok(())
         }
         Err(e) => {
             error!("Orchestrator service shutdown encountered errors: {}", e);
-            // Still return Ok to avoid panic, as we tried our best
-            Ok(())
         }
     }
+
+    // The async runtime waits for spawn_blocking tasks on drop. An abandoned SNOS or local
+    // aggregation calculation must not keep this pod alive after its job handoff is complete.
+    std::process::exit(0);
 }
 
 /// setup_orchestrator - Initializes the orchestrator with the provided configuration

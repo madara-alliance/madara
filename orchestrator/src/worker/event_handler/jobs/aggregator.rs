@@ -449,21 +449,25 @@ impl AggregatorJobHandler {
 
         MetricsRecorder::record_aggregator_child_count(prover_label, child_program_outputs.len());
         let agg_start = Instant::now();
-        let aggregator_output = orchestrator_aggregator_runner::run_local_aggregator(
-            orchestrator_aggregator_runner::AggregatorRunnerInput {
-                child_program_outputs,
-                layout: LayoutName::all_cairo,
-                full_output: false,
-                debug_mode: false,
-                chain_id,
-                fee_token_address,
-                da_public_keys,
-            },
-        )
-        .map_err(|e| {
-            error!(error = %e, "Local aggregator failed");
-            JobError::Other(OtherError(eyre!("Aggregator runner failed: {}", e)))
-        })?;
+        let input = orchestrator_aggregator_runner::AggregatorRunnerInput {
+            child_program_outputs,
+            layout: LayoutName::all_cairo,
+            full_output: false,
+            debug_mode: false,
+            chain_id,
+            fee_token_address,
+            da_public_keys,
+        };
+        // Only the pure local run is detached on shutdown. Storage and SHARP submission remain
+        // in the cancellable parent, so an abandoned run cannot publish artifacts or a job.
+        let aggregator_output =
+            tokio::task::spawn_blocking(move || orchestrator_aggregator_runner::run_local_aggregator(input))
+                .await
+                .map_err(|e| JobError::Other(OtherError::from(format!("Local aggregator task failed: {e}"))))?
+                .map_err(|e| {
+                    error!(error = %e, "Local aggregator failed");
+                    JobError::Other(OtherError(eyre!("Aggregator runner failed: {}", e)))
+                })?;
         MetricsRecorder::record_aggregator_run(prover_label, agg_start.elapsed().as_secs_f64(), true);
         Ok(aggregator_output)
     }

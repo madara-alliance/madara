@@ -359,6 +359,7 @@ impl SettlementClient for EthereumSettlementClient {
         program_output: Vec<[u8; 32]>,
         onchain_data_hash: [u8; 32],
         onchain_data_size: [u8; 32],
+        _nonce: u64,
     ) -> Result<String> {
         info!(
             log_type = "starting",

@@ -72,10 +72,12 @@ pub enum EventSystemError {
 impl EventSystemError {
     /// Whether the queue delivery should be released immediately for retry.
     ///
-    /// A failed shutdown restore deliberately leaves the delivery pending so its visibility
-    /// timeout remains the safe recovery path.
+    /// Shutdown cleanup owns delivery disposition itself; it must not be NACKed a second time.
     pub(crate) fn should_nack_delivery(&self) -> bool {
-        !matches!(self, Self::JobError(JobError::ShutdownRestoreFailed { .. }))
+        !matches!(
+            self,
+            Self::JobError(JobError::ShutdownRestoreFailed { .. } | JobError::ShutdownCleanupPending { .. })
+        )
     }
 }
 
@@ -84,7 +86,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn shutdown_restore_failure_leaves_delivery_pending() {
+    fn shutdown_restore_failure_is_not_nacked_twice() {
         let error = EventSystemError::JobError(JobError::ShutdownRestoreFailed {
             id: Uuid::nil(),
             source: DatabaseError::UpdateFailed("test".to_string()),

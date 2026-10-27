@@ -6,6 +6,7 @@ use crate::error::other::OtherError;
 use crate::types::batch::{AggregatorBatchStatus, SnosBatchStatus};
 use crate::types::constant::{PROOF_FILE_NAME, PROOF_PART2_FILE_NAME};
 use crate::types::jobs::job_item::JobItem;
+use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::metadata::{
     JobMetadata, JobSpecificMetadata, SettlementContext, SettlementContextData, StateUpdateMetadata,
     StateUpdateTxAttempt, StateUpdateTxAttemptStatus,
@@ -118,9 +119,15 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             if state_metadata.tx_hash.is_none() {
                 state_metadata.tx_hash = Some(EMPTY_TX_HASH.to_string());
             }
+            state_metadata.inflight_tx_nonce = None;
             job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
         } else {
-            let nonce = config.settlement_client().get_nonce().await.map_err(|e| JobError::Other(OtherError(e)))?;
+            // Reuse the nonce of an interrupted attempt. A transaction may have reached the
+            // mempool even when shutdown dropped the send/finality future before it returned.
+            let nonce = match state_metadata.inflight_tx_nonce {
+                Some(nonce) => nonce,
+                None => config.settlement_client().get_nonce().await.map_err(|e| JobError::Other(OtherError(e)))?,
+            };
 
             // Get the artifacts for the block/batch
             let snos_output =
@@ -138,6 +145,17 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                 // For L3, use locally stored blob data
                 Layer::L3 => fetch_blob_data(config.clone(), &state_metadata.blob_data_path).await?,
             };
+
+            if state_metadata.inflight_tx_nonce.is_none() {
+                // Record the nonce before the first possible broadcast. The next worker can
+                // replace the same pending transaction instead of creating one with a new nonce.
+                state_metadata.inflight_tx_nonce = Some(nonce);
+                job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
+                *job = config
+                    .database()
+                    .update_job(job, JobItemUpdates::new().update_metadata(job.metadata.clone()).build())
+                    .await?;
+            }
 
             let txn_result = match self
                 .update_state(
@@ -173,6 +191,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                             if state_metadata.tx_hash.is_none() {
                                 state_metadata.tx_hash = Some(EMPTY_TX_HASH.to_string());
                             }
+                            state_metadata.inflight_tx_nonce = None;
                             job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
                             job.external_id =
                                 state_metadata.tx_hash.clone().unwrap_or_else(|| EMPTY_TX_HASH.to_string()).into();
@@ -207,6 +226,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             state_metadata.tx_hash = Some(txn_result.tx_hash.clone());
             state_metadata.tx_nonce = txn_result.tx_nonce;
             state_metadata.tx_attempts = txn_result.tx_attempts;
+            state_metadata.inflight_tx_nonce = None;
             job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
             job.external_id = txn_result.tx_hash.into();
         }
@@ -552,7 +572,7 @@ impl StateUpdateJobHandler {
         config: Arc<Config>,
         block_no: u64,
         snos: Vec<Felt>,
-        _nonce: u64,
+        nonce: u64,
         _program_output: Vec<[u8; 32]>,
         _blob_data: Vec<Vec<u8>>,
     ) -> Result<StateUpdateProcessingResult, JobError> {
@@ -599,7 +619,7 @@ impl StateUpdateJobHandler {
             let program_output = vec_felt_to_vec_bytes32(calculate_output(parsed_bridge_proof));
 
             settlement_client
-                .update_state_calldata(snos_output, program_output, [0u8; 32], [0u8; 32])
+                .update_state_calldata(snos_output, program_output, [0u8; 32], [0u8; 32], nonce)
                 .await
                 .map_err(|e| JobError::Other(OtherError(e)))?
         } else {
@@ -608,7 +628,7 @@ impl StateUpdateJobHandler {
 
         Ok(StateUpdateProcessingResult {
             tx_hash: last_tx_hash_executed,
-            tx_nonce: Some(_nonce),
+            tx_nonce: Some(nonce),
             tx_attempts: Vec::new(),
         })
     }

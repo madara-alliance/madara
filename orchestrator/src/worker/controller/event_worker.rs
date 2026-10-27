@@ -1,5 +1,6 @@
 use crate::core::config::Config;
 use crate::error::consumer::format_error_context;
+use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::error::{event::EventSystemResult, ConsumptionError};
 use crate::types::jobs::WorkerTriggerType;
@@ -7,12 +8,13 @@ use crate::types::priority_slot::{
     take_from_processing_slot_if_matches, take_from_verification_slot_if_matches, PriorityJobSlot,
 };
 use crate::types::queue::JobAction;
-use crate::types::queue::{JobState, QueueType};
+use crate::types::queue::{JobState, QueueNameForJobType, QueueType};
 use crate::types::queue_control::{QueueControlConfig, QUEUES};
 use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::controller::delivery_retry::{ack_delivery_with_retry, nack_delivery_with_retry};
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::parser::{job_queue_message::JobQueueMessage, worker_trigger_message::WorkerTriggerMessage};
+use crate::worker::service::JobService;
 use crate::worker::traits::message::{MessageParser, ParsedMessage};
 use color_eyre::eyre::eyre;
 use omniqueue::Delivery;
@@ -39,6 +41,7 @@ pub struct EventWorker {
 
 const QUEUE_GET_MESSAGE_WAIT_TIMEOUT_SECS: Duration = Duration::from_secs(30);
 const QUEUE_NO_MESSAGE_SLEEP_DURATION: Duration = Duration::from_millis(1000);
+const SHUTDOWN_RETRY_DELAY: Duration = Duration::from_secs(5);
 
 impl EventWorker {
     /// new - Create a new EventWorker
@@ -281,6 +284,50 @@ impl EventWorker {
         message: Delivery,
         parsed_message: &ParsedMessage,
     ) -> EventSystemResult<()> {
+        if let Err(crate::error::event::EventSystemError::JobError(JobError::ShutdownInterrupted { id })) = &result {
+            // Shutdown reached this delivery before it acquired a Mongo lock.
+            JobService::add_job_to_queue(self.config.clone(), *id, self.queue_type.clone(), Some(SHUTDOWN_RETRY_DELAY))
+                .await?;
+            if let Err(error) = ack_delivery_with_retry(message).await {
+                warn!(job_id = %id, error = ?error, "Retry was published, but old delivery ACK failed");
+            }
+            return Ok(());
+        }
+
+        if let Err(crate::error::event::EventSystemError::JobError(JobError::ShutdownCleanupPending {
+            job,
+            original_status,
+            original_metadata,
+            ..
+        })) = &result
+        {
+            // SQS's omniqueue NACK is a no-op. Publish a fresh retry before restoring Mongo,
+            // then ACK the old delivery. The short delay gives the restore time to finish; if
+            // the replacement arrives early, active-lock redelivery preserves it.
+            JobService::add_job_to_queue(
+                self.config.clone(),
+                job.id,
+                job.job_type.process_queue_name(),
+                Some(SHUTDOWN_RETRY_DELAY),
+            )
+            .await?;
+            if let Err(error) = ack_delivery_with_retry(message).await {
+                warn!(job_id = %job.id, error = ?error, "Retry was published, but old delivery ACK failed");
+            }
+            let mut job = (**job).clone();
+            let error = JobHandlerService::restore_job_after_shutdown(
+                &mut job,
+                self.config.clone(),
+                original_status.clone(),
+                (**original_metadata).clone(),
+            )
+            .await;
+            return match error {
+                JobError::ShutdownInterrupted { .. } => Ok(()),
+                other => Err(crate::error::event::EventSystemError::JobError(other)),
+            };
+        }
+
         if let Err(ref error) = result {
             let (error_context, consumption_error) = match parsed_message {
                 ParsedMessage::WorkerTrigger(msg) => {
@@ -405,24 +452,7 @@ impl EventWorker {
                     let worker = self.clone();
                     tasks.spawn(async move {
                         let result = worker.handle_message(&parsed_message).await;
-                        // ACK/NACK the priority delivery after processing
-                        match &result {
-                            Ok(_) => {
-                                if let Err(e) = ack_delivery_with_retry(delivery).await {
-                                    error!("Failed to ACK priority message: {:?}", e);
-                                }
-                            }
-                            Err(error) => {
-                                if error.should_nack_delivery() {
-                                    if let Err(e) = nack_delivery_with_retry(delivery).await {
-                                        error!("Failed to NACK priority message: {:?}", e);
-                                    }
-                                } else {
-                                    warn!("Leaving priority delivery pending to preserve processing ownership and safe retry");
-                                }
-                            }
-                        }
-                        result
+                        worker.post_processing(result, delivery, &parsed_message).await
                     });
                     debug!("Spawned PRIORITY task from slot, active: {}", tasks.len());
                 }
@@ -544,6 +574,66 @@ fn aggregator_batching_failure_alert_message(error_context: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::client::database::MockDatabaseClient;
+    use crate::core::client::queue::MockQueueClient;
+    use crate::tests::config::{ConfigType, TestConfigBuilder};
+    use crate::tests::utils::build_job_item;
+    use crate::types::jobs::types::{JobStatus, JobType};
+    use omniqueue::backends::InMemoryBackend;
+    use std::sync::Mutex;
+
+    #[tokio::test]
+    async fn shutdown_publishes_retry_before_restoring_mongo() {
+        let order = Arc::new(Mutex::new(Vec::new()));
+        let sent_order = Arc::clone(&order);
+        let mut queue = MockQueueClient::new();
+        queue.expect_send_message().times(1).returning(move |queue, _, delay| {
+            assert_eq!(queue, QueueType::SnosJobProcessing);
+            assert_eq!(delay, Some(SHUTDOWN_RETRY_DELAY));
+            sent_order.lock().unwrap().push("send");
+            Ok(())
+        });
+
+        let restored_order = Arc::clone(&order);
+        let mut database = MockDatabaseClient::new();
+        database.expect_update_job().times(1).returning(move |current, updates| {
+            restored_order.lock().unwrap().push("mongo");
+            let mut updated = current.clone();
+            updated.status = updates.status.unwrap();
+            updated.metadata = updates.metadata.unwrap();
+            Ok(updated)
+        });
+
+        let services = TestConfigBuilder::new()
+            .configure_queue_client(ConfigType::Mock(crate::tests::config::MockType::Queue(Box::new(queue))))
+            .configure_database(ConfigType::Mock(crate::tests::config::MockType::Database(Box::new(database))))
+            .build()
+            .await;
+        let original = build_job_item(JobType::SnosRun, JobStatus::Created, 1);
+        let mut locked = original.clone();
+        locked.status = JobStatus::LockedForProcessing;
+        let (producer, mut consumer) = InMemoryBackend::builder().build_pair().await.unwrap();
+        producer.send_raw(b"job").await.unwrap();
+        let delivery = consumer.receive().await.unwrap();
+        let parsed = ParsedMessage::JobQueue(Box::new(JobQueueMessage { id: original.id }));
+        let worker = EventWorker::new(QueueType::SnosJobProcessing, services.config, CancellationToken::new()).unwrap();
+
+        worker
+            .post_processing(
+                Err(crate::error::event::EventSystemError::JobError(JobError::ShutdownCleanupPending {
+                    id: original.id,
+                    job: Box::new(locked),
+                    original_status: JobStatus::Created,
+                    original_metadata: Box::new(original.metadata),
+                })),
+                delivery,
+                &parsed,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(*order.lock().unwrap(), vec!["send", "mongo"]);
+    }
 
     #[test]
     fn test_system_queues_should_not_check_priority_slot() {

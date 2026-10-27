@@ -122,6 +122,7 @@ impl SettlementClient for StarknetSettlementClient {
         program_output: Vec<[u8; 32]>,
         _onchain_data_hash: [u8; 32],
         _onchain_data_size: [u8; 32],
+        nonce: u64,
     ) -> Result<String> {
         info!(
             log_type = "starting",
@@ -135,7 +136,7 @@ impl SettlementClient for StarknetSettlementClient {
         let core_contract: &CoreContract = self.starknet_core_contract_client.as_ref();
 
         let invoke_result = core_contract
-            .update_state(snos_output, layout_bridge_output)
+            .update_state(snos_output, layout_bridge_output, nonce)
             .await
             .map_err(|e| eyre!("Failed to update state with calldata: {:?}", e))?;
 

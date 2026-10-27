@@ -522,7 +522,7 @@ async fn manual_verification_requeue_uses_expected_delay(
     JobService::queue_job_for_verification(job.id, services.config, priority).await.unwrap();
 }
 
-/// Tests that graceful shutdown restores an active processing job so SQS can retry it.
+/// Tests that shutdown returns cleanup work while the Mongo lock is still held.
 #[rstest]
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
@@ -563,8 +563,24 @@ async fn process_job_shutdown_restores_locked_job_for_sqs_retry() {
 
     shutdown_token.cancel();
 
-    let result = process_handle.await.unwrap();
-    assert!(result.is_err(), "shutdown during processing should return Err so the message is NACKed");
+    let (mut locked_job, original_status, original_metadata) = match process_handle.await.unwrap() {
+        Err(JobError::ShutdownCleanupPending { id, job, original_status, original_metadata }) => {
+            assert_eq!(id, job_item.id);
+            (*job, original_status, *original_metadata)
+        }
+        other => panic!("expected shutdown cleanup, got {other:?}"),
+    };
+    assert_eq!(db_client.get_job_by_id(job_item.id).await.unwrap().unwrap().status, JobStatus::LockedForProcessing);
+    assert_matches!(
+        JobHandlerService::restore_job_after_shutdown(
+            &mut locked_job,
+            services.config.clone(),
+            original_status,
+            original_metadata,
+        )
+        .await,
+        JobError::ShutdownInterrupted { .. }
+    );
 
     let restored_job = db_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
     assert_eq!(restored_job.status, JobStatus::Created);
@@ -637,8 +653,23 @@ async fn process_job_shutdown_retains_lock_before_stale_timeout() {
 
     release_tx.send(()).expect("test should release synchronous handler");
 
-    let result = process_handle.await.unwrap();
-    assert_matches!(result, Err(JobError::ShutdownInterrupted { id }) if id == job_item.id);
+    let (mut locked_job, original_status, original_metadata) = match process_handle.await.unwrap() {
+        Err(JobError::ShutdownCleanupPending { id, job, original_status, original_metadata }) => {
+            assert_eq!(id, job_item.id);
+            (*job, original_status, *original_metadata)
+        }
+        other => panic!("expected shutdown cleanup, got {other:?}"),
+    };
+    assert_matches!(
+        JobHandlerService::restore_job_after_shutdown(
+            &mut locked_job,
+            services.config.clone(),
+            original_status,
+            original_metadata,
+        )
+        .await,
+        JobError::ShutdownInterrupted { .. }
+    );
 
     let restored_job = db_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
     assert_eq!(restored_job.status, JobStatus::Created);

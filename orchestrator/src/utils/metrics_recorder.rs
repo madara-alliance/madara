@@ -81,6 +81,7 @@ impl WorkPhase {
 enum WorkloadOutcome {
     Success,
     Error,
+    Cancelled,
 }
 
 impl WorkloadOutcome {
@@ -88,6 +89,7 @@ impl WorkloadOutcome {
         match self {
             Self::Success => "success",
             Self::Error => "error",
+            Self::Cancelled => "cancelled",
         }
     }
 }
@@ -140,6 +142,10 @@ impl WorkloadTracker {
 
     pub fn finish_error(mut self) {
         self.finish(WorkloadOutcome::Error);
+    }
+
+    pub fn finish_cancelled(mut self) {
+        self.finish(WorkloadOutcome::Cancelled);
     }
 
     fn finish(&mut self, outcome: WorkloadOutcome) {

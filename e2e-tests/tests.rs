@@ -634,6 +634,7 @@ pub async fn put_job_data_in_db_update_state(mongo_db: &MongoDbServer, l2_block_
         da_segment_path: Some(format!("{}/{}", block_number, DA_SEGMENT_FILE_NAME)),
         tx_hash: None,
         tx_nonce: None,
+        inflight_tx_nonce: None,
         tx_attempts: Vec::new(),
         context: SettlementContext::Block(SettlementContextData { to_settle: block_number, last_failed: None }),
         storage_artifacts_tagged_at: None,

@@ -15,7 +15,7 @@ use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::jobs::external_id::ExternalId;
 use crate::types::jobs::job_updates::JobItemUpdates;
-use crate::types::jobs::metadata::JobMetadata;
+use crate::types::jobs::metadata::{JobMetadata, JobSpecificMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::jobs::WorkerTriggerType;
@@ -176,14 +176,14 @@ impl JobHandlerService {
 
     /// Processes a job while observing the worker's shutdown token.
     ///
-    /// The handler future is polled on Tokio's blocking pool so synchronous SNOS or aggregation work
-    /// cannot occupy every async worker and prevent the shutdown coordinator from running. On
-    /// cancellation, the database lock is restored only after the handler future has yielded and
-    /// been dropped. The shutdown path leaves the job `LockedForProcessing` while that handler
-    /// runs, and a redelivery before the configured stale timeout is replaced with a delayed
-    /// message. Once the timeout passes, ordinary stale recovery may reclaim the lock even if
-    /// the handler is still running. If the process-wide
-    /// graceful-shutdown deadline expires first, visibility-timeout and stale-job recovery take over.
+    /// The handler future is polled on Tokio's blocking pool so synchronous work cannot occupy
+    /// every async worker and prevent the shutdown coordinator from running. SNOS PIE generation
+    /// and local aggregation yield to isolated blocking tasks. On cancellation, the handler
+    /// future is dropped; the delivery owner then publishes a retry and restores the Mongo lock.
+    /// If a different synchronous handler has not yielded yet, the lock remains held until it
+    /// does or the shutdown deadline expires. A redelivery before the stale timeout is replaced
+    /// with a delayed message. If the deadline expires first, SQS visibility and stale-job
+    /// recovery remain the fallback.
     pub(crate) async fn process_job_with_shutdown(
         id: Uuid,
         config: Arc<Config>,
@@ -406,10 +406,13 @@ impl JobHandlerService {
                     status = ?original_status,
                     "Shutdown stopped the processing handler; restoring job state for SQS retry"
                 );
-                workload.finish_error();
-                let error =
-                    Self::restore_job_after_shutdown(&mut job, config, original_status, original_metadata).await;
-                return Err(error);
+                workload.finish_cancelled();
+                return Err(JobError::ShutdownCleanupPending {
+                    id,
+                    job: Box::new(job),
+                    original_status,
+                    original_metadata: Box::new(original_metadata),
+                });
             }
         };
 
@@ -580,27 +583,36 @@ impl JobHandlerService {
         .await
     }
 
-    async fn restore_job_after_shutdown(
+    pub(crate) async fn restore_job_after_shutdown(
         job: &mut crate::types::jobs::job_item::JobItem,
         config: Arc<Config>,
         original_status: JobStatus,
         original_metadata: JobMetadata,
     ) -> JobError {
-        job.metadata = original_metadata;
-
+        let mut locked_job = job.clone();
         for attempt in 1..=SHUTDOWN_RESTORE_MAX_ATTEMPTS {
+            let mut restored_metadata = original_metadata.clone();
+            // A state-update intent can finish its Mongo write just as cancellation drops the
+            // handler. Preserve its nonce even after refreshing an outdated job version.
+            if let (JobSpecificMetadata::StateUpdate(restored), JobSpecificMetadata::StateUpdate(current)) =
+                (&mut restored_metadata.specific, &locked_job.metadata.specific)
+            {
+                restored.inflight_tx_nonce = current.inflight_tx_nonce;
+            }
+            job.metadata = restored_metadata.clone();
             match config
                 .database()
                 .update_job(
-                    job,
+                    &locked_job,
                     JobItemUpdates::new()
                         .update_status(original_status.clone())
-                        .update_metadata(job.metadata.clone())
+                        .update_metadata(restored_metadata)
                         .build(),
                 )
                 .await
             {
-                Ok(_) => {
+                Ok(restored_job) => {
+                    *job = restored_job;
                     MetricsRecorder::record_job_state_transition(
                         JobStatus::LockedForProcessing,
                         original_status.clone(),
@@ -617,6 +629,16 @@ impl JobHandlerService {
                         error = ?error,
                         "Failed to restore shutdown-interrupted job, retrying"
                     );
+                    if let Ok(Some(latest)) = config.database().get_job_by_id(job.id).await {
+                        if latest.status != JobStatus::LockedForProcessing
+                            || latest.metadata.common.process_started_at
+                                != locked_job.metadata.common.process_started_at
+                        {
+                            *job = latest;
+                            return JobError::ShutdownInterrupted { id: job.id };
+                        }
+                        locked_job = latest;
+                    }
                     sleep(SHUTDOWN_RESTORE_RETRY_DELAY).await;
                 }
                 Err(source) => {
@@ -624,7 +646,7 @@ impl JobHandlerService {
                         job_id = ?job.id,
                         attempts = SHUTDOWN_RESTORE_MAX_ATTEMPTS,
                         error = ?source,
-                        "Failed to restore shutdown-interrupted job; leaving delivery pending"
+                        "Failed to restore shutdown-interrupted job after retry publication; stale recovery remains available"
                     );
                     return JobError::ShutdownRestoreFailed { id: job.id, source };
                 }
@@ -1180,14 +1202,18 @@ mod shutdown_tests {
     use crate::core::client::database::{DatabaseError, MockDatabaseClient};
     use crate::tests::config::TestConfigBuilder;
     use crate::tests::utils::build_job_item;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[tokio::test]
     async fn failed_shutdown_restore_is_distinct_and_preserves_metadata() {
         let original_job = build_job_item(JobType::SnosRun, JobStatus::Created, 1);
         let original_metadata = original_job.metadata.clone();
         let expected_metadata = original_metadata.clone();
+        let mut fetched_job = original_job.clone();
+        fetched_job.status = JobStatus::LockedForProcessing;
 
         let mut database = MockDatabaseClient::new();
+        database.expect_get_job_by_id().times(2).returning(move |_| Ok(Some(fetched_job.clone())));
         database
             .expect_update_job()
             .withf(move |_, updates| {
@@ -1213,5 +1239,52 @@ mod shutdown_tests {
 
         assert!(matches!(error, JobError::ShutdownRestoreFailed { .. }));
         assert_eq!(locked_job.metadata, original_metadata);
+    }
+
+    #[tokio::test]
+    async fn shutdown_restore_refreshes_version_and_preserves_a_late_transaction_intent() {
+        let original_job = build_job_item(JobType::StateTransition, JobStatus::Created, 1);
+        let mut locked_job = original_job.clone();
+        locked_job.status = JobStatus::LockedForProcessing;
+        locked_job.version = 1;
+
+        let mut latest_job = locked_job.clone();
+        latest_job.version = 2;
+        if let JobSpecificMetadata::StateUpdate(metadata) = &mut latest_job.metadata.specific {
+            metadata.inflight_tx_nonce = Some(42);
+        }
+
+        let mut database = MockDatabaseClient::new();
+        database.expect_get_job_by_id().times(1).returning(move |_| Ok(Some(latest_job.clone())));
+        let updates = Arc::new(AtomicUsize::new(0));
+        database.expect_update_job().times(2).returning(move |current, update| {
+            if updates.fetch_add(1, Ordering::SeqCst) == 0 {
+                return Err(DatabaseError::UpdateFailed("stale version".to_string()));
+            }
+            assert_eq!(current.version, 2);
+            let metadata = update.metadata.expect("restored metadata");
+            assert!(matches!(
+                &metadata.specific,
+                JobSpecificMetadata::StateUpdate(state) if state.inflight_tx_nonce == Some(42)
+            ));
+            let mut restored = current.clone();
+            restored.status = update.status.expect("restored status");
+            restored.metadata = metadata;
+            Ok(restored)
+        });
+
+        let services = TestConfigBuilder::new().configure_database(database.into()).build().await;
+        let result = JobHandlerService::restore_job_after_shutdown(
+            &mut locked_job,
+            services.config,
+            JobStatus::Created,
+            original_job.metadata,
+        )
+        .await;
+        assert!(matches!(result, JobError::ShutdownInterrupted { .. }));
+        assert!(matches!(
+            &locked_job.metadata.specific,
+            JobSpecificMetadata::StateUpdate(state) if state.inflight_tx_nonce == Some(42)
+        ));
     }
 }
