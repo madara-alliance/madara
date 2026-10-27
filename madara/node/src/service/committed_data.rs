@@ -15,7 +15,13 @@ impl Service for CommittedDataHistoryService {
                 }
                 let db = Arc::clone(&backend);
                 // Await an admitted operation even on shutdown: never detach a DB mutation.
-                let more = tokio::task::spawn_blocking(move || db.maintain_committed_data_history()).await??;
+                let more = match tokio::task::spawn_blocking(move || db.maintain_committed_data_history()).await? {
+                    Ok(more) => more,
+                    Err(error) => {
+                        tracing::error!("Committed-data proof pruning deferred; archives retained: {error:#}");
+                        false
+                    }
+                };
                 if !more && ctx.run_until_cancelled(tokio::time::sleep(Duration::from_secs(5))).await.is_none() {
                     return anyhow::Ok(());
                 }

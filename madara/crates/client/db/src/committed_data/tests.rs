@@ -182,14 +182,14 @@ async fn committed_data_snapshot_persists_and_authenticates_after_reopen() {
         let witness = backend.committed_data_witness(root, Felt::ONE).unwrap().unwrap();
         assert!(witness.verify());
         assert_eq!(witness.value, Felt::from(456_u32));
-        assert_eq!(BackendCommittedData(Arc::clone(&backend)).batch(root, &keys).unwrap(), batch);
+        assert_eq!(backend.committed_data_provider().batch(root, &keys).unwrap(), batch);
     }
     {
         let backend = open();
         // Cold reads must not need the import gate or reconstruct a whole tree.
         let importing = backend.committed_data_cache.import.try_acquire().unwrap();
         assert!(backend.committed_data_witness(root, Felt::from(2_u32)).unwrap().unwrap().verify());
-        assert_eq!(BackendCommittedData(Arc::clone(&backend)).batch(root, &keys).unwrap(), batch);
+        assert_eq!(backend.committed_data_provider().batch(root, &keys).unwrap(), batch);
         assert!(backend.committed_data_cache.get(root, 0).unwrap().is_none());
         drop(importing);
         assert!(backend.committed_data_witness(root, Felt::from(3_u32)).unwrap().is_none());

@@ -246,3 +246,45 @@ fn committed_history_no_settlement_stalls_and_boundary_controls_pruning() {
     backend.set_latest_l1_confirmed(Some(90)).unwrap(); // regression cannot remove values
     assert_dataset(&backend.db, &tree);
 }
+
+#[test]
+fn committed_history_concurrent_imports_pruning_and_reads_preserve_roots() {
+    let dir = tempfile::tempdir().unwrap();
+    let backend = open(dir.path());
+    drain(&backend.db, None);
+    let first = dataset(10);
+    backend.db.write_committed_data_dataset(&first, None).unwrap();
+    let start = std::sync::Barrier::new(2);
+    let done = std::sync::atomic::AtomicBool::new(false);
+    std::thread::scope(|scope| {
+        let pruner = scope.spawn(|| {
+            start.wait();
+            while !done.load(std::sync::atomic::Ordering::Acquire) {
+                backend.db.maintain_history(Some(u64::MAX), 0).unwrap();
+                std::thread::yield_now();
+            }
+        });
+        let writer = scope.spawn(|| {
+            start.wait();
+            let mut root = first.root();
+            for tick in 11..30u64 {
+                let next = dataset(tick);
+                backend
+                    .db
+                    .patch_committed_data_dataset(root, next.root(), vec![(Felt::ZERO, Felt::from(tick))], Some(tick))
+                    .unwrap();
+                assert_dataset(&backend.db, &next);
+                root = next.root();
+            }
+        });
+        let result = writer.join();
+        done.store(true, std::sync::atomic::Ordering::Release);
+        pruner.join().unwrap();
+        result.unwrap();
+    });
+    drain(&backend.db, Some(u64::MAX));
+    assert!(rows(&backend.db, b"cdm/n/").is_empty());
+    for value in 10..30 {
+        assert_dataset(&backend.db, &dataset(value));
+    }
+}

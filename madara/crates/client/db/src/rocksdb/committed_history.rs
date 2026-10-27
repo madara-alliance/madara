@@ -3,7 +3,7 @@
 use super::proof_references::References;
 use super::{committed_data::*, meta, rocksdb_snapshot::SnapshotWithDBArc, *};
 use crate::{
-    committed_data_recovery::RecoveryRecord,
+    committed_data_recovery::{digest, RecoveryRecord},
     persistent_committed_data::{node_key, Node, Tree},
 };
 use blockifier::execution::syscalls::committed_data::{CommittedDataSet, MAX_COMMITTED_DATA_VALUES};
@@ -11,6 +11,7 @@ use rocksdb::WriteBatch;
 use std::collections::BTreeMap;
 
 const HISTORY: &[u8] = b"cdh/v1/";
+const HISTORY_HASH: &[u8] = b"cdh/hash/";
 const REGISTERED: &[u8] = b"cdh/registered/";
 const USED: &[u8] = b"cdh/used/";
 const AGE: &[u8] = b"cdh/age/";
@@ -22,6 +23,7 @@ const MAX_DELTAS: u32 = 64;
 pub(super) struct ValueHistory {
     base: Option<Felt>,
     depth: u32,
+    count: u32,
     record: RecoveryRecord,
 }
 fn named(prefix: &[u8], suffix: &[u8]) -> Vec<u8> {
@@ -55,16 +57,31 @@ pub(super) fn with_reconstructed<T>(
     let tree = reconstruct(snapshot, root)?;
     use_tree(&tree)
 }
-fn reconstruct(snapshot: &SnapshotWithDBArc, root: Felt) -> Result<CommittedDataSet> {
+fn read_history(snapshot: &SnapshotWithDBArc, root: Felt) -> Result<ValueHistory> {
     let cf = snapshot.db.get_column(meta::META_COLUMN);
+    let bytes = snapshot.get_pinned_cf(&cf, root_key(HISTORY, root))?.context("Missing historical values")?;
+    let hash = snapshot.get_pinned_cf(&cf, root_key(HISTORY_HASH, root))?.context("Missing historical checksum")?;
+    anyhow::ensure!(hash.as_ref() == digest(&bytes).as_bytes(), "Historical archive checksum mismatch");
+    let history: ValueHistory = deserialize(bytes)?;
+    anyhow::ensure!(history.record.manifest.root == root, "Historical root identity mismatch");
+    anyhow::ensure!((1..=MAX_COMMITTED_DATA_VALUES).contains(&(history.count as usize)), "Invalid historical count");
+    history.record.manifest.validate()?;
+    Ok(history)
+}
+
+/// Each archive was constructed from a root-verified import and committed with its checksum.
+/// Verify all immutable ancestors before GC, without rebuilding every old Merkle tree.
+fn history_chain(snapshot: &SnapshotWithDBArc, root: Felt) -> Result<(Vec<Felt>, u32)> {
     let mut next = Some(root);
     let mut records = Vec::new();
     let mut expected_depth = None;
+    let mut count = 0;
     while let Some(current) = next {
         anyhow::ensure!(records.len() <= MAX_DELTAS as usize, "Historical value chain exceeds bound");
-        let bytes = snapshot.get_pinned_cf(&cf, root_key(HISTORY, current))?.context("Missing historical values")?;
-        let history: ValueHistory = deserialize(bytes)?;
-        anyhow::ensure!(history.record.manifest.root == current, "Historical root identity mismatch");
+        let history = read_history(snapshot, current)?;
+        if records.is_empty() {
+            count = history.count;
+        }
         anyhow::ensure!(
             history.depth <= MAX_DELTAS && expected_depth.is_none_or(|d| d == history.depth),
             "Invalid historical depth"
@@ -74,13 +91,16 @@ fn reconstruct(snapshot: &SnapshotWithDBArc, root: Felt) -> Result<CommittedData
         next = history.base;
         records.push(current);
     }
+    Ok((records, count))
+}
+fn reconstruct(snapshot: &SnapshotWithDBArc, root: Felt) -> Result<CommittedDataSet> {
+    let (records, count) = history_chain(snapshot, root)?;
     let mut values = BTreeMap::new();
     for current in records.into_iter().rev() {
-        let bytes = snapshot.get_pinned_cf(&cf, root_key(HISTORY, current))?.context("Missing historical values")?;
-        let history: ValueHistory = deserialize(bytes)?;
-        values.extend(history.record.decode()?);
+        values.extend(read_history(snapshot, current)?.record.decode()?);
         anyhow::ensure!(values.len() <= MAX_COMMITTED_DATA_VALUES, "Historical dataset exceeds bound");
     }
+    anyhow::ensure!(values.len() == count as usize, "Historical count mismatch");
     let tree = CommittedDataSet::new(values.into_iter().collect())?;
     anyhow::ensure!(tree.root() == root, "Reconstructed historical root mismatch");
     Ok(tree)
@@ -109,7 +129,10 @@ impl RocksDBStorage {
         let parent = base
             .filter(|base| *base != root)
             .map(|base| -> Result<Option<ValueHistory>> {
-                Ok(self.inner.db.get_cf(&cf, root_key(HISTORY, base))?.map(deserialize).transpose()?)
+                if self.inner.db.get_cf(&cf, root_key(HISTORY, base))?.is_none() {
+                    return Ok(None);
+                }
+                Ok(Some(read_history(&SnapshotWithDBArc::new(Arc::clone(&self.inner)), base)?))
             })
             .transpose()?
             .flatten();
@@ -122,8 +145,10 @@ impl RocksDBStorage {
         };
         // This is an independent local value archive, not the temporary Mongo export record.
         let history =
-            ValueHistory { base, depth, record: RecoveryRecord::encode(Felt::ZERO, None, root, None, values)? };
-        batch.put_cf(&cf, root_key(HISTORY, root), serialize(&history)?);
+            ValueHistory { base, depth, count, record: RecoveryRecord::encode(Felt::ZERO, None, root, None, values)? };
+        let bytes = serialize(&history)?;
+        batch.put_cf(&cf, root_key(HISTORY_HASH, root), digest(&bytes));
+        batch.put_cf(&cf, root_key(HISTORY, root), bytes);
         Ok(())
     }
     pub(super) fn stage_root_reference(
@@ -181,7 +206,7 @@ impl RocksDBStorage {
     /// One root per call bounds migration/pruning work and lets the service check cancellation.
     /// Legacy roots are all adopted before any refcounts can be used for deletion.
     pub(super) fn maintain_history(&self, cutoff: Option<u64>, observed_head: u64) -> Result<bool> {
-        let mut cache =
+        let cache =
             self.inner.committed_data_write.lock().map_err(|_| anyhow::anyhow!("Committed-data lock poisoned"))?;
         let cf = self.inner.get_column(meta::META_COLUMN);
         let cursor = self.inner.db.get_cf(&cf, MIGRATION)?;
@@ -235,14 +260,24 @@ impl RocksDBStorage {
         let mut metadata =
             self.inner.db.get_cf(&cf, metadata_key(root, METADATA_LEVEL, 0))?.context("Missing retained root")?;
         let id = persistent_id(&metadata)?;
+        let snapshot = SnapshotWithDBArc::new(Arc::clone(&self.inner));
+        // Archive authentication can be expensive. Do not block new imports while rebuilding.
+        drop(cache);
+        if id != 0 {
+            let (_, archived_count) = history_chain(&snapshot, root)?;
+            anyhow::ensure!(archived_count as usize == count(&metadata)?, "Historical value count mismatch");
+        }
+        drop(snapshot);
+        let mut cache =
+            self.inner.committed_data_write.lock().map_err(|_| anyhow::anyhow!("Committed-data lock poisoned"))?;
+        // Recheck under the write lock: a concurrent import/use/repair may have retained this root.
+        if self.inner.db.get_cf(&cf, &key)?.is_none()
+            || self.inner.db.get_cf(&cf, metadata_key(root, METADATA_LEVEL, 0))?.as_deref() != Some(metadata.as_slice())
+        {
+            return Ok(true);
+        }
         let mut batch = WriteBatch::default();
         if id != 0 {
-            // Authenticate reconstruction before releasing any node. Failure leaves everything intact.
-            let snapshot = SnapshotWithDBArc::new(Arc::clone(&self.inner));
-            with_reconstructed(&snapshot, root, |tree| {
-                anyhow::ensure!(tree.entries().len() == count(&metadata)?, "Historical value count mismatch");
-                Ok(())
-            })?;
             let mut refs = References::new(&self.inner, u64::MAX, &[]);
             refs.remove(id)?;
             refs.write(&mut batch);

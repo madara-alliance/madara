@@ -488,7 +488,7 @@ mod tests {
         ] {
             json.as_object_mut().unwrap().remove(name);
         }
-        let restored: BackendParams = serde_json::from_value(json).unwrap();
+        let restored: super::BackendParams = serde_json::from_value(json).unwrap();
         assert_eq!(restored.backend_config().committed_data_retention.cache_bytes, original.cache_bytes);
         assert_eq!(restored.backend_config().committed_data_retention.memory_blocks, original.memory_blocks);
         assert!(RunCmd::try_parse_from(["madara", "--committed-data-memory-blocks", "-1"]).is_err());
