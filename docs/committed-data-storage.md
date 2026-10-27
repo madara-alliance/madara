@@ -8,6 +8,14 @@ The dataset builder sorts keys and rejects duplicates. Empty datasets are reject
 
 Witnesses contain `root`, `key`, `value`, and bottom-up `siblings: [{bit, hash}, ...]`. Bits must strictly increase and be below 252. Both Rust execution and the Cairo OS authenticate the same key/value commitment. Maximum path length is 252; typical depth depends on key distribution, not just entry count. Missing data fails closed. This is a binary Patricia construction, not Ethereum's RLP/Keccak trie format.
 
+Batch proofs expand only branches containing requested keys. An unrequested subtree remains an opaque hash even when the same hash occurs on another requested path; repeated sibling hashes must not cause recursive expansion of unrelated subtrees. SNOS and the Cairo OS authenticate single-read witnesses before using their path length to decide whether enough gas remains. The commitment format and gas formulas are unchanged.
+
+### Prover dependency revisions
+
+This implementation pins SNOS `58dac6523a9208fc142ae4a97379b49beaf0c68c` and Sequencer `d5591c7a6867978d4531eae6e8e79c3babd90394`. SNOS itself uses that same Sequencer revision. Besides bounded batch proofs and authentication before gas decisions, these revisions remove a redundant outer proof-RPC retry and close RPC timing intervals on cancellation. Committed-data proving remains explicitly enabled by the orchestrator configuration.
+
+The Sequencer build compiles the OS from its pinned Cairo sources. The aggregator runner obtains the child OS hash from that dependency's embedded `PROGRAM_HASHES`; there is no separate Madara hash override. These revisions require OS hash `0xc0990458eb34225948bbc8057a684719848fc7a880750ffef23b034f317ed3` (virtual OS: `0x598b3d3f14c34a689434be0adc531b7f7a30c53b22a28a19171cb6a8398f59c`). The aggregator program hashes are unchanged. Deployment must use the matching OS program and accepted child-program hash; changing dependency pins does not update deployed verification contracts.
+
 ## Durable records
 
 Imports recompute the root before writing. Tree nodes and metadata are written in one RocksDB batch with a synchronous write-ahead log. Acknowledgement means local durability. Re-import repairs authenticated tree nodes and preserves the first-import checkpoint.
