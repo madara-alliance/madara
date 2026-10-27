@@ -164,6 +164,29 @@ async fn full_backlog_rejects_import_before_writing_but_allows_exact_retry() {
     assert_eq!(backend.db.recovery_pending_bytes().unwrap(), DEFAULT_PENDING_BACKUP_BYTES);
 }
 
+/// Normalize unordered storage changes in a transaction trace or legacy block-trace response.
+/// Calls, events, results and transaction order remain untouched and are compared exactly.
+fn normalized_public_trace(mut value: serde_json::Value) -> serde_json::Value {
+    let normalize = |trace: &mut serde_json::Value| {
+        let changes = trace["state_diff"]["storage_diffs"].as_array_mut().unwrap();
+        for change in changes.iter_mut() {
+            change["storage_entries"]
+                .as_array_mut()
+                .unwrap()
+                .sort_by_key(|entry| entry["key"].as_str().unwrap().to_owned());
+        }
+        changes.sort_by_key(|change| change["address"].as_str().unwrap().to_owned());
+    };
+    if let Some(traces) = value.as_array_mut() {
+        for trace in traces {
+            normalize(&mut trace["trace_root"]);
+        }
+    } else {
+        normalize(&mut value);
+    }
+    value
+}
+
 /// Reexecute a signed account call to the reserved committed-data reader through both public
 /// trace methods. The replica case imports the same map through the replication import path.
 #[rstest::rstest]
@@ -262,7 +285,7 @@ async fn committed_data_public_traces_survive_proof_pruning(#[case] replica: boo
         None,
         mp_utils::service::ServiceContext::new_for_testing(),
     );
-    let before = serde_json::to_value(rpc.trace_transaction(hash).await.unwrap()).unwrap();
+    let before = normalized_public_trace(serde_json::to_value(rpc.trace_transaction(hash).await.unwrap()).unwrap());
     // The account returns Array<Span<felt252>>: one call, one returned felt, then the value.
     // The reserved reader is intercepted by the syscall handler, so it has no nested contract call.
     assert_eq!(before["execute_invocation"]["is_reverted"], false, "{before}");
@@ -273,12 +296,18 @@ async fn committed_data_public_traces_survive_proof_pruning(#[case] replica: boo
     );
     assert_eq!(before["fee_transfer_invocation"]["is_reverted"], false, "{before}");
     let block_id = mp_rpc::v0_10_0::BlockId::Number(1);
-    let block_before =
-        serde_json::to_value(rpc.trace_block_transactions(block_id.clone(), None).await.unwrap()).unwrap();
+    let block_before = normalized_public_trace(
+        serde_json::to_value(rpc.trace_block_transactions(block_id.clone(), None).await.unwrap()).unwrap(),
+    );
     while backend.db.maintain_committed_data_history(Some(u64::MAX)).unwrap() {}
-    assert_eq!(serde_json::to_value(rpc.trace_transaction(hash).await.unwrap()).unwrap(), before);
     assert_eq!(
-        serde_json::to_value(rpc.trace_block_transactions(block_id, None).await.unwrap()).unwrap(),
+        normalized_public_trace(serde_json::to_value(rpc.trace_transaction(hash).await.unwrap()).unwrap()),
+        before
+    );
+    assert_eq!(
+        normalized_public_trace(
+            serde_json::to_value(rpc.trace_block_transactions(block_id, None).await.unwrap()).unwrap()
+        ),
         block_before
     );
     assert!(!backend.db.maintain_committed_data_history(Some(u64::MAX)).unwrap());

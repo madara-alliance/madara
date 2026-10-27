@@ -144,6 +144,7 @@ jobs:
           fi
 
       - name: Run tests
+        id: runtime_tests
         env:
           ETH_FORK_URL: ${{ secrets.ETH_FORK_URL }}
           GATEWAY_KEY: ${{ secrets.GITHUB_GATEWAY_KEY || '' }}
@@ -158,6 +159,8 @@ jobs:
             --no-fail-fast
 
       - name: Test committed-data Mongo recovery
+        # Keep recovery coverage even when an unrelated runtime case fails.
+        if: ${{ !cancelled() && steps.runtime_tests.outcome != 'skipped' }}
         env:
           RECOVERY_TEST_MONGO_URI: mongodb://localhost:27017
         run: |
