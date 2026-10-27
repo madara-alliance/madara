@@ -39,8 +39,17 @@ jobs:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           cache-key: workspace-release-${{ runner.os }}-rust-${{ env.BUILD_RUST_VERSION }}
 
+      - name: Bound package download retries
+        run: |
+          printf '%s\n' 'Acquire::Retries "3";' 'Acquire::http::Timeout "20";' 'Acquire::https::Timeout "20";' | sudo tee /etc/apt/apt.conf.d/80-committed-data-retries
+
       - name: Cairo Native setup
         uses: ./.github/actions/setup-cairo-native
+
+      - name: Verify LLVM installation
+        run: |
+          clang-19 --version
+          llvm-config-19 --version
 
       - name: Install nextest
         uses: taiki-e/install-action@nextest
