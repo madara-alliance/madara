@@ -38,10 +38,6 @@ on:
         description: "Also measure signed JSON RPC imports with pruning"
         default: false
         type: boolean
-      concurrent-rpc:
-        description: "Measure loopback HTTP imports during a background proof sweep instead of storage growth"
-        default: false
-        type: boolean
       rolling-versions:
         description: "Additional updates with pruning active every tick"
         default: "16"
@@ -213,7 +209,6 @@ jobs:
           run-id: ${{ inputs.measure-run-id }}
           github-token: ${{ github.token }}
       - name: Measure storage and cold proofs
-        if: ${{ !inputs.concurrent-rpc }}
         env:
           CD_MEASURE_ENTRIES: ${{ inputs.entries }}
           CD_MEASURE_UPDATES: ${{ inputs.updates }}
@@ -228,7 +223,7 @@ jobs:
             --workspace-remap "$GITHUB_WORKSPACE" --run-ignored only --test-threads 1 \
             -E 'test(committed_history_measure_storage_and_memory)' --success-output immediate
       - name: Measure signed private RPC imports
-        if: inputs.signed-rpc && !inputs.concurrent-rpc
+        if: inputs.signed-rpc
         env:
           CD_MEASURE_ENTRIES: ${{ inputs.entries }}
           CD_MEASURE_VERSIONS: ${{ inputs.versions }}
@@ -239,19 +234,7 @@ jobs:
           cargo nextest run --archive-file target/nextest/madara-tests.tar.zst \
             --workspace-remap "$GITHUB_WORKSPACE" --run-ignored only --test-threads 1 \
             -E 'test(committed_data_measure_signed_rpc_imports)' --success-output immediate
-      - name: Measure HTTP imports with background pruning
-        if: inputs.concurrent-rpc
-        env:
-          CD_MEASURE_ENTRIES: ${{ inputs.entries }}
-          CD_MEASURE_VERSIONS: ${{ inputs.versions }}
-          CD_MEASURE_LARGE_MOVES: ${{ inputs.large-moves }}
-          CD_MEASURE_RPC_REPORT: ${{ github.workspace }}/rpc-measurement.json
-        run: |
-          cargo nextest run --archive-file target/nextest/madara-tests.tar.zst \
-            --workspace-remap "$GITHUB_WORKSPACE" --run-ignored only --test-threads 1 \
-            -E 'test(committed_data_measure_concurrent_http_imports)' --success-output immediate
       - uses: actions/upload-artifact@v6
-        if: always()
         with:
           name: committed-data-retention-measurement
           path: |

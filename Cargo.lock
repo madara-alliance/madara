@@ -9235,7 +9235,6 @@ dependencies = [
  "mp-transactions",
  "mp-utils",
  "opentelemetry",
- "reqwest 0.12.26",
  "rstest 0.26.1",
  "serde",
  "serde_json",
