@@ -433,7 +433,7 @@ impl RocksDBStorage {
         let metadata = encode_metadata(count, checkpoint, id);
         let mut batch = WriteBatch::default();
         self.stage_value_history(&mut batch, root, base, tree, (id, count))?;
-        let old_id = old_metadata.map(|b| persistent_id(b)).transpose()?.filter(|id| *id != 0);
+        let old_id = old_metadata.map(persistent_id).transpose()?.filter(|id| *id != 0);
         self.stage_root_reference(&mut batch, old_id, id, first_id, &tree.nodes)?;
         self.stage_root_use(&mut batch, root, last_used)?;
         batch.put_cf(&cf, NEXT_KEY, tree.next_id().to_be_bytes());

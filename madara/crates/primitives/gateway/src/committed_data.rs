@@ -2,6 +2,9 @@
 use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
 
+/// Shared admission/recovery bound for one combined account transaction.
+pub const MAX_DATASETS_PER_TRANSACTION: usize = 4;
+
 pub const ROOTS_PER_PAGE: usize = 64;
 pub const VALUES_PER_PAGE: usize = 4096;
 

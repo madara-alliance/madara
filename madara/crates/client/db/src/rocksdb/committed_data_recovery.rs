@@ -1,22 +1,26 @@
+//! Durable backup outbox, permanent manifests and transaction dependency identities.
+//! All mutations use the records lock and a synchronous WAL; payload acknowledgement
+//! removes only upload bytes, preserving identities needed for replay.
 use super::{Column, RocksDBStorageInner};
 use crate::{
     committed_data_recovery::{namespace_key, RecoveryManifest, RecoveryRecord},
     prelude::*,
 };
 use mp_convert::Felt;
+use mp_gateway::committed_data::MAX_DATASETS_PER_TRANSACTION;
 use mp_transactions::validated::ValidatedTransaction;
 use rocksdb::{Direction, IteratorMode, WriteBatch, WriteOptions};
 pub const COMMITTED_DATA_RECOVERY_COLUMN: Column = Column::new("committed_data_recovery").set_point_lookup();
 fn key(prefix: u8, id: &[u8]) -> Vec<u8> {
-    let mut k = vec![prefix];
-    k.extend_from_slice(id);
-    k
+    let mut bytes = vec![prefix];
+    bytes.extend_from_slice(id);
+    bytes
 }
 fn durable() -> WriteOptions {
-    let mut o = WriteOptions::default();
-    o.set_sync(true);
-    o.disable_wal(false);
-    o
+    let mut options = WriteOptions::default();
+    options.set_sync(true);
+    options.disable_wal(false);
+    options
 }
 impl RocksDBStorageInner {
     pub(super) fn find_recovery_record(&self, namespace: &[u8]) -> Result<Option<String>> {
@@ -121,7 +125,10 @@ impl RocksDBStorageInner {
         dependencies: &[String],
         export: bool,
     ) -> Result<()> {
-        anyhow::ensure!((1..=4).contains(&dependencies.len()), "Invalid recovery dependency count");
+        anyhow::ensure!(
+            (1..=MAX_DATASETS_PER_TRANSACTION).contains(&dependencies.len()),
+            "Invalid recovery dependency count"
+        );
         for id in dependencies {
             anyhow::ensure!(self.get_recovery_manifest(id)?.is_some(), "Missing recovery dependency");
         }

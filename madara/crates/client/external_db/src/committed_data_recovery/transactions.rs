@@ -5,6 +5,7 @@ use bincode::Options;
 use mc_db::{MadaraBackend, MadaraStorageWrite};
 use mongodb::bson::doc;
 use mp_convert::{Felt, FeltHexDisplay, ToFelt};
+use mp_gateway::committed_data::MAX_DATASETS_PER_TRANSACTION;
 use mp_transactions::validated::{TxTimestamp, ValidatedTransaction};
 use std::sync::Arc;
 
@@ -56,7 +57,10 @@ pub async fn restore_transactions(
                 "Conflicting transaction archive records"
             );
         }
-        ensure!((1..=4).contains(&document.committed_data.len()), "Invalid recovery dependency count");
+        ensure!(
+            (1..=MAX_DATASETS_PER_TRANSACTION).contains(&document.committed_data.len()),
+            "Invalid recovery dependency count"
+        );
         ensure!(
             tx.hash == *hash
                 && tx.transaction.compute_hash(

@@ -14,7 +14,7 @@ use mp_utils::service::MadaraServiceId;
 use std::sync::{Arc, LazyLock};
 
 const MAX_SIGNATURE_CHECKS: usize = 4;
-const MAX_DATASETS_PER_TRANSACTION: usize = 4;
+use mp_gateway::committed_data::MAX_DATASETS_PER_TRANSACTION;
 static SIGNATURE_CHECKS: LazyLock<Arc<tokio::sync::Semaphore>> =
     LazyLock::new(|| Arc::new(tokio::sync::Semaphore::new(MAX_SIGNATURE_CHECKS)));
 

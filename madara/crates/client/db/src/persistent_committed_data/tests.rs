@@ -111,7 +111,7 @@ fn committed_cache_retains_current_frontier_not_obsolete_versions() -> Result<()
     }
     // Eviction is only a performance change; persisted history remains authoritative.
     let mut tiny = NodeCache::default();
-    tiny.0.resize(NonZeroUsize::new(2).unwrap());
+    tiny.entries.resize(NonZeroUsize::new(2).unwrap());
     let mut tree = Tree::with_cache(next, 256, |id| Ok(disk.get(&id).cloned()), tiny);
     for (id, root) in prior {
         assert!(tree.witness(id, root, Felt::from(5))?.unwrap().verify());
