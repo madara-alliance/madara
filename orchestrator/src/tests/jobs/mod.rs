@@ -65,7 +65,6 @@ pub mod snos_job;
 #[cfg(test)]
 mod aggregator_job;
 
-use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::queue::{MockQueueClient, QueueError};
 use crate::error::job::JobError;
 use crate::tests::common::constants::{QUEUE_CONSUME_MAX_RETRIES, QUEUE_CONSUME_RETRY_DELAY_SECS};
@@ -577,11 +576,11 @@ async fn process_job_shutdown_restores_locked_job_for_sqs_retry() {
 }
 
 /// Tests that synchronous work does not consume Tokio's only async worker and that the processing
-/// lock remains owned until the handler future can actually stop.
+/// lock remains owned until the handler stops when redelivery occurs before the stale timeout.
 #[rstest]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[allow(clippy::await_holding_lock)]
-async fn process_job_shutdown_retains_lock_until_non_yielding_processing_stops() {
+async fn process_job_shutdown_retains_lock_before_stale_timeout() {
     let _test_lock = acquire_test_lock();
 
     let mut queue = MockQueueClient::new();

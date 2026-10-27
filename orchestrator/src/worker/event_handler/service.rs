@@ -179,8 +179,10 @@ impl JobHandlerService {
     /// The handler future is polled on Tokio's blocking pool so synchronous SNOS or aggregation work
     /// cannot occupy every async worker and prevent the shutdown coordinator from running. On
     /// cancellation, the database lock is restored only after the handler future has yielded and
-    /// been dropped. Until then the job remains `LockedForProcessing`, and a redelivery before
-    /// the configured stale timeout is replaced with a delayed message. If the process-wide
+    /// been dropped. The shutdown path leaves the job `LockedForProcessing` while that handler
+    /// runs, and a redelivery before the configured stale timeout is replaced with a delayed
+    /// message. Once the timeout passes, ordinary stale recovery may reclaim the lock even if
+    /// the handler is still running. If the process-wide
     /// graceful-shutdown deadline expires first, visibility-timeout and stale-job recovery take over.
     pub(crate) async fn process_job_with_shutdown(
         id: Uuid,
