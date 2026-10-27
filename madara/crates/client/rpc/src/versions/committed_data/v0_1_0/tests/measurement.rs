@@ -10,9 +10,9 @@ fn parameter(name: &str, default: usize) -> usize {
 fn random(key: usize, tick: usize) -> Felt {
     starknet_core::utils::starknet_keccak(format!("rpc-price-{key}-{tick}").as_bytes())
 }
-fn changed_price(key: usize, tick: usize, previous: Option<Felt>) -> Felt {
+fn changed_price(key: usize, tick: usize, previous: Option<Felt>, large_moves: bool) -> Felt {
     let random = u64::from_be_bytes(random(key, tick).to_bytes_be()[24..].try_into().unwrap());
-    Felt::from(match previous {
+    let value = Felt::from(match previous.filter(|_| !large_moves) {
         Some(old) => {
             let old = u64::from_be_bytes(old.to_bytes_be()[24..].try_into().unwrap());
             let change = 1 + random % (old / 65536).max(1);
@@ -26,7 +26,18 @@ fn changed_price(key: usize, tick: usize, previous: Option<Felt>) -> Felt {
             let bits = [23, 27, 29, 30, 32, 33, 35, 36, 38, 41][key % 10];
             (1 << (bits - 1)) | (random & ((1 << (bits - 1)) - 1))
         }
-    })
+    });
+    if Some(value) == previous {
+        value + Felt::ONE
+    } else {
+        value
+    }
+}
+
+#[test]
+fn committed_data_rpc_price_redraw_collision_still_changes_value() {
+    let drawn = changed_price(0, 1, None, true);
+    assert_eq!(changed_price(0, 1, Some(drawn), true), drawn + Felt::ONE);
 }
 
 #[tokio::test]
@@ -41,7 +52,8 @@ async fn committed_data_measure_signed_rpc_imports() {
     let public_key = starknet_types_core::curve::AffinePoint::generator().x();
     rpc.set_committed_data_signers(vec![public_key]).unwrap();
     let module = crate::rpc_api_committed_data(&rpc).unwrap();
-    let mut values: Vec<_> = (0..entries).map(|key| (random(key, usize::MAX), changed_price(key, 0, None))).collect();
+    let mut values: Vec<_> =
+        (0..entries).map(|key| (random(key, usize::MAX), changed_price(key, 0, None, false))).collect();
     let mut base_root = None;
     let chain = backend.chain_config().chain_id.to_felt();
     let mut timings = Vec::new();
@@ -52,7 +64,7 @@ async fn committed_data_measure_signed_rpc_imports() {
         if tick > 0 {
             for (key, (_, price)) in values.iter_mut().enumerate() {
                 let old = *price;
-                *price = changed_price(key, tick, (!large_moves).then_some(old));
+                *price = changed_price(key, tick, Some(old), large_moves);
                 assert_ne!(*price, old);
             }
         }

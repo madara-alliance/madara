@@ -47,10 +47,10 @@ fn value(key: usize, tick: usize) -> Felt {
     Felt::from_bytes_be(&bytes)
 }
 
-fn price(key: usize, tick: usize, previous: Option<Felt>) -> Felt {
+fn price(key: usize, tick: usize, previous: Option<Felt>, large_moves: bool) -> Felt {
     let bytes = value(key, tick).to_bytes_be();
     let random = u64::from_be_bytes(bytes[24..].try_into().unwrap());
-    let amount = if let Some(previous) = previous {
+    let amount = if let Some(previous) = previous.filter(|_| !large_moves) {
         let previous = u64::from_be_bytes(previous.to_bytes_be()[24..].try_into().unwrap());
         let change = 1 + random % (previous / 65536).max(1);
         if random & 1 == 0 {
@@ -63,13 +63,25 @@ fn price(key: usize, tick: usize, previous: Option<Felt>) -> Felt {
         let bits = [23, 27, 29, 30, 32, 33, 35, 36, 38, 41][key % 10];
         (1u64 << (bits - 1)) | (random & ((1u64 << (bits - 1)) - 1))
     };
-    Felt::from(amount)
+    let value = Felt::from(amount);
+    // A random redraw can equal the preceding tick; keep the all-prices-change workload exact.
+    if Some(value) == previous {
+        value + Felt::ONE
+    } else {
+        value
+    }
 }
 
 fn compact(db: &RocksDBStorage) {
     let cf = db.inner.get_column(meta::META_COLUMN);
     db.inner.db.flush_cf(&cf).unwrap();
     db.inner.db.compact_range_cf(&cf, None::<&[u8]>, None::<&[u8]>);
+}
+
+#[test]
+fn committed_history_price_redraw_collision_still_changes_value() {
+    let drawn = price(0, 1, None, true);
+    assert_eq!(price(0, 1, Some(drawn), true), drawn + Felt::ONE);
 }
 
 #[test]
@@ -99,7 +111,7 @@ fn committed_history_measure_storage_and_memory() {
     let db = &backend.db;
     let baseline = footprint(db);
     let mut values: Vec<_> = (0..entries)
-        .map(|key| (value(key, usize::MAX), if price_values { price(key, 0, None) } else { value(key, 0) }))
+        .map(|key| (value(key, usize::MAX), if price_values { price(key, 0, None, false) } else { value(key, 0) }))
         .collect();
     let tree = CommittedDataSet::new(values.clone()).unwrap();
     let mut root = tree.root();
@@ -127,7 +139,7 @@ fn committed_history_measure_storage_and_memory() {
                 let key = (tick * updates + i) % entries;
                 let previous = values[key].1;
                 values[key].1 =
-                    if price_values { price(key, tick, (!large_moves).then_some(previous)) } else { value(key, tick) };
+                    if price_values { price(key, tick, Some(previous), large_moves) } else { value(key, tick) };
                 assert_ne!(values[key].1, previous, "Every benchmark price must change");
                 values[key]
             })
@@ -201,7 +213,7 @@ fn committed_history_measure_storage_and_memory() {
                 let key = (tick * updates + i) % entries;
                 let previous = values[key].1;
                 values[key].1 =
-                    if price_values { price(key, tick, (!large_moves).then_some(previous)) } else { value(key, tick) };
+                    if price_values { price(key, tick, Some(previous), large_moves) } else { value(key, tick) };
                 assert_ne!(values[key].1, previous);
                 values[key]
             })
