@@ -124,6 +124,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [dev-dependencies]
 # Core
+jsonrpsee = { workspace = true, features = ["ws-client"] }
 mc-e2e-tests = { workspace = true }
 mc-db = { workspace = true, features = ["testing"] }
 
