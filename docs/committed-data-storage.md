@@ -25,7 +25,7 @@ A retained-index witness read follows only the requested branch path, reads sibl
 
 ## Settlement-gated proof retention
 
-Proof cleanup runs once at startup, then waits six hours after finishing each eligible backlog. This is an internal maintenance cadence, with no additional CLI setting. Reads never trigger a sweep. The sweep interval is separate from the retention buffer below: between sweeps, extra eligible proof nodes remain on disk. Capacity planning must include that delay, sweep duration and L1 settlement lag. Larger intervals create larger cleanup batches; the worker still checks shutdown between roots and awaits each admitted DB mutation.
+Successful durable ingestion wakes one background proof-cleanup worker. Private imports notify it after the local recovery journal is durable; full-node replication notifies it after persisting a dataset. Triggers during an active sweep are discarded, not queued. There is no periodic cleanup timer or additional cadence setting. Reads do not trigger cleanup. Without new ingestion, cleanup stays idle even if L1 settlement advances; another successful ingestion starts the next eligible sweep. The worker checks shutdown between roots and awaits each admitted DB mutation. Capacity planning must include settlement lag, time until another ingestion, and sweep duration.
 
 Historical values never expire. Enable `--committed-data-proof-retention-secs 172800` for a two-day buffer behind the latest L1-confirmed **L2** height. Omission retains every proof index. The cutoff is:
 

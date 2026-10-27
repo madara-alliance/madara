@@ -36,6 +36,19 @@ pub fn settled_retention_cutoff(settled: Option<u64>, buffer: Duration, block_ti
 }
 
 impl<D: crate::MadaraStorageRead> crate::MadaraBackend<D> {
+    /// Wake the idle cleanup worker after durable ingestion. No work is queued while it is busy.
+    pub fn request_committed_data_cleanup(&self) {
+        if self.config.committed_data_retention.proof_retention_secs.is_some() {
+            // ponytail: notify_waiters stores no permit, so repeated requests cannot queue sweeps.
+            self.committed_data_cleanup.notify_waiters();
+        }
+    }
+
+    /// Only the registered history service waits here; it owns cleanup and graceful shutdown.
+    pub async fn wait_for_committed_data_cleanup(&self) {
+        self.committed_data_cleanup.notified().await;
+    }
+
     pub(crate) fn committed_data_proof_cutoff(&self) -> Option<u64> {
         let seconds = self.config.committed_data_retention.proof_retention_secs?;
         let head = self.chain_head_state().confirmed_tip.unwrap_or(0);
@@ -56,6 +69,75 @@ impl<D: crate::MadaraStorage> crate::MadaraBackend<D> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{MadaraBackend, MadaraBackendConfig};
+    use futures::FutureExt;
+    use std::sync::Arc;
+
+    fn backend(retention: Option<u64>) -> Arc<MadaraBackend> {
+        MadaraBackend::open_for_testing_with_config(
+            mp_chain_config::ChainConfig::madara_test().into(),
+            MadaraBackendConfig {
+                committed_data_retention: CommittedDataRetentionConfig {
+                    proof_retention_secs: retention,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        )
+    }
+
+    #[tokio::test]
+    async fn committed_data_cleanup_drops_busy_triggers_and_rearms_without_a_queue() {
+        let backend = backend(Some(0));
+        for _ in 0..10 {
+            backend.request_committed_data_cleanup();
+        }
+        assert!(backend.wait_for_committed_data_cleanup().now_or_never().is_none());
+        let mut waiting = Box::pin(backend.wait_for_committed_data_cleanup());
+        assert!(futures::poll!(&mut waiting).is_pending());
+        backend.request_committed_data_cleanup();
+        assert!(futures::poll!(&mut waiting).is_ready());
+        drop(waiting);
+        // Model the worker inside its sweep, with no notification future registered.
+        for _ in 0..10 {
+            backend.request_committed_data_cleanup();
+        }
+        let mut next = Box::pin(backend.wait_for_committed_data_cleanup());
+        assert!(futures::poll!(&mut next).is_pending(), "Busy triggers must not queue another sweep");
+        backend.request_committed_data_cleanup();
+        assert!(futures::poll!(&mut next).is_ready());
+    }
+
+    #[tokio::test]
+    async fn committed_data_cleanup_is_disabled_without_retention() {
+        let backend = backend(None);
+        let mut waiting = Box::pin(backend.wait_for_committed_data_cleanup());
+        assert!(futures::poll!(&mut waiting).is_pending());
+        backend.request_committed_data_cleanup();
+        assert!(futures::poll!(&mut waiting).is_pending());
+    }
+
+    #[tokio::test]
+    async fn committed_data_cleanup_waits_for_successful_durable_journal() {
+        use blockifier::execution::syscalls::committed_data::CommittedDataSet;
+        use mp_convert::Felt;
+        use mp_gateway::committed_data::CommittedDataUpdate;
+        let backend = backend(Some(0));
+        let values = vec![(Felt::ONE, Felt::TWO)];
+        let root = CommittedDataSet::new(values.clone()).unwrap().root();
+        let mut waiting = Box::pin(backend.wait_for_committed_data_cleanup());
+        assert!(futures::poll!(&mut waiting).is_pending());
+        backend.import_committed_data_snapshot(root, values.clone()).await.unwrap();
+        assert!(futures::poll!(&mut waiting).is_pending(), "Import must not race its recovery journal");
+        let missing_base =
+            CommittedDataUpdate { application_id: Felt::ONE, dataset_id: Felt::TWO, base_root: Some(Felt::THREE) };
+        assert!(backend.journal_committed_data(Some(missing_base), root, values.clone()).await.is_err());
+        assert!(futures::poll!(&mut waiting).is_pending());
+        let id = backend.journal_committed_data(None, root, values).await.unwrap();
+        assert_eq!(backend.recovery_reference(None, root).unwrap(), id);
+        assert!(futures::poll!(&mut waiting).is_ready());
+    }
+
     #[test]
     fn settlement_cutoff_rounds_up_and_never_underflows() {
         let block = Duration::from_millis(1500);

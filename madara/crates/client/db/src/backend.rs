@@ -82,6 +82,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             latest_l1_confirmed: tokio::sync::watch::Sender::new(Default::default()),
             reorg_notifications,
             committed_data_cache,
+            committed_data_cleanup: tokio::sync::Notify::new(),
             custom_headers: Mutex::new(Default::default()),
             replay_boundaries: Mutex::new(BTreeMap::new()),
         };

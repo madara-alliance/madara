@@ -1,9 +1,7 @@
-//! Independently scheduled proof-index maintenance; never depends on Mongo availability.
+//! One ingestion-triggered proof-index worker; never depends on Mongo availability.
 use mc_db::MadaraBackend;
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
-use std::{sync::Arc, time::Duration};
-
-const PROOF_CLEANUP_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
+use std::sync::Arc;
 
 pub struct CommittedDataHistoryService(pub Arc<MadaraBackend>);
 #[async_trait::async_trait]
@@ -12,21 +10,24 @@ impl Service for CommittedDataHistoryService {
         let backend = Arc::clone(&self.0);
         runner.service_loop_with_graceful_shutdown(move |mut ctx| async move {
             loop {
-                if ctx.is_cancelled() {
+                if ctx.run_until_cancelled(backend.wait_for_committed_data_cleanup()).await.is_none() {
                     return anyhow::Ok(());
                 }
-                let db = Arc::clone(&backend);
-                // Await an admitted operation even on shutdown: never detach a DB mutation.
-                let more = match tokio::task::spawn_blocking(move || db.maintain_committed_data_history()).await? {
-                    Ok(more) => more,
-                    Err(error) => {
-                        tracing::error!("Committed-data proof pruning deferred; archives retained: {error:#}");
-                        false
+                // No notification is registered during a sweep: duplicate triggers are dropped.
+                loop {
+                    if ctx.is_cancelled() {
+                        return anyhow::Ok(());
                     }
-                };
-                // Finish the eligible backlog, then wait. Reads never schedule a sweep.
-                if !more && ctx.run_until_cancelled(tokio::time::sleep(PROOF_CLEANUP_INTERVAL)).await.is_none() {
-                    return anyhow::Ok(());
+                    let db = Arc::clone(&backend);
+                    // Await an admitted operation even on shutdown: never detach a DB mutation.
+                    match tokio::task::spawn_blocking(move || db.maintain_committed_data_history()).await? {
+                        Ok(true) => {}
+                        Ok(false) => break,
+                        Err(error) => {
+                            tracing::error!("Committed-data proof pruning deferred; archives retained: {error:#}");
+                            break;
+                        }
+                    }
                 }
             }
         });

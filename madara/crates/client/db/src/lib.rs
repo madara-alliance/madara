@@ -410,6 +410,8 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
 
     /// Bounded cache of authenticated immutable datasets; empty until import.
     committed_data_cache: committed_data::SnapshotCache,
+    /// Wake the sole cleanup worker after ingestion; busy-worker notifications are discarded.
+    committed_data_cleanup: tokio::sync::Notify,
 
     /// Custom headers used during block replay to ensure deterministic execution.
     ///

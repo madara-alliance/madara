@@ -153,7 +153,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         entries: Vec<(Felt, Felt)>,
     ) -> Result<String> {
         let backend = self.clone();
-        tokio::task::spawn_blocking(move || {
+        let id = tokio::task::spawn_blocking(move || {
             let key = namespace_key(update, root)?;
             if let Some(id) = backend.db.find_recovery_record(&key)? {
                 return Ok(id);
@@ -164,7 +164,9 @@ impl<D: MadaraStorage> MadaraBackend<D> {
                 RecoveryRecord::encode(backend.chain_config().chain_id.to_felt(), update, root, base, entries)?;
             backend.db.store_recovery_record(&record)
         })
-        .await?
+        .await??;
+        self.request_committed_data_cleanup();
+        Ok(id)
     }
 }
 

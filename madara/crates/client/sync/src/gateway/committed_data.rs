@@ -81,6 +81,7 @@ async fn sync_dataset(backend: &Arc<MadaraBackend>, client: &GatewayProvider, ro
     }
     // Authenticate the dataset's Patricia commitment and persist with WAL+fsync.
     backend.import_committed_data_snapshot(root, values).await?;
+    backend.request_committed_data_cleanup();
     tracing::info!(root = %root, "Replicated committed-data dataset");
     Ok(())
 }

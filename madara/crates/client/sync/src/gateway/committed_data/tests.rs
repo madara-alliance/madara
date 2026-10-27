@@ -53,7 +53,13 @@ async fn committed_data_http_replication_authenticates_pages_and_survives_source
         MadaraBackend::open_rocksdb(
             directory.path(),
             Arc::new(ChainConfig::madara_test()),
-            MadaraBackendConfig::default(),
+            MadaraBackendConfig {
+                committed_data_retention: mc_db::committed_data_retention::CommittedDataRetentionConfig {
+                    proof_retention_secs: Some(0),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
             RocksDBConfig::default(),
             Default::default(),
         )
@@ -61,8 +67,15 @@ async fn committed_data_http_replication_authenticates_pages_and_survives_source
     };
     {
         let replica = open();
+        let mut cleanup = Box::pin(replica.wait_for_committed_data_cleanup());
+        assert!(futures::poll!(&mut cleanup).is_pending());
         sync_available(&replica, &client).await.unwrap();
+        assert!(futures::poll!(&mut cleanup).is_ready());
+        drop(cleanup);
+        let mut cleanup = Box::pin(replica.wait_for_committed_data_cleanup());
+        assert!(futures::poll!(&mut cleanup).is_pending());
         sync_available(&replica, &client).await.unwrap();
+        assert!(futures::poll!(&mut cleanup).is_pending(), "Already-present datasets do not trigger cleanup");
         for page in &pages {
             page.assert_hits_async(1).await;
         }
