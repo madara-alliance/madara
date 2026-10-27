@@ -1,5 +1,9 @@
 use super::*;
 
+mod recovery;
+#[cfg(test)]
+mod tests;
+
 #[derive(Debug, Clone, Copy, Default)]
 pub(super) struct TrieLogHeads {
     pub(super) contract: Option<u64>,
@@ -767,5 +771,3 @@ impl RocksDBStorage {
         self.inner.db.write_opt(batch, &self.inner.writeopts).context("Committing canonical reorg head")
     }
 }
-
-mod recovery;
