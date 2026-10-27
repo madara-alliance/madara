@@ -32,6 +32,7 @@ use crate::worker::event_handler::triggers::storage_cleanup::StorageCleanupTrigg
 use crate::worker::event_handler::triggers::update_state::UpdateStateJobTrigger;
 use crate::worker::event_handler::triggers::JobTrigger;
 use crate::worker::service::JobService;
+use crate::worker::utils::alerts::verification_timeout_alert_message;
 use orchestrator_utils::layer::Layer;
 use tracing::{debug, error, info, warn, Span};
 
@@ -403,15 +404,45 @@ impl JobHandlerService {
             }
         };
 
-        // Update job status and metadata
-        config
+        // Keep the job LockedForProcessing until the verification message is durably accepted.
+        job.external_id = external_id.clone().into();
+        if let Err(error) = JobService::add_job_to_verify_queue(
+            config.clone(),
+            job.id,
+            &job.job_type,
+            Some(Duration::from_secs(
+                config
+                    .service_config()
+                    .verification_delay_seconds(&job.job_type, job_handler.verification_polling_delay_seconds()),
+            )),
+        )
+        .await
+        {
+            error!(job_id = ?id, error = ?error, "Failed to add job to verification queue after SQS retries");
+            MetricsRecorder::record_job_state_transition(
+                JobStatus::LockedForProcessing,
+                JobStatus::Failed,
+                &job.job_type,
+            );
+            JobService::move_job_to_failed(
+                &job,
+                config.clone(),
+                format!("Failed to queue processed job for verification after SQS retries: {}", error),
+            )
+            .await?;
+            workload.finish_error();
+            return Ok(());
+        }
+
+        // Publish succeeded; now expose the job to verification consumers.
+        let job = config
             .database()
             .update_job(
                 &job,
                 JobItemUpdates::new()
                     .update_status(JobStatus::PendingVerification)
                     .update_metadata(job.metadata.clone())
-                    .update_external_id(external_id.clone().into())
+                    .update_external_id(job.external_id.clone())
                     .build(),
             )
             .await
@@ -428,28 +459,8 @@ impl JobHandlerService {
             "Updating status of {:?} job {} to {}", job.job_type, job.internal_id, JobStatus::PendingVerification
         );
 
-        // Update job status tracking metrics for PendingVerification
         MetricsRecorder::record_job_status(&job, &JobStatus::PendingVerification);
-
-        // Record transition metrics for entering verification
         MetricsRecorder::record_verification_started(&job);
-
-        // Add to the verification queue
-        JobService::add_job_to_verify_queue(
-            config.clone(),
-            job.id,
-            &job.job_type,
-            Some(Duration::from_secs(
-                config
-                    .service_config()
-                    .verification_delay_seconds(&job.job_type, job_handler.verification_polling_delay_seconds()),
-            )),
-        )
-        .await
-        .map_err(|e| {
-            error!(job_id = ?id, error = ?e, "Failed to add job to verification queue");
-            e
-        })?;
 
         let attributes = vec![
             KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
@@ -698,15 +709,11 @@ impl JobHandlerService {
                         JobStatus::Failed,
                         &job.job_type,
                     );
-                    let move_result = JobService::move_job_to_failed(
-                        &job,
-                        config.clone(),
-                        format!(
-                            "Verification rejected. Max process attempts reached: {}",
-                            job.metadata.common.process_attempt_no
-                        ),
-                    )
-                    .await;
+                    // The rejection is the terminal failure. It was recorded above,
+                    // so clear it before move_job_to_failed to avoid rotating it into
+                    // history and replacing it with a generic retry-limit message.
+                    job.metadata.common.failure_reason = None;
+                    let move_result = JobService::move_job_to_failed(&job, config.clone(), e).await;
 
                     workload.finish_error();
                     return move_result;
@@ -734,10 +741,7 @@ impl JobHandlerService {
                     );
 
                     // Send SNS alert for verification timeout
-                    let alert_message = format!(
-                        "Job Verification Timeout Alert: Job ID: {}, Type: {:?}, Internal_Id: {}, Verification Attempts: {}",
-                        job.id, job.job_type, internal_id, job.metadata.common.verification_attempt_no
-                    );
+                    let alert_message = verification_timeout_alert_message(&job, &config).await;
 
                     if let Err(e) = config.alerts().send_message(alert_message).await {
                         error!(

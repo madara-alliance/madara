@@ -62,6 +62,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
+jsonrpsee-ws-client.workspace = true
 assert_matches = { workspace = true }
 m-cairo-test-contracts = { workspace = true }
 mc-db = { workspace = true, features = ["testing"] }
