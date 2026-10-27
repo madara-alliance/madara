@@ -132,8 +132,8 @@ mod tests {
         assert!(decode_value(&mut &[2u8][..], Felt::ZERO).is_err());
         assert!(decode_value(&mut &[1u8][..], Felt::MAX).is_err());
         assert!(decode_value(&mut &[0u8, 1, 0][..], Felt::ZERO).is_err());
-        assert!(decode_value(&mut &[0u8, 32].into_iter().chain([255; 32]).collect::<Vec<_>>().as_slice(), Felt::ZERO)
-            .is_err());
+        let noncanonical = [0u8, 32].into_iter().chain([255; 32]).collect::<Vec<_>>();
+        assert!(decode_value(&mut noncanonical.as_slice(), Felt::ZERO).is_err());
         assert!(apply(&[0, 1], &mut [Felt::ZERO]).is_err());
         assert!(apply(&[2, 1], &mut [Felt::ZERO]).is_err());
         Ok(())

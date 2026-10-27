@@ -34,8 +34,11 @@ fn footprint(db: &RocksDBStorage) -> serde_json::Value {
         entry.0 += 1;
         entry.1 += (key.len() + value.len()) as u64;
     }
-    let sst_bytes: usize = db.inner.db.live_files().unwrap().iter().map(|f| f.size).sum();
-    serde_json::json!({"logical_rows_and_bytes": buckets, "live_sst_bytes_all_columns": sst_bytes,
+    let files = db.inner.db.live_files().unwrap();
+    let sst_bytes: usize = files.iter().map(|f| f.size).sum();
+    let history_sst_bytes: usize =
+        files.iter().filter(|f| f.column_family_name == meta::META_COLUMN.rocksdb_name).map(|f| f.size).sum();
+    serde_json::json!({"logical_rows_and_bytes": buckets, "live_sst_bytes_all_columns": sst_bytes, "live_sst_bytes_history_column": history_sst_bytes,
         "rss_kib": resident_kib("VmRSS:"), "peak_rss_kib": resident_kib("VmHWM:")})
 }
 fn value(key: usize, tick: usize) -> Felt {

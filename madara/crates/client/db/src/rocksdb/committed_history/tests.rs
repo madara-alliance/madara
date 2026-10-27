@@ -283,6 +283,11 @@ fn committed_history_dictionary_key_additions_forks_and_corruption() {
     added.push((Felt::MAX, Felt::MAX));
     let second = CommittedDataSet::new(added).unwrap();
     let fork = dataset(999);
+    let mut wide_values = second.entries().to_vec();
+    wide_values.last_mut().unwrap().1 = Felt::MAX - Felt::ONE;
+    let wide = CommittedDataSet::new(wide_values.clone()).unwrap();
+    wide_values.last_mut().unwrap().1 = Felt::ZERO;
+    let zero = CommittedDataSet::new(wide_values).unwrap();
     {
         let backend = open(dir.path());
         let db = &backend.db;
@@ -290,6 +295,9 @@ fn committed_history_dictionary_key_additions_forks_and_corruption() {
         db.patch_committed_data_dataset(first.root(), second.root(), vec![(Felt::MAX, Felt::MAX)], Some(1)).unwrap();
         db.patch_committed_data_dataset(first.root(), fork.root(), vec![(Felt::ZERO, Felt::from(999))], Some(2))
             .unwrap();
+        db.patch_committed_data_dataset(second.root(), wide.root(), vec![(Felt::MAX, Felt::MAX - Felt::ONE)], Some(3))
+            .unwrap();
+        db.patch_committed_data_dataset(wide.root(), zero.root(), vec![(Felt::MAX, Felt::ZERO)], Some(4)).unwrap();
         assert_eq!(rows(db, archive::DICTIONARY).len(), 2, "Fork reuses original dictionary");
         let cf = db.inner.get_column(meta::META_COLUMN);
         let (key, bytes) = rows(db, archive::DICTIONARY).remove(0);
@@ -312,7 +320,7 @@ fn committed_history_dictionary_key_additions_forks_and_corruption() {
         drain(db, Some(u64::MAX));
     }
     let backend = open(dir.path());
-    for expected in [&first, &second, &fork] {
+    for expected in [&first, &second, &fork, &wide, &zero] {
         let keys: Vec<_> = expected.entries().iter().map(|(key, _)| *key).collect();
         assert_eq!(
             backend.db.get_committed_data_batch(expected.root(), &keys).unwrap(),

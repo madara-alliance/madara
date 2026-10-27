@@ -19,6 +19,12 @@ fn persistent_updates_match_full_rebuilds_and_keep_every_historical_proof() -> R
         if tick == 1 {
             patch.insert(Felt::MAX, Felt::ZERO);
         }
+        let expected_changes: Vec<_> = patch
+            .iter()
+            .filter_map(|(&key, &new)| {
+                reference.get(&key).copied().filter(|old| *old != new).map(|old| (key, old, new))
+            })
+            .collect();
         reference.extend(patch.clone());
         let mut entries: Vec<_> = patch.into_iter().collect();
         let mut tree = Tree::new(next, 1024, |id| Ok(disk.get(&id).cloned()));
@@ -26,6 +32,10 @@ fn persistent_updates_match_full_rebuilds_and_keep_every_historical_proof() -> R
             Some(id) => tree.update(id, &mut entries)?,
             None => tree.build(&mut entries)?,
         };
+        assert_eq!(
+            tree.changes, expected_changes,
+            "Archive deltas contain exactly the changed existing leaves in key order"
+        );
         let expected = CommittedDataSet::new(reference.iter().map(|(k, v)| (*k, *v)).collect())?;
         let (root, count) = tree.root(id)?;
         assert_eq!(root, expected.root());
