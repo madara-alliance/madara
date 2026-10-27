@@ -800,7 +800,7 @@ impl DatabaseClient for MongoDbClient {
             }
         };
 
-        let result = self.get_job_collection().update_one(filter, update, None).await?;
+        let result = self.get_job_collection().update_one(filter, update).await?;
         if result.matched_count == 1 {
             Ok(())
         } else {
@@ -834,7 +834,7 @@ impl DatabaseClient for MongoDbClient {
         };
         let options = FindOneAndUpdateOptions::builder().upsert(false).return_document(ReturnDocument::After).build();
 
-        Ok(self.get_job_collection().find_one_and_update(filter, update, options).await?)
+        Ok(self.get_job_collection().find_one_and_update(filter, update).with_options(options).await?)
     }
 
     async fn get_latest_job_by_type(
