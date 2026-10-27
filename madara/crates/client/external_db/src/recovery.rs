@@ -252,10 +252,10 @@ mod tests {
             .await
             .unwrap();
         assert!(!archive.complete(&base).await.unwrap());
-        assert!(archive.restore(&target, &[base.clone()]).await.is_err());
+        assert!(archive.restore(&target, std::slice::from_ref(&base)).await.is_err());
         archive.upload(&base_record).await.unwrap();
         // The target represents an older DB containing only the first version.
-        archive.restore(&target, &[base.clone()]).await.unwrap();
+        archive.restore(&target, std::slice::from_ref(&base)).await.unwrap();
         let changed = vec![(Felt::ONE, Felt::from(101u64)), (Felt::TWO, Felt::from(200u64))];
         let next_root = CommittedDataSet::new(changed).unwrap().root();
         let update = CommittedDataUpdate { base_root: Some(root), ..namespace };
@@ -269,7 +269,7 @@ mod tests {
         assert!(source.db.get_recovery_record(&base).unwrap().is_none());
         assert!(source.db.get_recovery_record(&next).unwrap().is_none());
         drop(source); // No live source or source DB access during restore.
-        archive.restore(&target, &[next.clone()]).await.unwrap();
+        archive.restore(&target, std::slice::from_ref(&next)).await.unwrap();
         for (r, value) in [(root, 100u64), (next_root, 101u64)] {
             let witness = target.committed_data_witness(r, Felt::ONE).unwrap().unwrap();
             assert_eq!(witness.value, Felt::from(value));
@@ -278,7 +278,7 @@ mod tests {
         assert_eq!(target.committed_data_witness(next_root, Felt::TWO).unwrap().unwrap().value, Felt::from(200u64));
         // Identical upload/restore is harmless, including after the local outbox marker disappeared.
         archive.upload(&next_record).await.unwrap();
-        archive.restore(&target, &[next.clone()]).await.unwrap();
+        archive.restore(&target, std::slice::from_ref(&next)).await.unwrap();
         // Content hashes authenticate bytes, but do not substitute for validating the Merkle root.
         let mut wrong_root = base_record.clone();
         wrong_root.manifest.root = Felt::ZERO;
@@ -290,7 +290,7 @@ mod tests {
         assert!(archive.restore(&target, &[wrong_chain.manifest.id().unwrap()]).await.is_err());
         let hash = &next_record.manifest.chunks[0];
         archive.chunks.delete_one(doc! {"_id":hash}).await.unwrap();
-        assert!(archive.restore(&target, &[next.clone()]).await.is_err());
+        assert!(archive.restore(&target, std::slice::from_ref(&next)).await.is_err());
         archive.upload(&next_record).await.unwrap();
         archive.chunks.update_one(doc! {"_id":hash}, doc! {"$set":{"payload":binary(vec![0,1,2])}}).await.unwrap();
         assert!(archive.download(&next).await.is_err());

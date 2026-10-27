@@ -894,7 +894,7 @@ mod tests {
         let root = CommittedDataSet::new(entries.clone()).unwrap().root();
         backend.import_committed_data_snapshot(root, entries.clone()).await.unwrap();
         let id = backend.journal_committed_data(None, root, entries).await.unwrap();
-        backend.db.write_recovery_admission(&make_validated_tx(43), &[id.clone()], true).unwrap();
+        backend.db.write_recovery_admission(&make_validated_tx(43), std::slice::from_ref(&id), true).unwrap();
         let worker = ExternalDbWorker::new(
             ExternalDbConfig::new("mongodb://localhost:27017".into()),
             backend.clone(),
@@ -931,7 +931,7 @@ mod tests {
         let root = CommittedDataSet::new(entries.clone()).unwrap().root();
         backend.import_committed_data_snapshot(root, entries.clone()).await.unwrap();
         let id = backend.journal_committed_data(None, root, entries).await.unwrap();
-        backend.db.write_recovery_admission(&make_validated_tx(42), &[id.clone()], true).unwrap();
+        backend.db.write_recovery_admission(&make_validated_tx(42), std::slice::from_ref(&id), true).unwrap();
         let worker = ExternalDbWorker::new(
             ExternalDbConfig::new("mongodb://localhost:27017".into()),
             backend.clone(),

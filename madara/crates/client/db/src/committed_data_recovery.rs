@@ -197,7 +197,7 @@ mod tests {
                 sender,
                 None,
             );
-            backend.db.write_recovery_admission(&tx, &[id.clone()], true).unwrap();
+            backend.db.write_recovery_admission(&tx, std::slice::from_ref(&id), true).unwrap();
             if std::env::var_os("MADARA_RECOVERY_ACKED").is_some() {
                 backend.db.mark_recovery_exported(&id).unwrap();
             }
@@ -286,7 +286,7 @@ mod tests {
             sender,
             None,
         );
-        backend.db.write_recovery_admission(&tx, &[id.clone()], true).unwrap();
+        backend.db.write_recovery_admission(&tx, std::slice::from_ref(&id), true).unwrap();
         assert_eq!(backend.db.recovery_dependencies(Felt::THREE).unwrap(), vec![id]);
         assert_eq!(backend.get_saved_mempool_transactions().count(), 1);
         assert!(backend.db.mark_recovery_exported("missing").is_err());
