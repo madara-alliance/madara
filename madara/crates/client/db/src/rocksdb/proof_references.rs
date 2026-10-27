@@ -90,15 +90,28 @@ impl<'a> References<'a> {
         Ok(())
     }
     pub(super) fn remove(&mut self, id: u64) -> Result<()> {
-        let mut reference = self.reference(id)?.context("Unregistered proof node")?;
-        reference.count = reference.count.checked_sub(1).context("Proof reference underflow")?;
-        self.changes.insert(id, reference);
-        if reference.count == 0 {
-            self.deleted.push(id);
-            // Edges are retained independently so a full import can repair a damaged node.
-            if let Some((left, right)) = reference.children {
-                self.remove(left)?;
-                self.remove(right)?;
+        let cf = self.db.get_column(meta::META_COLUMN);
+        let mut pending = vec![id];
+        while !pending.is_empty() {
+            // Bound temporary read buffers while amortizing RocksDB lookups across a frontier.
+            let ids = pending.split_off(pending.len().saturating_sub(1024));
+            let missing: Vec<_> = ids.iter().copied().filter(|id| !self.changes.contains_key(id)).collect();
+            let values =
+                self.db.db.multi_get_cf(missing.iter().map(|id| (&cf, [REFERENCES, &id.to_be_bytes()].concat())));
+            for (id, value) in missing.into_iter().zip(values) {
+                let bytes = value?.context("Unregistered proof node")?;
+                self.changes.insert(id, Reference::decode(id, &bytes)?);
+            }
+            for id in ids {
+                let reference = self.changes.get_mut(&id).context("Unregistered proof node")?;
+                reference.count = reference.count.checked_sub(1).context("Proof reference underflow")?;
+                if reference.count == 0 {
+                    self.deleted.push(id);
+                    // Separate edges also allow a full import to repair a damaged node.
+                    if let Some((left, right)) = reference.children {
+                        pending.extend([left, right]);
+                    }
+                }
             }
         }
         Ok(())

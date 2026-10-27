@@ -121,6 +121,46 @@ fn committed_history_prunes_only_old_references_and_reopens_cold_values() {
 }
 
 #[test]
+fn committed_history_batched_reclamation_preserves_shared_nodes_and_is_atomic() {
+    let dir = tempfile::tempdir().unwrap();
+    let backend = open(dir.path());
+    let db = &backend.db;
+    // A complete 2048-leaf tree crosses the reclamation read-batch boundary.
+    let values: Vec<_> = (0..2048u64).map(|key| (Felt::from(key), Felt::ONE)).collect();
+    let first = CommittedDataSet::new(values.clone()).unwrap();
+    let second = CommittedDataSet::new(values.iter().map(|(key, _)| (*key, Felt::TWO)).collect()).unwrap();
+    let mut fork_values = second.entries().to_vec();
+    fork_values[0].1 = Felt::from(3);
+    let fork = CommittedDataSet::new(fork_values).unwrap();
+    db.write_committed_data_dataset(&first, Some(0)).unwrap();
+    db.patch_committed_data_dataset(first.root(), second.root(), second.entries().to_vec(), Some(1)).unwrap();
+    db.patch_committed_data_dataset(second.root(), fork.root(), vec![(Felt::ZERO, Felt::from(3))], Some(2)).unwrap();
+    let cf = db.inner.get_column(meta::META_COLUMN);
+    let (key, original) = rows(db, b"cdh/ref/").remove(0);
+    // A corrupt leaf is reached after branches have already been staged for removal.
+    db.inner.db.put_cf(&cf, &key, [0u8; 24]).unwrap();
+    let nodes = rows(db, b"cdm/n/");
+    let references = rows(db, b"cdh/ref/");
+    assert!(db.maintain_history(Some(3)).is_err());
+    assert_eq!(rows(db, b"cdm/n/"), nodes);
+    assert_eq!(rows(db, b"cdh/ref/"), references);
+    assert_ne!(pointer(db, first.root()), 0);
+    db.inner.db.put_cf(&cf, key, original).unwrap();
+    drain(db, Some(3));
+    assert_eq!(rows(db, b"cdm/n/").len(), 4095, "Only the shared fork tree survives");
+    for tree in [&first, &second, &fork] {
+        let keys = [Felt::ZERO, Felt::ONE, Felt::from(2047)];
+        assert_eq!(
+            db.get_committed_data_batch(tree.root(), &keys).unwrap(),
+            CommittedDataBatchProof::from_dataset(tree, &keys).unwrap()
+        );
+    }
+    drain(db, Some(4));
+    assert!(rows(db, b"cdm/n/").is_empty());
+    assert!(rows(db, b"cdh/ref/").is_empty());
+}
+
+#[test]
 fn committed_history_checkpoints_bound_replay_without_expiring_values() {
     let dir = tempfile::tempdir().unwrap();
     let backend = open(dir.path());

@@ -35,6 +35,7 @@ async fn committed_data_measure_signed_rpc_imports() {
     let entries = parameter("CD_MEASURE_ENTRIES", 50000);
     let versions = parameter("CD_MEASURE_VERSIONS", 16);
     let retained = parameter("CD_MEASURE_RETAINED", 8);
+    let large_moves = std::env::var("CD_MEASURE_LARGE_MOVES").is_ok_and(|v| v == "true");
     assert!((1..=524288).contains(&entries) && versions <= 1000 && versions > retained && retained > 0);
     let (backend, mut rpc) = crate::test_utils::rpc_test_setup();
     let public_key = starknet_types_core::curve::AffinePoint::generator().x();
@@ -51,7 +52,7 @@ async fn committed_data_measure_signed_rpc_imports() {
         if tick > 0 {
             for (key, (_, price)) in values.iter_mut().enumerate() {
                 let old = *price;
-                *price = changed_price(key, tick, Some(old));
+                *price = changed_price(key, tick, (!large_moves).then_some(old));
                 assert_ne!(*price, old);
             }
         }
@@ -87,7 +88,7 @@ async fn committed_data_measure_signed_rpc_imports() {
     }
     let (root, proof) = first.unwrap();
     assert_eq!(backend.db.get_committed_data_batch(root, &keys).unwrap(), proof);
-    let report = serde_json::json!({"entries": entries, "versions": versions + 1,
+    let report = serde_json::json!({"entries": entries, "versions": versions + 1, "large_moves": large_moves,
         "initial_signed_rpc_ms": timings[0], "signed_rpc_ms": &timings[1..], "cycle_including_pruning_ms": &cycles[1..],
         "all_prices_changed": true, "historical_proof_matches": true,
         "limitations": "In-process raw JSON dispatch with real signature validation and RocksDB WAL sync; excludes network transport, account transaction submission and actual Mongo export. Client root/signature construction is outside timing. Synthetic changing prices, not captured transactions."});
