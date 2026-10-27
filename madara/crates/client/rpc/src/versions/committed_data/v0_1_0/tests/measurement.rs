@@ -4,6 +4,8 @@ use blockifier::execution::syscalls::committed_data::{CommittedDataBatchProof, C
 use mc_db::MadaraStorageWrite;
 use std::time::Instant;
 
+mod concurrent;
+
 fn parameter(name: &str, default: usize) -> usize {
     std::env::var(name).map(|s| s.parse().expect("integer benchmark parameter")).unwrap_or(default)
 }
