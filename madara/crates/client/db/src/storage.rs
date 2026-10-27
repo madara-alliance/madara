@@ -246,12 +246,15 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
     /// not for correctness-critical logic.
     fn get_external_outbox_size_estimate(&self) -> Result<u64>;
 
+    /// Serialized payload bytes awaiting remote backup acknowledgement; excludes permanent data.
     fn recovery_pending_bytes(&self) -> Result<u64> {
         Ok(0)
     }
+    /// Resolve an encoded namespace/root identity to its permanent recovery manifest ID.
     fn find_recovery_record(&self, _key: &[u8]) -> Result<Option<String>> {
         Ok(None)
     }
+    /// Read a pending upload record, or None after its payload has been acknowledged and removed.
     fn get_recovery_record(&self, _id: &str) -> Result<Option<crate::committed_data_recovery::RecoveryRecord>> {
         Ok(None)
     }
@@ -259,9 +262,11 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
     fn get_recovery_manifest(&self, id: &str) -> Result<Option<crate::committed_data_recovery::RecoveryManifest>> {
         Ok(self.get_recovery_record(id)?.map(|record| record.manifest))
     }
+    /// List at most limit pending manifest IDs for asynchronous export.
     fn pending_recovery_records(&self, _limit: usize) -> Result<Vec<String>> {
         Ok(Vec::new())
     }
+    /// Return manifest IDs bound to a saved transaction; ordinary transactions have none.
     fn recovery_dependencies(&self, _hash: Felt) -> Result<Vec<String>> {
         Ok(Vec::new())
     }
@@ -402,12 +407,16 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     fn write_external_outbox(&self, tx: &ValidatedTransaction) -> Result<ExternalOutboxId>;
     fn delete_external_outbox(&self, id: ExternalOutboxId) -> Result<()>;
 
+    /// Durably journal an authenticated import and account for its pending bytes; retries are idempotent.
     fn store_recovery_record(&self, _record: &crate::committed_data_recovery::RecoveryRecord) -> Result<String> {
         anyhow::bail!("Recovery storage unsupported")
     }
+    /// Acknowledge verified remote durability, removing only temporary local upload payloads.
     fn mark_recovery_exported(&self, _id: &str) -> Result<()> {
         anyhow::bail!("Recovery storage unsupported")
     }
+    /// Atomically persist an admission and its dataset dependencies before mempool visibility.
+    /// When export is true, include the ordinary external transaction outbox entry in that batch.
     fn write_recovery_admission(
         &self,
         _tx: &ValidatedTransaction,

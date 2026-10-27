@@ -26,7 +26,12 @@ impl Default for SnapshotCache {
     }
 }
 
+const MAX_CACHED_SNAPSHOTS: usize = 2;
+const SNAPSHOT_OVERHEAD_BYTES: usize = 256;
+const SNAPSHOT_ENTRY_BYTES: usize = 256;
+
 impl SnapshotCache {
+    /// Allocate the snapshot half of the reusable-cache budget and a single import permit.
     pub(crate) fn new(config: &crate::committed_data_retention::CommittedDataRetentionConfig) -> Self {
         Self {
             entries: Mutex::new(VecDeque::new()),
@@ -37,7 +42,7 @@ impl SnapshotCache {
     }
     // Conservative allocation estimate for entries, branches, Arc and vector bookkeeping.
     fn weight(tree: &CommittedDataSet) -> usize {
-        256 + tree.entries().len() * 256
+        SNAPSHOT_OVERHEAD_BYTES + tree.entries().len() * SNAPSHOT_ENTRY_BYTES
     }
 
     /// Returns a shared immutable tree without hashing or waiting for imports.
@@ -56,7 +61,7 @@ impl SnapshotCache {
             return Ok(());
         }
         if !cache.iter().any(|(old, _)| old.root() == tree.root()) {
-            while cache.len() >= 2
+            while cache.len() >= MAX_CACHED_SNAPSHOTS
                 || cache.iter().map(|(tree, _)| Self::weight(tree)).sum::<usize>() + weight > self.budget
             {
                 cache.pop_front();
@@ -98,6 +103,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
         self.committed_data_provider_at(self.chain_head_state().confirmed_tip.unwrap_or(0).saturating_add(1))
     }
 
+    /// Bind reads to an execution height so historical replay cannot prolong recent proof retention.
     pub fn committed_data_provider_at(self: &Arc<Self>, block: u64) -> Arc<dyn CommittedDataProvider> {
         Arc::new(BackendCommittedData(Arc::clone(self), block, Mutex::new(std::collections::HashSet::new())))
     }

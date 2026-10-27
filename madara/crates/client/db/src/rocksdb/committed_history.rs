@@ -55,6 +55,7 @@ pub(super) fn with_reconstructed<T>(
 }
 
 impl RocksDBStorage {
+    /// Transfer the retained root pointer in the same batch as reachable node/refcount changes.
     pub(super) fn stage_root_reference(
         &self,
         batch: &mut WriteBatch,

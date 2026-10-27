@@ -55,6 +55,7 @@ pub(super) struct ProofNodeReferences<'a> {
     deleted_node_ids: Vec<u64>,
 }
 impl<'a> ProofNodeReferences<'a> {
+    /// Start a staged ownership update; new nodes occupy consecutive IDs from first_new_node_id.
     pub(super) fn new(db: &'a RocksDBStorageInner, first_new_node_id: u64, nodes: &'a [Node]) -> Self {
         Self {
             db,

@@ -13,6 +13,17 @@ use lru::LruCache;
 use starknet_types_core::felt::Felt;
 use std::num::NonZeroUsize;
 
+const FELT_BYTES: usize = 32;
+const NODE_TAG_BYTES: usize = 1;
+const LEAF_BYTES: usize = NODE_TAG_BYTES + 2 * FELT_BYTES;
+const LEFT_CHILD_START: usize = NODE_TAG_BYTES + 1; // Branch tag followed by critical bit.
+const RIGHT_CHILD_START: usize = LEFT_CHILD_START + size_of::<u64>();
+const BRANCH_HASH_START: usize = RIGHT_CHILD_START + size_of::<u64>();
+const BRANCH_COUNT_START: usize = BRANCH_HASH_START + FELT_BYTES;
+const BRANCH_BYTES: usize = BRANCH_COUNT_START + size_of::<u32>();
+const PATRICIA_KEY_BITS: u8 = 252;
+const CACHE_ENTRY_OVERHEAD_BYTES: usize = 128;
+
 /// Bounded decoded-node cache. Block age controls eligibility; a byte estimate caps occupancy.
 /// The estimate includes hash-table/list bookkeeping, but is not a process RSS guarantee.
 pub(crate) struct NodeCache {
@@ -30,7 +41,8 @@ impl Default for NodeCache {
     }
 }
 impl NodeCache {
-    pub(crate) const ENTRY_BYTES: usize = std::mem::size_of::<Node>() + 128;
+    pub(crate) const ENTRY_BYTES: usize = std::mem::size_of::<Node>() + CACHE_ENTRY_OVERHEAD_BYTES;
+    /// Apply byte/age limits and evict expired entries using a monotonic observed block height.
     pub(crate) fn configure(
         &mut self,
         config: &crate::committed_data_retention::CommittedDataRetentionConfig,
@@ -56,6 +68,7 @@ impl NodeCache {
     fn disabled() -> Self {
         Self { entries: LruCache::unbounded(), observed_block: 0, memory_blocks: 0, enabled: false }
     }
+    /// Evict a reclaimed durable node so later reads cannot observe a deleted cached record.
     pub(crate) fn remove(&mut self, id: u64) {
         self.entries.pop(&id);
     }
@@ -69,6 +82,7 @@ impl NodeCache {
 pub(crate) const NODE_PREFIX: &[u8] = b"cdm/n/";
 pub(crate) const NODE_KEY_BYTES: usize = NODE_PREFIX.len() + size_of::<u64>();
 pub(crate) const NEXT_KEY: &[u8] = b"cdm/next";
+/// Encode the immutable arena ID under the proof-node key prefix.
 pub(crate) fn node_key(id: u64) -> [u8; NODE_KEY_BYTES] {
     let mut key = [0; NODE_KEY_BYTES];
     key[..NODE_PREFIX.len()].copy_from_slice(NODE_PREFIX);
@@ -85,6 +99,7 @@ impl Node {
     fn new_leaf(key: Felt, value: Felt) -> Self {
         Self::Leaf { key, value, hash: leaf(key, value) }
     }
+    /// Return the node commitment; leaves are hashed when built/decoded, branches when authenticated.
     pub(crate) fn hash(self) -> Felt {
         match self {
             Self::Leaf { hash, .. } => hash,
@@ -103,8 +118,9 @@ impl Node {
             Self::Branch { bit, .. } => bit.into(),
         }
     }
+    /// Serialize the fixed leaf/branch record layout; cached leaf hashes are recomputed on decode.
     pub(crate) fn encode(self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(65);
+        let mut out = Vec::with_capacity(LEAF_BYTES);
         match self {
             Self::Leaf { key, value, .. } => {
                 out.push(0);
@@ -121,39 +137,54 @@ impl Node {
         }
         out
     }
+    /// Validate record length, canonical felts and backward-only child IDs before tree authentication.
     pub(crate) fn decode(id: u64, bytes: &[u8]) -> Result<Self> {
         fn felt(bytes: &[u8]) -> Result<Felt> {
-            let raw: [u8; 32] = bytes.try_into()?;
-            let f = Felt::from_bytes_be(&raw);
-            ensure!(f.to_bytes_be() == raw, "Noncanonical persistent felt");
-            Ok(f)
+            let raw: [u8; FELT_BYTES] = bytes.try_into()?;
+            let value = Felt::from_bytes_be(&raw);
+            ensure!(value.to_bytes_be() == raw, "Noncanonical persistent felt");
+            Ok(value)
         }
         match bytes.first() {
-            Some(0) if bytes.len() == 65 => Ok(Self::new_leaf(felt(&bytes[1..33])?, felt(&bytes[33..])?)),
-            Some(1) if bytes.len() == 54 => {
+            Some(0) if bytes.len() == LEAF_BYTES => Ok(Self::new_leaf(
+                felt(&bytes[NODE_TAG_BYTES..NODE_TAG_BYTES + FELT_BYTES])?,
+                felt(&bytes[NODE_TAG_BYTES + FELT_BYTES..])?,
+            )),
+            Some(1) if bytes.len() == BRANCH_BYTES => {
                 let bit = bytes[1];
-                let left = u64::from_be_bytes(bytes[2..10].try_into()?);
-                let right = u64::from_be_bytes(bytes[10..18].try_into()?);
-                let count = u32::from_be_bytes(bytes[50..54].try_into()?);
+                let left = u64::from_be_bytes(bytes[LEFT_CHILD_START..RIGHT_CHILD_START].try_into()?);
+                let right = u64::from_be_bytes(bytes[RIGHT_CHILD_START..BRANCH_HASH_START].try_into()?);
+                let count = u32::from_be_bytes(bytes[BRANCH_COUNT_START..BRANCH_BYTES].try_into()?);
                 ensure!(
-                    bit < 252 && left > 0 && right > 0 && left < id && right < id && left != right && count >= 2,
+                    bit < PATRICIA_KEY_BITS
+                        && left > 0
+                        && right > 0
+                        && left < id
+                        && right < id
+                        && left != right
+                        && count >= 2,
                     "Invalid persistent branch"
                 );
-                Ok(Self::Branch { bit, left, right, hash: felt(&bytes[18..50])?, count })
+                Ok(Self::Branch { bit, left, right, hash: felt(&bytes[BRANCH_HASH_START..BRANCH_COUNT_START])?, count })
             }
             _ => anyhow::bail!("Invalid persistent node encoding"),
         }
     }
 }
 
-fn differing_bit(a: Felt, b: Felt) -> i16 {
-    a.to_bytes_be()
+/// Highest differing bit determines the branch separating two keys; identical keys return -1.
+fn differing_bit(first_key: Felt, second_key: Felt) -> i16 {
+    first_key
+        .to_bytes_be()
         .iter()
-        .zip(b.to_bytes_be())
+        .zip(second_key.to_bytes_be())
         .enumerate()
-        .find_map(|(i, (a, b))| {
-            let x = a ^ b;
-            (x != 0).then(|| ((31 - i) * 8 + 7 - x.leading_zeros() as usize) as i16)
+        .find_map(|(byte_index, (first_byte, second_byte))| {
+            let differing_bits = first_byte ^ second_byte;
+            (differing_bits != 0).then(|| {
+                ((FELT_BYTES - 1 - byte_index) * u8::BITS as usize
+                    + (u8::BITS - 1 - differing_bits.leading_zeros()) as usize) as i16
+            })
         })
         .unwrap_or(-1)
 }
@@ -172,6 +203,7 @@ pub(crate) struct Tree<F> {
     limit: u32,
 }
 impl<F: FnMut(u64) -> Result<Option<Vec<u8>>>> Tree<F> {
+    /// Create an uncached operation whose staged node IDs begin at the supplied allocator position.
     pub(crate) fn new(first_id: u64, limit: u32, read: F) -> Self {
         Self {
             read,
@@ -183,9 +215,11 @@ impl<F: FnMut(u64) -> Result<Option<Vec<u8>>>> Tree<F> {
             limit,
         }
     }
+    /// Create a writer operation reusing only durable nodes from a previous successful operation.
     pub(crate) fn with_cache(first_id: u64, limit: u32, read: F, cache: NodeCache) -> Self {
         Self { read, first_id, nodes: Vec::new(), cache, replaced: Vec::new(), changes: Vec::new(), limit }
     }
+    /// Discard staged nodes and return only the durable read cache, as used by an idempotent retry.
     pub(crate) fn into_read_cache(self) -> NodeCache {
         self.cache
     }
@@ -263,12 +297,14 @@ impl<F: FnMut(u64) -> Result<Option<Vec<u8>>>> Tree<F> {
         let right = self.build_sorted(&entries[split..])?;
         self.join(bit, left, right)
     }
+    /// Sort entries and reject empty, oversized or duplicate-key input before building/updating.
     pub(crate) fn prepare(entries: &mut [(Felt, Felt)], limit: u32) -> Result<()> {
         ensure!(!entries.is_empty() && entries.len() <= limit as usize, "Invalid persistent patch size");
         entries.sort_unstable_by_key(|e| e.0);
         ensure!(entries.windows(2).all(|p| p[0].0 != p[1].0), "Duplicate persistent key");
         Ok(())
     }
+    /// Stage a complete Patricia tree and return its root ID; nothing is durable until publication.
     pub(crate) fn build(&mut self, entries: &mut [(Felt, Felt)]) -> Result<u64> {
         Self::prepare(entries, self.limit)?;
         self.build_sorted(entries)
@@ -322,10 +358,12 @@ impl<F: FnMut(u64) -> Result<Option<Vec<u8>>>> Tree<F> {
         };
         self.join(bit as u8, l, r)
     }
+    /// Read the root commitment and leaf count from the authenticated operation view.
     pub(crate) fn root(&mut self, id: u64) -> Result<(Felt, u32)> {
         let n = self.get(id)?;
         Ok((n.hash(), n.count()))
     }
+    /// Build and authenticate a membership path; an absent key returns None without a partial proof.
     pub(crate) fn witness(&mut self, mut id: u64, root: Felt, key: Felt) -> Result<Option<CommittedDataWitness>> {
         ensure!(self.get(id)?.hash() == root, "Persistent root mismatch");
         let mut siblings = Vec::new();
@@ -368,6 +406,7 @@ impl<F: FnMut(u64) -> Result<Option<Vec<u8>>>> Tree<F> {
         }
         Ok(())
     }
+    /// Return the allocator position after all staged nodes, to persist atomically with publication.
     pub(crate) fn next_id(&self) -> u64 {
         self.first_id + self.nodes.len() as u64
     }

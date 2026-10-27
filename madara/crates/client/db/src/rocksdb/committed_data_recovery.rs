@@ -11,6 +11,15 @@ use mp_gateway::committed_data::MAX_DATASETS_PER_TRANSACTION;
 use mp_transactions::validated::ValidatedTransaction;
 use rocksdb::{Direction, IteratorMode, WriteBatch, WriteOptions};
 pub const COMMITTED_DATA_RECOVERY_COLUMN: Column = Column::new("committed_data_recovery").set_point_lookup();
+
+// Prefixes are part of the persisted recovery-column layout. Identities survive payload ACK.
+const NAMESPACE_PREFIX: u8 = b'n';
+const RECORD_PREFIX: u8 = b'r';
+const MANIFEST_PREFIX: u8 = b'm';
+const PENDING_PREFIX: u8 = b'p';
+const TRANSACTION_PREFIX: u8 = b't';
+const PENDING_BYTES_KEY: &[u8] = b"bytes";
+
 fn key(prefix: u8, id: &[u8]) -> Vec<u8> {
     let mut bytes = vec![prefix];
     bytes.extend_from_slice(id);
@@ -23,51 +32,61 @@ fn durable() -> WriteOptions {
     options
 }
 impl RocksDBStorageInner {
+    /// Resolve a namespace/root identity, including records whose upload payload was acknowledged.
     pub(super) fn find_recovery_record(&self, namespace: &[u8]) -> Result<Option<String>> {
         self.db
-            .get_cf(&self.get_column(COMMITTED_DATA_RECOVERY_COLUMN), key(b'n', namespace))?
+            .get_cf(&self.get_column(COMMITTED_DATA_RECOVERY_COLUMN), key(NAMESPACE_PREFIX, namespace))?
             .map(|b| Ok(String::from_utf8(b)?))
             .transpose()
     }
+    /// Read a pending upload payload; acknowledged records retain only their separate manifest.
     pub(super) fn get_recovery_record(&self, id: &str) -> Result<Option<RecoveryRecord>> {
         self.db
-            .get_cf(&self.get_column(COMMITTED_DATA_RECOVERY_COLUMN), key(b'r', id.as_bytes()))?
+            .get_cf(&self.get_column(COMMITTED_DATA_RECOVERY_COLUMN), key(RECORD_PREFIX, id.as_bytes()))?
             .map(|b| Ok(super::deserialize(b)?))
             .transpose()
     }
+    /// Read the permanent replay identity independently of temporary upload bytes.
     pub(super) fn get_recovery_manifest(&self, id: &str) -> Result<Option<RecoveryManifest>> {
         self.db
-            .get_cf(&self.get_column(COMMITTED_DATA_RECOVERY_COLUMN), key(b'm', id.as_bytes()))?
+            .get_cf(&self.get_column(COMMITTED_DATA_RECOVERY_COLUMN), key(MANIFEST_PREFIX, id.as_bytes()))?
             .map(|b| Ok(super::deserialize(b)?))
             .transpose()
     }
+    /// Return a bounded lexical batch of pending IDs for the asynchronous exporter.
     pub(super) fn pending_recovery_records(&self, limit: usize) -> Result<Vec<String>> {
         self.db
-            .iterator_cf(&self.get_column(COMMITTED_DATA_RECOVERY_COLUMN), IteratorMode::From(b"p", Direction::Forward))
-            .take_while(|r| r.as_ref().map_or(true, |(k, _)| k.starts_with(b"p")))
+            .iterator_cf(
+                &self.get_column(COMMITTED_DATA_RECOVERY_COLUMN),
+                IteratorMode::From(&[PENDING_PREFIX], Direction::Forward),
+            )
+            .take_while(|r| r.as_ref().map_or(true, |(key, _)| key.starts_with(&[PENDING_PREFIX])))
             .take(limit)
             .map(|r| {
-                let (k, _) = r?;
-                Ok(String::from_utf8(k[1..].to_vec())?)
+                let (key, _) = r?;
+                Ok(String::from_utf8(key[1..].to_vec())?)
             })
             .collect()
     }
+    /// Read dataset manifest IDs durably bound to a transaction admission.
     pub(super) fn recovery_dependencies(&self, hash: Felt) -> Result<Vec<String>> {
         Ok(self
             .db
-            .get_cf(&self.get_column(COMMITTED_DATA_RECOVERY_COLUMN), key(b't', &hash.to_bytes_be()))?
+            .get_cf(&self.get_column(COMMITTED_DATA_RECOVERY_COLUMN), key(TRANSACTION_PREFIX, &hash.to_bytes_be()))?
             .map(super::deserialize)
             .transpose()?
             .unwrap_or_default())
     }
+    /// Read serialized pending payload usage; this excludes permanent trees and manifests.
     pub(super) fn pending_recovery_bytes(&self) -> Result<u64> {
         Ok(self
             .db
-            .get_cf(&self.get_column(COMMITTED_DATA_RECOVERY_COLUMN), b"bytes")?
+            .get_cf(&self.get_column(COMMITTED_DATA_RECOVERY_COLUMN), PENDING_BYTES_KEY)?
             .map(super::deserialize)
             .transpose()?
             .unwrap_or(0))
     }
+    /// Idempotently journal an authenticated import, checking the actual compressed backlog under lock.
     pub(super) fn store_recovery_record(&self, record: &RecoveryRecord) -> Result<String> {
         let _lock = self.committed_data.records.lock().map_err(|_| anyhow::anyhow!("Committed-data lock poisoned"))?;
         let namespace = namespace_key(record.manifest.update, record.manifest.root)?;
@@ -94,26 +113,27 @@ impl RocksDBStorageInner {
         );
         let cf = self.get_column(COMMITTED_DATA_RECOVERY_COLUMN);
         let mut batch = WriteBatch::default();
-        batch.put_cf(&cf, key(b'm', id.as_bytes()), super::serialize(&record.manifest)?);
-        batch.put_cf(&cf, key(b'r', id.as_bytes()), &bytes);
-        batch.put_cf(&cf, key(b'n', &namespace), id.as_bytes());
-        batch.put_cf(&cf, key(b'p', id.as_bytes()), super::serialize(&(bytes.len() as u64))?);
-        batch.put_cf(&cf, b"bytes", super::serialize(&pending)?);
+        batch.put_cf(&cf, key(MANIFEST_PREFIX, id.as_bytes()), super::serialize(&record.manifest)?);
+        batch.put_cf(&cf, key(RECORD_PREFIX, id.as_bytes()), &bytes);
+        batch.put_cf(&cf, key(NAMESPACE_PREFIX, &namespace), id.as_bytes());
+        batch.put_cf(&cf, key(PENDING_PREFIX, id.as_bytes()), super::serialize(&(bytes.len() as u64))?);
+        batch.put_cf(&cf, PENDING_BYTES_KEY, super::serialize(&pending)?);
         self.db.write_opt(batch, &durable())?;
         Ok(id)
     }
+    /// After remote acknowledgement, atomically remove payload/index bytes and retain the manifest.
     pub(super) fn mark_recovery_exported(&self, id: &str) -> Result<()> {
         let _lock = self.committed_data.records.lock().map_err(|_| anyhow::anyhow!("Committed-data lock poisoned"))?;
         let cf = self.get_column(COMMITTED_DATA_RECOVERY_COLUMN);
         anyhow::ensure!(self.get_recovery_manifest(id)?.is_some(), "Missing recovery manifest");
-        let k = key(b'p', id.as_bytes());
-        if let Some(bytes) = self.db.get_cf(&cf, &k)? {
+        let pending_key = key(PENDING_PREFIX, id.as_bytes());
+        if let Some(bytes) = self.db.get_cf(&cf, &pending_key)? {
             let size: u64 = super::deserialize(bytes)?;
             let pending = self.pending_recovery_bytes()?.checked_sub(size).context("Recovery backlog underflow")?;
             let mut batch = WriteBatch::default();
-            batch.delete_cf(&cf, k);
-            batch.delete_cf(&cf, key(b'r', id.as_bytes()));
-            batch.put_cf(&cf, b"bytes", super::serialize(&pending)?);
+            batch.delete_cf(&cf, pending_key);
+            batch.delete_cf(&cf, key(RECORD_PREFIX, id.as_bytes()));
+            batch.put_cf(&cf, PENDING_BYTES_KEY, super::serialize(&pending)?);
             self.db.write_opt(batch, &durable())?;
         }
         Ok(())
@@ -133,12 +153,12 @@ impl RocksDBStorageInner {
             anyhow::ensure!(self.get_recovery_manifest(id)?.is_some(), "Missing recovery dependency");
         }
         let cf = self.get_column(COMMITTED_DATA_RECOVERY_COLUMN);
-        if let Some(existing) = self.db.get_cf(&cf, key(b't', &tx.hash.to_bytes_be()))? {
+        if let Some(existing) = self.db.get_cf(&cf, key(TRANSACTION_PREFIX, &tx.hash.to_bytes_be()))? {
             let previous: Vec<String> = super::deserialize(existing)?;
             anyhow::ensure!(previous == dependencies, "Transaction already bound to different datasets");
         }
         let mut batch = WriteBatch::default();
-        batch.put_cf(&cf, key(b't', &tx.hash.to_bytes_be()), super::serialize(&dependencies)?);
+        batch.put_cf(&cf, key(TRANSACTION_PREFIX, &tx.hash.to_bytes_be()), super::serialize(&dependencies)?);
         batch.put_cf(
             &self.get_column(super::mempool::MEMPOOL_TRANSACTIONS_COLUMN),
             super::serialize(&tx.hash)?,

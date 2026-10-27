@@ -49,6 +49,7 @@ impl<D: crate::MadaraStorageRead> crate::MadaraBackend<D> {
         self.committed_data_cleanup.notified().await;
     }
 
+    /// Clamp to settled and locally available L2 history, then subtract the configured block buffer.
     pub(crate) fn committed_data_proof_cutoff(&self) -> Option<u64> {
         let seconds = self.config.committed_data_retention.proof_retention_secs?;
         let head = self.chain_head_state().confirmed_tip.unwrap_or(0);
