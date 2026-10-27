@@ -91,11 +91,11 @@ fn serialize_to_smallvec<A: smallvec::Array<Item = u8>>(
     Ok(v)
 }
 
-pub(crate) fn serialize(value: &impl serde::Serialize) -> Result<Vec<u8>, bincode::Error> {
+fn serialize(value: &impl serde::Serialize) -> Result<Vec<u8>, bincode::Error> {
     bincode_opts().serialize(value) // this calls serialized_size under the hood to get the vec capacity beforehand
 }
 
-pub(crate) fn deserialize<T: serde::de::DeserializeOwned>(bytes: impl AsRef<[u8]>) -> Result<T, bincode::Error> {
+fn deserialize<T: serde::de::DeserializeOwned>(bytes: impl AsRef<[u8]>) -> Result<T, bincode::Error> {
     bincode_opts().deserialize(bytes.as_ref())
 }
 

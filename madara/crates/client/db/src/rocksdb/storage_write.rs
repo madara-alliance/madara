@@ -26,7 +26,7 @@ impl MadaraStorageWrite for RocksDBStorage {
         root: Felt,
         entries: Vec<(Felt, Felt)>,
         checkpoint: Option<u64>,
-    ) -> Result<bool> {
+    ) -> Result<()> {
         self.store_persistent_patch(Some(base), root, entries, checkpoint, false)
     }
 

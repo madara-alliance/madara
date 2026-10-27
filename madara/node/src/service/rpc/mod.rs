@@ -188,7 +188,7 @@ impl Service for RpcService {
                     ),
                 };
                 let committed_data = matches!(rpc_type, RpcType::CommittedData);
-                // Keep the dedicated surface to its two methods; no rpc_methods discovery endpoint.
+                // Keep the dedicated surface limited to committed-data methods; no rpc_methods discovery endpoint.
                 let methods = if committed_data { api_rpc } else { rpc_api_build("rpc", api_rpc) }.into();
 
                 ServerConfig {

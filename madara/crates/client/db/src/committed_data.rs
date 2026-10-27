@@ -2,13 +2,9 @@
 use super::*;
 use blockifier::execution::syscalls::committed_data::{
     CommittedDataBatchProof, CommittedDataError, CommittedDataProvider, CommittedDataSet, CommittedDataWitness,
-    MAX_COMMITTED_DATA_VALUES,
 };
-use mp_gateway::committed_data::{CommittedDataUpdate, CommittedDataVersion, VALUES_PER_PAGE};
-use std::{
-    collections::{BTreeMap, VecDeque},
-    sync::Mutex,
-};
+use mp_gateway::committed_data::{CommittedDataUpdate, CommittedDataVersion};
+use std::{collections::VecDeque, sync::Mutex};
 use tokio::sync::Semaphore;
 
 /// Two imported trees at most; cold proof reads never wait on the import gate.
@@ -95,58 +91,18 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         let backend = Arc::clone(self);
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
-            // Validate the patch before loading the base; do not hash a separate patch trie.
-            let mut patch = entries;
-            anyhow::ensure!(
-                (1..=MAX_COMMITTED_DATA_VALUES).contains(&patch.len()),
-                "Invalid committed-data patch size"
-            );
-            patch.sort_unstable_by_key(|entry| entry.0);
-            anyhow::ensure!(patch.windows(2).all(|pair| pair[0].0 != pair[1].0), "Duplicate committed-data patch key");
             let version =
                 CommittedDataVersion { application_id: update.application_id, dataset_id: update.dataset_id, root };
-            let mut values = BTreeMap::new();
             if let Some(base_root) = update.base_root {
                 anyhow::ensure!(
                     backend.db.has_committed_data_version(CommittedDataVersion { root: base_root, ..version })?,
                     "Base root is not registered in this namespace"
                 );
-                if backend.db.patch_committed_data_dataset(base_root, root, patch.clone(), imported_after_block)? {
-                    backend.db.write_committed_data_version(version, false)?;
-                    return Ok(());
-                }
-                let base = match backend.committed_data_cache.get(base_root)? {
-                    Some(base) => base,
-                    None => {
-                        let mut entries = Vec::new();
-                        loop {
-                            let (count, page) = backend
-                                .db
-                                .get_committed_data_page(base_root, entries.len() as u32)?
-                                .ok_or_else(|| anyhow::anyhow!("Base dataset unavailable"))?;
-                            anyhow::ensure!(
-                                !page.is_empty() && page.len() <= VALUES_PER_PAGE,
-                                "Invalid base dataset page"
-                            );
-                            entries.extend(page);
-                            anyhow::ensure!(
-                                entries.len() <= count as usize && count as usize <= MAX_COMMITTED_DATA_VALUES,
-                                "Invalid base dataset count"
-                            );
-                            if entries.len() == count as usize {
-                                break;
-                            }
-                        }
-                        let base = Arc::new(CommittedDataSet::new(entries)?);
-                        anyhow::ensure!(base.root() == base_root, "Stored base dataset root mismatch");
-                        base
-                    }
-                };
-                values.extend(base.entries().iter().copied());
+                backend.db.patch_committed_data_dataset(base_root, root, entries, imported_after_block)?;
+                return backend.db.write_committed_data_version(version, false);
             }
-            values.extend(patch);
             // The same constructor is used by full imports and clients; no new hash format.
-            let tree = Arc::new(CommittedDataSet::new(values.into_iter().collect())?);
+            let tree = Arc::new(CommittedDataSet::new(entries)?);
             anyhow::ensure!(tree.root() == root, "Committed-data root does not match updated dataset");
             backend.db.write_committed_data_dataset(&tree, imported_after_block)?;
             backend.db.write_committed_data_version(version, update.base_root.is_none())?;
@@ -365,11 +321,7 @@ mod tests {
         assert_eq!(backend.db.list_committed_data_roots(None).unwrap(), roots[..64]);
         assert_eq!(backend.db.list_committed_data_roots(Some(roots[63])).unwrap(), roots[64..]);
         assert!(backend.db.list_committed_data_roots(Some(roots[64])).unwrap().is_empty());
-        let values: Vec<_> = ((0..4097_u32).map(Felt::from).collect::<Vec<_>>())
-            .into_iter()
-            .enumerate()
-            .map(|(i, value)| (Felt::from(i), value))
-            .collect();
+        let values: Vec<_> = (0..4097_u32).map(|i| (Felt::from(i), Felt::from(i))).collect();
         let root = CommittedDataSet::new(values.clone()).unwrap().root();
         backend.import_committed_data_snapshot(root, values.clone()).await.unwrap();
         assert_eq!(backend.db.get_committed_data_page(root, 0).unwrap(), Some((4097, values[..4096].to_vec())));

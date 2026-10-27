@@ -275,16 +275,15 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
         anyhow::bail!("Committed-data storage is unsupported by this backend")
     }
 
-    /// Apply upserts using persistent subtree sharing. False means the backend/base uses the
-    /// legacy snapshot format; the caller must authenticate and migrate the full base instead.
+    /// Apply authenticated upserts using persistent subtree sharing; missing bases fail closed.
     fn patch_committed_data_dataset(
         &self,
         _base: Felt,
         _root: Felt,
         _entries: Vec<(Felt, Felt)>,
         _checkpoint: Option<u64>,
-    ) -> Result<bool> {
-        Ok(false)
+    ) -> Result<()> {
+        anyhow::bail!("Committed-data updates are unsupported by this backend")
     }
 
     fn write_header(&self, header: BlockHeaderWithSignatures) -> Result<()>;

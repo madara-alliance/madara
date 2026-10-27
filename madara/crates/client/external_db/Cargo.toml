@@ -60,7 +60,6 @@ mp-gateway.workspace = true
 mp-utils = { workspace = true, features = ["testing"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 rstest = { workspace = true }
-futures = { workspace = true }
 mc-db = { workspace = true, features = ["testing"] }
 mc-devnet = { workspace = true }
 mc-exec = { workspace = true }

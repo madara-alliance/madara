@@ -10,7 +10,7 @@ Witnesses contain `root`, `key`, `value`, and bottom-up `siblings: [{bit, hash},
 
 ## Durable records
 
-Imports recompute the root before writing. Entries, branches and metadata are written in one RocksDB batch with a synchronous write-ahead log. Acknowledgement means local durability. Re-import repairs authenticated pages and preserves the first-import checkpoint.
+Imports recompute the root before writing. Tree nodes and metadata are written in one RocksDB batch with a synchronous write-ahead log. Acknowledgement means local durability. Re-import repairs authenticated tree nodes and preserves the first-import checkpoint.
 
 New versions share immutable Patricia nodes in the metadata column family. A root points to an append-only node arena; unchanged subtrees keep their IDs across ticks. An update visits the union of changed paths and publishes new nodes, allocator and root metadata in a single WAL-synced batch. IDs are internal storage offsets, never commitment or client protocol fields.
 
@@ -19,7 +19,7 @@ New versions share immutable Patricia nodes in the metadata column family. A roo
 - Branch value: tag 1, critical bit (1), left/right IDs (8 each), hash (32), entry count (4), totaling 54 bytes. Children precede their parent.
 - Root metadata: entry count (4), checkpoint-present flag (1), confirmed-head checkpoint (8), root node ID (8), totaling 21 bytes.
 
-Legacy paged Patricia roots remain readable: `committed_data_mpt/ | root (32 bytes) | kind (1 byte) | page (4-byte big-endian)`. Kind 0 holds up to 256 key/value pairs; kind 1 holds postorder branches; kind 255/page 0 has 13-byte metadata. Legacy roots are converted lazily during import/update; the migration does not rewrite chain data.
+Root metadata uses `committed_data_mpt/ | root (32 bytes) | 255 | 0 (4-byte big-endian)`. Only the shared-node format is supported; unreleased paged snapshots must be recreated.
 
 A cold witness read follows only the requested branch path, reads sibling hashes, and authenticates the resulting witness. Reads use one DB snapshot. Missing roots/keys return no witness; corrupt or incomplete records return an error. Hot execution reads return the value and charged path length without constructing a witness.
 
@@ -29,7 +29,7 @@ The first-import checkpoint records the local confirmed head at admission. It is
 
 Private RPC imports take `entries: [[key, value], ...]`, bounded by the pinned Blockifier `MAX_COMMITTED_DATA_VALUES` limit. The signed import preimage still binds chain ID, root and count. The combined endpoint durably imports all supplied datasets before submitting the signed account transaction through ordinary admission. A multicall is one account transaction. Rejection/reversion can leave unused datasets; this is ordered durable admission, not an atomic DB/chain rollback.
 
-The feeder gateway lists 64 roots per page, serves 4,096 sorted entries per page, and returns witnesses by `root` and felt `key`. Full nodes fetch all entries, recompute the root, then persist locally; they can serve witnesses after source loss. Lexical root cursors require rescanning. The shared additional-data sync option remains unchanged.
+The feeder gateway lists 64 roots per page, serves 4,096 sorted entries per page, and returns witnesses by `root` and felt `key`. Full nodes fetch all entries, recompute the root, then persist locally; they can serve witnesses after source loss. Lexical root cursors require rescanning. Enable `--madara-additional-data-sync` (or `MADARA_ADDITIONAL_DATA_SYNC=true`) to replicate both bouncer weights and committed datasets. This replaces the previous `--bouncer-config-sync-enable` / `MADARA_ENABLE_BOUNCER_CONFIG_SYNCING` setting; update deployment arguments and environment variables when upgrading.
 
 The dedicated listener default body limit is 128 MiB to accommodate full-width keys and values; the feeder response limit is 1 MiB and SNOS witness response limit is 32 KiB. These are transport/allocation bounds, not total DB quotas.
 

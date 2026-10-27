@@ -179,6 +179,7 @@ impl InnerMempool {
     /// ## Returns
     ///
     /// Returns nothing, or an error if the transaction was rejected. If an error is returned, the transaction is not inserted.
+    #[cfg(test)]
     pub fn insert_tx(
         &mut self,
         now: TxTimestamp,

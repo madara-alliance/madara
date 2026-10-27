@@ -106,11 +106,7 @@ mod tests {
         use blockifier::execution::syscalls::committed_data::CommittedDataSet;
         use mc_db::{rocksdb::RocksDBConfig, MadaraBackendConfig};
         use mp_chain_config::ChainConfig;
-        let mut values: Vec<_> = ((0..4097_u32).map(Felt::from).collect::<Vec<_>>())
-            .into_iter()
-            .enumerate()
-            .map(|(i, value)| (Felt::from(i), value))
-            .collect();
+        let mut values: Vec<_> = (0..4097_u32).map(|i| (Felt::from(i), Felt::from(i))).collect();
         // Opaque felts, including encoded symbols and high-bit values, survive replication.
         values[0].0 = Felt::from_hex_unchecked("0x4254432d5553442d505542"); // BTC-USD-PUB
         values[4096].0 = Felt::from_hex_unchecked("0x700000000000000000000000000000000000000000000000000000000000001");

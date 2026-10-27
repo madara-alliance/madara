@@ -121,14 +121,14 @@ starknet-types-core = { version = "0.2.4", default-features = false, features = 
   "serde",
 ] }
 
-blockifier = { git = "https://github.com/karnotxyz/sequencer", rev = "dab026b0d6ba09f11fd46e29221746b78154a215" }
+blockifier = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLLO-0.14.2-RC.7-fix", features = [
   "node_api",
 ] }
-starknet_api = { git = "https://github.com/karnotxyz/sequencer", rev = "dab026b0d6ba09f11fd46e29221746b78154a215" }
-cairo-lang-starknet-classes = "=2.17.0"
-cairo-lang-utils = "=2.17.0"
-casm-classes-v2 = { package = "cairo-lang-starknet-classes", version = "=2.17.0" }
-casm-utils-v2 = { package = "cairo-lang-utils", version = "=2.17.0" }
+starknet_api = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLLO-0.14.2-RC.7-fix" }
+cairo-lang-starknet-classes = "=2.17.0-rc.4"
+cairo-lang-utils = "=2.17.0-rc.4"
+casm-classes-v2 = { package = "cairo-lang-starknet-classes", version = "=2.17.0-rc.4" }
+casm-utils-v2 = { package = "cairo-lang-utils", version = "=2.17.0-rc.4" }
 cairo-vm = "=3.2.0"
 cairo-native = "0.9.0-rc.2"
 alloy = { version = "1.1.0", features = [

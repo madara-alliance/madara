@@ -501,6 +501,12 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                 })
                 .map_err(Into::into)
             });
+            if mode == InsertionMode::Requeue && ret.is_err() && !lock.contains_tx_by_hash(&TransactionHash(tx.hash)) {
+                // A deferred transaction is no longer owned by the executor. If re-admission
+                // rejects it, clear its saved row and Received status while holding the lock
+                // so a concurrent admission of the same hash cannot lose its persistence.
+                self.on_txs_removed(std::slice::from_ref(&tx));
+            }
             (ret, lock.summary())
         };
 
@@ -1107,6 +1113,48 @@ pub(crate) mod tests {
             Err(tokio::sync::broadcast::error::TryRecvError::Empty)
         );
         assert_eq!(backend.get_saved_mempool_transactions().collect::<Result<Vec<_>, _>>().unwrap(), vec![tx_account]);
+    }
+
+    #[rstest::rstest]
+    #[tokio::test]
+    async fn expired_requeue_clears_saved_transaction_and_received_status(
+        #[future] backend: Arc<mc_db::MadaraBackend>,
+        tx_account: ValidatedTransaction,
+    ) {
+        let backend = backend.await;
+        let mempool = Mempool::new(backend.clone(), MempoolConfig::default());
+        mempool.accept_tx(tx_account.clone()).await.unwrap();
+        let mut deferred = mempool.get_consumer().await.next_contiguous(1).unwrap();
+        assert!(mempool.preconfirmed_transactions_statuses.contains_key(&deferred.hash));
+        // Simulate expiration during execution without a wall-clock sleep.
+        deferred.arrived_at = TxTimestamp::UNIX_EPOCH;
+        assert_matches::assert_matches!(
+            mempool.requeue_tx(deferred).await,
+            Err(MempoolInsertionError::InnerMempool(TxInsertionError::TooOld { .. }))
+        );
+        assert!(!mempool.preconfirmed_transactions_statuses.contains_key(&tx_account.hash));
+        assert!(backend.get_saved_mempool_transactions().next().is_none());
+        let restarted = Mempool::new(backend, MempoolConfig::default());
+        restarted.load_txs_from_db().await.unwrap();
+        assert!(restarted.is_empty().await);
+    }
+
+    #[rstest::rstest]
+    #[tokio::test]
+    async fn duplicate_requeue_preserves_queued_transaction(
+        #[future] backend: Arc<mc_db::MadaraBackend>,
+        tx_account: ValidatedTransaction,
+    ) {
+        let backend = backend.await;
+        let mempool = Mempool::new(backend.clone(), MempoolConfig::default());
+        mempool.accept_tx(tx_account.clone()).await.unwrap();
+        assert_matches::assert_matches!(
+            mempool.requeue_tx(tx_account.clone()).await,
+            Err(MempoolInsertionError::InnerMempool(TxInsertionError::DuplicateTxn))
+        );
+        assert!(mempool.preconfirmed_transactions_statuses.contains_key(&tx_account.hash));
+        assert_eq!(backend.get_saved_mempool_transactions().collect::<Result<Vec<_>, _>>().unwrap(), vec![tx_account]);
+        assert!(!mempool.is_empty().await);
     }
 
     #[rstest::rstest]
