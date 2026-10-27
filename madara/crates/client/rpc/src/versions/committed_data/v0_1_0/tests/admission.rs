@@ -148,9 +148,8 @@ async fn full_backlog_rejects_import_before_writing_but_allows_exact_retry() {
     let (response, _) = module.raw_json_request(&request, 1).await.unwrap();
     assert!(serde_json::from_str::<serde_json::Value>(&response).unwrap().get("error").is_none(), "{response}");
     let id = backend.recovery_reference(None, root).unwrap();
-    let db = backend.db.inner_db();
-    let cf = db.cf_handle("committed_data_recovery").unwrap();
-    db.put_cf(&cf, b"bytes", MAX_PENDING_BYTES.to_le_bytes()).unwrap();
+    mc_db::test_utils::set_recovery_pending_bytes(&backend, MAX_PENDING_BYTES);
+    assert_eq!(backend.db.recovery_pending_bytes().unwrap(), MAX_PENDING_BYTES);
     let next_entries = vec![(Felt::ONE, Felt::THREE)];
     let next = CommittedDataSet::new(next_entries.clone()).unwrap().root();
     let (response, _) = module.raw_json_request(&call(next, next_entries), 1).await.unwrap();

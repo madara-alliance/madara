@@ -34,6 +34,15 @@ pub fn add_test_block(
         .block_hash
 }
 
+/// Fill the pending-backup budget without allocating hundreds of MiB in tests.
+pub fn set_recovery_pending_bytes(backend: &MadaraBackend, bytes: u64) {
+    use bincode::Options;
+    let db = backend.db.inner_db();
+    let cf = db.cf_handle("committed_data_recovery").unwrap();
+    // Match RocksDB's DefaultOptions codec, not bincode::serialize's legacy fixed-width codec.
+    db.put_cf(&cf, b"bytes", bincode::DefaultOptions::new().serialize(&bytes).unwrap()).unwrap();
+}
+
 pub fn devnet_account_address() -> Felt {
     Felt::from_hex_unchecked("0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d")
 }

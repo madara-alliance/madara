@@ -300,11 +300,12 @@ mod tests {
         let root = CommittedDataSet::new(entries.clone()).unwrap().root();
         backend.import_committed_data_snapshot(root, entries.clone()).await.unwrap();
         backend.journal_committed_data(None, root, entries).await.unwrap();
-        let db = backend.db.inner_db();
-        let cf = db.cf_handle("committed_data_recovery").unwrap();
-        db.put_cf(&cf, b"bytes", bincode::serialize(&MAX_PENDING_BYTES).unwrap()).unwrap();
-        assert!(backend.check_recovery_capacity(None, Felt::ZERO, 1).is_err());
-        assert!(backend.db.get_committed_data_count(Felt::ZERO).unwrap().is_none());
+        crate::test_utils::set_recovery_pending_bytes(&backend, MAX_PENDING_BYTES);
+        assert_eq!(backend.db.recovery_pending_bytes().unwrap(), MAX_PENDING_BYTES);
+        assert_eq!(
+            backend.check_recovery_capacity(None, Felt::ZERO, 1).unwrap_err().to_string(),
+            "Committed-data backup backlog full; retry after export"
+        );
         assert!(backend.check_recovery_capacity(None, root, 1).is_ok());
     }
 
