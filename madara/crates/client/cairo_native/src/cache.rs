@@ -33,6 +33,18 @@ use mp_class::SierraConvertedClass;
 static TEST_MEMORY_CACHE_SEND_DELAY_MS: AtomicU64 = AtomicU64::new(0);
 
 #[cfg(test)]
+static TEST_DISK_CACHE_RESPONSE_GATE: std::sync::Mutex<Option<(PathBuf, std::sync::mpsc::Receiver<()>)>> =
+    std::sync::Mutex::new(None);
+
+/// Dropping the returned sender releases this path's next disk response, even if the test panics.
+#[cfg(test)]
+pub fn block_test_disk_cache_response(path: PathBuf) -> std::sync::mpsc::Sender<()> {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    *TEST_DISK_CACHE_RESPONSE_GATE.lock().unwrap() = Some((path, receiver));
+    sender
+}
+
+#[cfg(test)]
 pub fn set_test_memory_cache_send_delay(delay: Duration) {
     TEST_MEMORY_CACHE_SEND_DELAY_MS.store(delay.as_millis() as u64, Ordering::Relaxed);
 }
@@ -549,9 +561,23 @@ fn try_load_executor_with_timeout(
     let path_for_thread = path.to_path_buf();
     let (tx, rx) = mpsc::channel();
 
+    #[cfg(test)]
+    let response_gate = {
+        let mut gate = TEST_DISK_CACHE_RESPONSE_GATE.lock().unwrap();
+        if gate.as_ref().is_some_and(|(expected, _)| expected == path) {
+            gate.take().map(|(_, receiver)| receiver)
+        } else {
+            None
+        }
+    };
+
     // Spawn a thread to load the executor
     let thread_handle = thread::spawn(move || {
         let result = AotContractExecutor::from_path(&path_for_thread);
+        #[cfg(test)]
+        if let Some(gate) = response_gate {
+            let _ = gate.recv();
+        }
         let _ = tx.send(result);
     });
 
