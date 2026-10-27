@@ -31,6 +31,16 @@ jobs:
     permissions:
       pull-requests: write
     runs-on: blacksmith-8vcpu-ubuntu-2204
+    services:
+      mongodb:
+        image: mongo:latest
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping:1})'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v5
@@ -106,6 +116,17 @@ jobs:
           cargo nextest run \
             --archive-file target/nextest/madara-tests.tar.zst \
             --workspace-remap "$GITHUB_WORKSPACE" \
+            --no-fail-fast
+
+      - name: Test committed-data Mongo recovery
+        env:
+          RECOVERY_TEST_MONGO_URI: mongodb://localhost:27017
+        run: |
+          cargo nextest run \
+            --archive-file target/nextest/madara-tests.tar.zst \
+            --workspace-remap "$GITHUB_WORKSPACE" \
+            --run-ignored only \
+            -E 'package(mc-external-db) & (test(mongo_recovery_restores_bases_and_rejects_corruption) | test(mongo_duplicate_retry_requires_matching_recovery_data))' \
             --no-fail-fast
 
       - name: Kill Anvil
