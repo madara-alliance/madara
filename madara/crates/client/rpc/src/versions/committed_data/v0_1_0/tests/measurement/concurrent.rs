@@ -53,6 +53,7 @@ async fn committed_data_measure_concurrent_http_imports() {
     let mut first = None;
     let origin = Instant::now();
     let mut samples = Vec::new();
+    let mut warmup_timings = Vec::new();
     let stop = Arc::new(AtomicBool::new(false));
     let mut pruner = None;
     let mut peak_active_rss = 0;
@@ -107,6 +108,8 @@ async fn committed_data_measure_concurrent_http_imports() {
         assert_success(&response);
         if tick > warmup {
             samples.push((start, end));
+        } else {
+            warmup_timings.push(end - start);
         }
         let journal = backend.recovery_reference(Some(update), root).unwrap();
         backend.db.mark_recovery_exported(&journal).unwrap(); // Simulated external exporter ACK.
@@ -133,6 +136,7 @@ async fn committed_data_measure_concurrent_http_imports() {
         .collect();
     let report = serde_json::json!({"entries":entries,"warmup_versions":warmup+1,"measured_requests":versions,
         "large_moves":large_moves,"all_prices_changed":true,"http_response_ms":timings,
+        "warmup_http_response_ms":warmup_timings,
         "request_intervals_ms":samples,"prune_intervals_ms":intervals,"overlapping_request_indices":overlapping,
         "peak_active_rss_kib":peak_active_rss,"whole_test_peak_rss_kib":memory_kib("VmHWM:"),
         "historical_and_latest_proofs_match":true,
@@ -142,5 +146,8 @@ async fn committed_data_measure_concurrent_http_imports() {
         std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
     }
     assert!(overlapping.len() >= 16, "Need at least sixteen HTTP requests overlapping actual pruning work");
-    assert!(timings.iter().all(|ms| *ms < 5000.), "HTTP import response exceeded five seconds; see report");
+    assert!(
+        timings.iter().chain(&warmup_timings).all(|ms| *ms < 5000.),
+        "HTTP import response exceeded five seconds; see report"
+    );
 }
