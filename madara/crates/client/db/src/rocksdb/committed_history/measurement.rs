@@ -27,6 +27,18 @@ const PROC_STATUS_PATH: &str = "/proc/self/status";
 const RSS_FIELD: &str = "VmRSS:";
 const PEAK_RSS_FIELD: &str = "VmHWM:";
 
+const MEASUREMENT_LIMITATIONS: &str = concat!(
+    "Synthetic single-process functional workload. ",
+    "Integer mode uses synthetic widths and bounded movements or independent redraws; ",
+    "wide-felt mode uses deterministic hashes. ",
+    "RSS includes independent reference construction and allocator retention. ",
+    "Live SST bytes exclude WAL and obsolete files. ",
+    "Timed ACK includes backend import, namespace fsync and recovery journal fsync; ",
+    "excludes RPC parsing/signatures/network/account transaction validation. ",
+    "Export ACK is simulated, no Mongo durability measurement. ",
+    "Rolling cycle also includes pruning. No production capacity claim.",
+);
+
 /// Explicit environment overrides keep expensive measurements out of default test runs.
 fn parameter(name: &str, default: usize) -> usize {
     std::env::var(name).map(|s| s.parse().expect("integer benchmark parameter")).unwrap_or(default)
@@ -296,7 +308,7 @@ fn committed_history_measure_storage_and_memory() {
         "rolling_ack_ms": rolling_ack_ms, "rolling_cycle_ms": rolling_cycle_ms, "journal_ms": journal_ms, "acknowledged_ms": acknowledged_ms, "final_peak_rss_kib": resident_kib(PEAK_RSS_FIELD),
         "initial_import_ms": initial_ms, "incremental_import_ms": import_ms, "prune_total_ms": prune_ms,
         "retained_batch_ms": warm_ms, "reconstructed_batch_ms": cold_ms,
-        "limitations": "Synthetic single-process functional workload. Price mode uses captured value-width deciles and synthetic bounded movements, not captured transactions. RSS includes independent reference construction and allocator retention. Live SST bytes exclude WAL and obsolete files. Timed ACK includes backend import, namespace fsync and recovery journal fsync; excludes RPC parsing/signatures/network/account transaction validation. Export ACK is simulated, no Mongo durability measurement. Rolling cycle also includes pruning. No production capacity claim."});
+        "limitations": MEASUREMENT_LIMITATIONS});
     println!("{}", serde_json::to_string_pretty(&report).unwrap());
     if let Ok(path) = std::env::var("CD_MEASURE_REPORT") {
         std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();

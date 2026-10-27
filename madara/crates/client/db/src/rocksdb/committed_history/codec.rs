@@ -5,7 +5,7 @@
 //! - token 0: one length byte and the shortest big-endian absolute felt (zero has length 0);
 //! - token > 0: zigzag(signed delta) + 1, only when both values fit u64 and this is shorter.
 //!
-//! Ties use absolute encoding. Values are never rounded, scaled or restricted to prices.
+//! Ties use absolute encoding. Values are never rounded, scaled or narrowed.
 //! The archive compresses the resulting byte stream with Zstd; this module only packs it.
 //! Decoding rejects noncanonical integers, duplicate/out-of-range indices and arithmetic overflow.
 use anyhow::{ensure, Result};

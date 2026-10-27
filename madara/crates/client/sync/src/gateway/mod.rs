@@ -27,7 +27,7 @@ pub struct ForwardSyncConfig {
     pub disable_tries: bool,
     pub snap_sync: bool,
     pub keep_pre_v0_13_2_hashes: bool,
-    /// Sync bouncer weights and committed datasets from a compatible Madara feeder.
+    /// Sync bouncer weights; also replicate datasets when committed-data execution is enabled.
     pub madara_additional_data_sync: bool,
     pub disable_reorg: bool,
     pub disable_reorg_preconfirmed: bool,
@@ -63,7 +63,7 @@ impl ForwardSyncConfig {
         Self { snap_sync: val, ..self }
     }
 
-    /// Enables the Madara-specific bouncer and committed-data extensions together.
+    /// Enables bouncer replication and, with the backend feature enabled, dataset replication.
     pub fn madara_additional_data_sync(self, enabled: bool) -> Self {
         Self { madara_additional_data_sync: enabled, ..self }
     }
@@ -341,7 +341,10 @@ struct GatewayLatestProbe {
 }
 
 impl GatewayLatestProbe {
-    pub fn new(client: Arc<GatewayProvider>, backend: Arc<MadaraBackend>, sync_committed_data: bool) -> Self {
+    pub fn new(client: Arc<GatewayProvider>, backend: Arc<MadaraBackend>, additional_data_sync: bool) -> Self {
+        // Bouncer replication predates committed data. Enabling that existing behavior must
+        // not make ordinary full nodes depend on catalog routes absent from older sequencers.
+        let sync_committed_data = additional_data_sync && backend.use_committed_data();
         Self { client, backend, sync_committed_data }
     }
 

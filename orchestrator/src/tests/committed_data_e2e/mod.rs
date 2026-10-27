@@ -61,7 +61,7 @@ async fn import(node: &Node, tree: &CommittedDataSet) -> Result<()> {
 async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
     let mut source = Node::start(None).await?;
     save("madara_baseline", &source.footprint()?)?;
-    let provider = Arc::new(JsonRpcClient::new(HttpTransport::new(source.rpc.parse()?)));
+    let provider = Arc::new(JsonRpcClient::new(HttpTransport::new(source.rpc.parse::<url::Url>()?)));
     let chain: Felt = serde_json::from_value(rpc(&source.rpc, "starknet_chainId", json!([])).await?)?;
     let signer = LocalWallet::from(SigningKey::from_secret_scalar(Felt::from_hex(SECRET)?));
     let mut account =
@@ -174,7 +174,8 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
         .await?;
         result.output.cairo_pie.run_validity_checks()?;
         let observation = json!({"case":name,"entries":dataset.entries().len(),"keys":keys.len(),
-            "scheduled_special_call_gas":scheduled_gas,"receipt":receipt,"trace":trace,"bouncer_weights":weights,
+            "scheduled_special_call_gas_per_attempt":scheduled_gas,
+            "special_call_attempts":if name == "caught_out_of_gas" { 3 } else { 1 },"receipt":receipt,"trace":trace,"bouncer_weights":weights,
             "os_transactions":result.output.txs_trace,"os_resources":result.output.cairo_pie.execution_resources});
         save(name, &observation)?;
         observations.push(observation);
@@ -216,6 +217,12 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
     ensure!(legacy_tip.as_u64().is_some_and(|tip| tip >= target), "feature-disabled block sync stalled");
     let legacy_receipt = rpc(&legacy_reader.rpc, "starknet_getTransactionReceipt", json!([accepted[0].0])).await?;
     ensure!(legacy_receipt == observations[0]["receipt"], "feature-disabled reader receipt differs");
+    let legacy_catalog: Value = reqwest::get(format!("{}get_committed_data_roots", legacy_reader.feeder))
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    ensure!(legacy_catalog == json!([]), "feature-disabled reader unexpectedly replicated datasets");
     let retained = &observations[0]["receipt"];
     source.restart_after_revert(retained["block_hash"].clone()).await?;
     ensure!(

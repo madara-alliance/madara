@@ -210,13 +210,17 @@ async fn missing_dataset_does_not_publish_a_root_or_namespace() {
 /// Legacy callers keep using existing endpoints. Opted-in callers wait on missing data;
 /// a new sequencer with an empty (but supported) catalog remains syncable.
 #[rstest::rstest]
-#[case::legacy_upstream_opt_out(false, false, true)]
-#[case::new_upstream_opt_out(false, true, true)]
-#[case::legacy_upstream_opt_in(true, false, false)]
-#[case::empty_new_upstream_opt_in(true, true, true)]
+#[case::legacy_upstream_opt_out(false, false, false, true)]
+#[case::new_upstream_opt_out(false, false, true, true)]
+#[case::bouncer_only_legacy_upstream(true, false, false, true)]
+#[case::bouncer_only_new_upstream(true, false, true, true)]
+#[case::feature_without_replication(false, true, false, true)]
+#[case::legacy_upstream_opt_in(true, true, false, false)]
+#[case::empty_new_upstream_opt_in(true, true, true, true)]
 #[tokio::test]
 async fn committed_data_latest_probe_compatibility(
     #[case] enabled: bool,
+    #[case] use_committed_data: bool,
     #[case] supported: bool,
     #[case] advances: bool,
 ) {
@@ -238,7 +242,10 @@ async fn committed_data_latest_probe_compatibility(
             }
         })
         .await;
-    let backend = MadaraBackend::open_for_testing(mp_chain_config::ChainConfig::madara_test().into());
+    let backend = MadaraBackend::open_for_testing_with_config(
+        mp_chain_config::ChainConfig::madara_test().into(),
+        mc_db::MadaraBackendConfig { use_committed_data, ..Default::default() },
+    );
     let client = Arc::new(GatewayProvider::new(
         server.url("/gateway/").parse().unwrap(),
         server.url("/feeder_gateway/").parse().unwrap(),
@@ -247,7 +254,7 @@ async fn committed_data_latest_probe_compatibility(
     let previous = mp_gateway::block::ProviderBlockHeader { block_number: 9, block_hash: Felt::ONE };
     assert_eq!(probe.probe(Some(previous.clone())).await.unwrap(), Some(if advances { latest } else { previous }));
     catalogs
-        .assert_hits_async(if !enabled {
+        .assert_hits_async(if !enabled || !use_committed_data {
             0
         } else if supported {
             2

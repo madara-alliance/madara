@@ -80,8 +80,8 @@ pub struct L2SyncParams {
     #[clap(env = "MADARA_POST_V0_13_2_HASHES", long)]
     pub post_v0_13_2_hashes: bool,
 
-    /// Sync Madara-specific bouncer weights and committed datasets from the feeder gateway.
-    /// Requires a compatible Madara upstream; both extensions are enabled together.
+    /// Sync Madara-specific bouncer weights from the feeder gateway.
+    /// With --use-committed-data, also replicate datasets from a compatible upstream.
     #[arg(env = "MADARA_ADDITIONAL_DATA_SYNC", long, default_value_t = false)]
     #[serde(default)]
     pub madara_additional_data_sync: bool,

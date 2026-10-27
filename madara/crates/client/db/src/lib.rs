@@ -60,6 +60,11 @@
 //! Head publication and row garbage collection have explicit ordering, so replacing a projection
 //! alone must not be mistaken for deleting its old preconfirmed data.
 
+mod committed_data;
+pub mod committed_data_recovery;
+pub mod committed_data_retention;
+mod persistent_committed_data;
+
 use crate::gas::L1GasQuoteCell;
 use crate::preconfirmed::PreconfirmedBlock;
 use crate::preconfirmed::PreconfirmedExecutedTransaction;
@@ -486,8 +491,4 @@ mod head_projection;
 mod writer;
 pub use writer::MadaraBackendWriter;
 
-mod committed_data;
-pub mod committed_data_recovery;
-pub mod committed_data_retention;
-mod persistent_committed_data;
 mod service_storage;

@@ -1,3 +1,6 @@
+mod admission;
+mod measurement;
+
 use super::*;
 use mc_db::{MadaraBackend, MadaraStorageRead};
 use mc_devnet::{Call, DevnetPredeployedContract, Multicall, Selector};
@@ -310,7 +313,3 @@ async fn committed_data_update_rpc_authenticates_namespace_base_and_expected_roo
     assert!(response.get("error").is_none(), "{response}");
     assert_eq!(backend.db.list_committed_data_versions(None).unwrap().len(), 1);
 }
-
-mod admission;
-
-mod measurement;

@@ -374,11 +374,10 @@
 //! [deploy account transactions]: mp_gateway::user_transaction::UserTransaction::DeployAccount
 //! [invoke transactions]: mp_gateway::user_transaction::UserTransaction::InvokeFunction
 
+mod committed_data;
 mod error;
 mod handler;
 mod helpers;
 mod metrics;
 mod router;
 pub mod service;
-
-mod committed_data;
