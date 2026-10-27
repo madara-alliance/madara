@@ -58,6 +58,9 @@ async fn committed_data_measure_concurrent_http_imports() {
     let mut pruner = None;
     let mut peak_active_rss = 0;
     for tick in 0..=warmup + versions {
+        // Keep the simulated node head ahead of settlement, so new roots are not
+        // spuriously pruned before the post-response execution-use marker.
+        backend.chain_head_state.send_modify(|head| head.confirmed_tip = Some(tick as u64));
         if tick > 0 {
             for (key, (_, price)) in values.iter_mut().enumerate() {
                 let old = *price;
