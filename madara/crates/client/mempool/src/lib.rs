@@ -442,7 +442,9 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         tx: ValidatedTransaction,
         dependencies: Vec<String>,
     ) -> Result<(), MempoolInsertionError> {
-        if !self.config.save_to_db || !(1..=4).contains(&dependencies.len()) {
+        if !self.config.save_to_db
+            || !(1..=mp_gateway::committed_data::MAX_DATASETS_PER_TRANSACTION).contains(&dependencies.len())
+        {
             return Err(MempoolInsertionError::Internal(anyhow::anyhow!(
                 "Committed-data recovery requires mempool saving and 1..=4 dependencies"
             )));

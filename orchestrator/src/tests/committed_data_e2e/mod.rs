@@ -50,6 +50,20 @@ fn save(name: &str, value: &Value) -> Result<()> {
     Ok(())
 }
 
+/// Storage diffs are maps serialized as arrays. Their iteration order can change across
+/// processes/restarts; keep calls, events, return values and resource counters exact.
+fn comparable_trace(mut trace: Value) -> Value {
+    if let Some(changes) = trace["state_diff"]["storage_diffs"].as_array_mut() {
+        for change in changes.iter_mut() {
+            if let Some(entries) = change["storage_entries"].as_array_mut() {
+                entries.sort_by_key(|entry| entry["key"].as_str().unwrap().to_owned());
+            }
+        }
+        changes.sort_by_key(|change| change["address"].as_str().unwrap().to_owned());
+    }
+    trace
+}
+
 async fn import(node: &Node, tree: &CommittedDataSet) -> Result<()> {
     rpc(&node.private, "madara_importCommittedDataSet", json!([tree.root(), tree.entries(), []])).await?;
     Ok(())
@@ -198,7 +212,7 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
     for (hash, _) in &accepted {
         let original = rpc(&source.rpc, "starknet_traceTransaction", json!([hash])).await?;
         let replicated = rpc(&replica.rpc, "starknet_traceTransaction", json!([hash])).await?;
-        ensure!(original == replicated, "replicated historical trace differs");
+        ensure!(comparable_trace(original) == comparable_trace(replicated), "replicated historical trace differs");
     }
     save("fullnode_after_trace", &replica.footprint()?)?;
     let legacy_reader = Node::start_with_data(Some(&source), false).await?;
@@ -230,7 +244,8 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
         "revert head mismatch"
     );
     ensure!(
-        rpc(&source.rpc, "starknet_traceTransaction", json!([accepted[0].0])).await? == observations[0]["trace"],
+        comparable_trace(rpc(&source.rpc, "starknet_traceTransaction", json!([accepted[0].0])).await?)
+            == comparable_trace(observations[0]["trace"].clone()),
         "retained trace changed after revert"
     );
     ensure!(
