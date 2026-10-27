@@ -1,11 +1,11 @@
-//! v15 → v16 records additive, root-keyed committed-data storage in the existing meta column.
-//! No chain data or dataset pages are rewritten. Databases without imported data remain empty
-//! in this namespace. No committed-data migration is needed because the feature is not live.
+//! v15 → v16 introduces committed-data tries and durable recovery records.
+//! RocksDB column registration creates the recovery column; trie records use the meta column.
+//! This is the first released schema for the feature, so no existing records need conversion.
 use crate::migration::{MigrationContext, MigrationError};
 
 /// Records the schema boundary through the migration runner, without modifying any DB records.
 pub fn migrate(_ctx: &MigrationContext<'_>) -> Result<(), MigrationError> {
-    tracing::info!("v15→v16: additive committed-data records; no data rewrite required");
+    tracing::info!("v15→v16: committed-data storage and recovery; no data rewrite required");
     Ok(())
 }
 
@@ -22,7 +22,7 @@ mod tests {
         options.create_if_missing(true);
         options.create_missing_column_families(true);
         let rows: Vec<(&[u8], &[u8])> = vec![
-            (b"committed_data_pages/test", b"immutable dataset page"),
+            (b"LATEST_APPLIED_TRIE_UPDATE", b"existing trie checkpoint"),
             (b"HEAD_PROJECTION", b"unrelated chain metadata"),
         ];
         {
