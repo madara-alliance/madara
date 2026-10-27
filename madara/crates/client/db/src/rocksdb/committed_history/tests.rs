@@ -22,7 +22,9 @@ fn pointer(db: &RocksDBStorage, root: Felt) -> u64 {
     )
     .unwrap()
 }
-fn rows(db: &RocksDBStorage, prefix: &[u8]) -> Vec<(Box<[u8]>, Box<[u8]>)> {
+type StoredRow = (Box<[u8]>, Box<[u8]>);
+
+fn rows(db: &RocksDBStorage, prefix: &[u8]) -> Vec<StoredRow> {
     db.inner
         .db
         .iterator_cf(&db.inner.get_column(meta::META_COLUMN), IteratorMode::From(prefix, rocksdb::Direction::Forward))
