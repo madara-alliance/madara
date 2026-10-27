@@ -1,20 +1,21 @@
 //! Dataset ingestion and signed transaction submission on the private Committed Data listener.
 //! Imports are durable before transaction admission. Rejected transactions can leave unused datasets.
+mod authorization;
 #[cfg(test)]
 mod tests;
+mod types;
 
 use crate::{Starknet, StarknetRpcApiError};
 use jsonrpsee::core::{async_trait, RpcResult};
 use jsonrpsee::types::ErrorObjectOwned;
 use m_proc_macros::versioned_rpc;
 use mp_convert::Felt;
-use mp_gateway::committed_data::CommittedDataUpdate;
+use mp_gateway::committed_data::{CommittedDataUpdate, MAX_DATASETS_PER_TRANSACTION};
 use mp_rpc::v0_10_2::BroadcastedTxn;
 use mp_utils::service::MadaraServiceId;
 use std::sync::{Arc, LazyLock};
 
 const MAX_SIGNATURE_CHECKS: usize = 4;
-use mp_gateway::committed_data::MAX_DATASETS_PER_TRANSACTION;
 static SIGNATURE_CHECKS: LazyLock<Arc<tokio::sync::Semaphore>> =
     LazyLock::new(|| Arc::new(tokio::sync::Semaphore::new(MAX_SIGNATURE_CHECKS)));
 
@@ -43,9 +44,6 @@ impl From<CommittedDataRpcError> for ErrorObjectOwned {
         Self::owned(code, error.to_string(), None::<()>)
     }
 }
-
-mod authorization;
-mod types;
 
 pub use authorization::{import_message_hash, update_message_hash};
 use authorization::{validate_import_signatures, validate_signatures};

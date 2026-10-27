@@ -121,6 +121,7 @@ jobs:
           MADARA_ORCHESTRATOR_ATLANTIC_API_KEY: ${{ secrets.MADARA_ORCHESTRATOR_ATLANTIC_API_KEY }}
           # the self hosted runner has a different region so we override it here
           AWS_REGION: us-east-1
+          COMMITTED_DATA_E2E_OUTPUT: ${{ github.workspace }}/committed-data-e2e-report
         run: |
           echo "MADARA_ORCHESTRATOR_MADARA_BINARY_PATH: $MADARA_ORCHESTRATOR_MADARA_BINARY_PATH"
           # This specific Atlantic integration test submits a real job and now
@@ -133,3 +134,11 @@ jobs:
             --no-fail-fast \
             -- \
             --skip atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash
+
+      - name: Upload committed-data real-node acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: committed-data-real-node-acceptance
+          path: committed-data-e2e-report/
+          if-no-files-found: ignore

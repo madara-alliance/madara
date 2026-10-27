@@ -27,11 +27,11 @@ on:
         default: "8"
         type: string
       integer-values:
-        description: "Use synthetic price values matching captured price-width deciles"
+        description: "Use synthetic bounded-width integer values"
         default: false
         type: boolean
       large-moves:
-        description: "Independently redraw every price each tick instead of small price movements"
+        description: "Independently redraw every integer each tick instead of bounded increments"
         default: false
         type: boolean
       signed-rpc:
