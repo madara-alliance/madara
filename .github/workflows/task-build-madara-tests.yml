@@ -54,10 +54,8 @@ jobs:
           CARGO_TARGET_DIR=target cargo nextest archive \
             --release \
             --features testing \
-            --package madara \
-            --package "mc-*" \
-            --package "mp-*" \
-            --package "m-proc-*" \
+            --package mc-db \
+            --package mc-rpc \
             --archive-file target/nextest/madara-tests.tar.zst
 
       - name: Generate archive hash
