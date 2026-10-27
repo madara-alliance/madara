@@ -57,15 +57,26 @@ const SEPOLIA_STRK_FEE_TOKEN: &str = "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd6
 const SNOS_PIE_FILES: [&str; 4] =
     ["snos_sepolia_8059997.zip", "snos_sepolia_8059998.zip", "snos_sepolia_8059999.zip", "snos_sepolia_8060000.zip"];
 
-/// Expected fact for these historical outputs under the currently pinned committed-data OS hash.
+/// Child OS hash from Sequencer d5591c7a6867978d4531eae6e8e79c3babd90394.
+/// Changing this hash changes the aggregator output and therefore the expected fact below,
+/// even when the historical child outputs and aggregator program are unchanged.
+const EXPECTED_CHILD_OS_HASH: &str = "0xc0990458eb34225948bbc8057a684719848fc7a880750ffef23b034f317ed3";
+
+/// Expected fact for these historical outputs under `EXPECTED_CHILD_OS_HASH`.
 /// This checks the local aggregator's fact calculation; it does not establish that these
 /// historical blocks were proved under the committed-data OS.
-const EXPECTED_AGG_FACT: &str = "0xab26c1102ef2b081c94db7039a17cbf7178539f050857af5653fb6cc2f5dddee";
+const EXPECTED_AGG_FACT: &str = "0x31897ce9a96c212536388295af81e1398137e0c957138bdfb16e4c2208f69249";
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_local_aggregator_with_fact_registration() -> color_eyre::Result<()> {
     dotenvy::from_filename_override("../.env.test").ok();
+
+    assert_eq!(
+        PROGRAM_HASHES.os,
+        AggregatorFelt::from_hex(EXPECTED_CHILD_OS_HASH).expect("valid expected child OS hash"),
+        "child OS hash changed; revalidate the aggregator fact fixture for the new dependency revision"
+    );
 
     // 1. Pull the SNOS PIEs from the remote artifacts repo.
     let data_dir = setup_test_data(SNOS_PIE_FILES.iter().map(|f| (*f, false)).collect())
