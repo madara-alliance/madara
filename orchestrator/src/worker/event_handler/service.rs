@@ -218,12 +218,10 @@ impl JobHandlerService {
                 // to process it normally. The configured timeout is the maximum time an attempt
                 // may hold this lock before a redelivery can reclaim it.
                 let timeout_seconds = config.service_config().get_job_timeout(&job.job_type);
+                let cutoff_time = Utc::now() - chrono::Duration::seconds(timeout_seconds as i64);
+
                 let is_stale = match job.metadata.common.process_started_at {
-                    // This field is persisted with second precision. Compare whole elapsed
-                    // seconds so sub-second truncation cannot make a new lock appear stale.
-                    Some(started_at) => {
-                        Utc::now().signed_duration_since(started_at).num_seconds() > timeout_seconds as i64
-                    }
+                    Some(started_at) => started_at < cutoff_time,
                     // If process_started_at is None, the job was never properly started - treat as stale
                     None => true,
                 };
@@ -238,13 +236,13 @@ impl JobHandlerService {
                         "Found stale job in LockedForProcessing state, healing and reprocessing"
                     );
 
+                    MetricsRecorder::record_orphaned_job(&job);
                     let healing_workload = MetricsRecorder::start_healing_workload(&job.job_type);
 
                     // Reset process_started_at to allow fresh processing
                     job.metadata.common.process_started_at = None;
 
-                    // A concurrent status change increments the job version, so the ordinary
-                    // optimistic update prevents a stale reader from overwriting it.
+                    // Update job status back to Created to allow normal processing flow
                     job = config
                         .database()
                         .update_job(
@@ -259,7 +257,6 @@ impl JobHandlerService {
                             error!(job_id = ?id, error = ?e, "Failed to heal stale job");
                         })?;
 
-                    MetricsRecorder::record_orphaned_job(&job);
                     MetricsRecorder::record_healed_job(&job.job_type);
                     healing_workload.finish_success();
 
