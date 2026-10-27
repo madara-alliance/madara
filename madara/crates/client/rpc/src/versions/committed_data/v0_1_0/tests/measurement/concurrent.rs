@@ -79,11 +79,18 @@ async fn committed_data_measure_concurrent_http_imports() {
             let stop = Arc::clone(&stop);
             // This is the service's one-root-at-a-time loop during an eligible sweep.
             // Freeze the simulated settlement cutoff so the current import base remains hot.
-            pruner = Some(std::thread::spawn(move || {
+            pruner = Some(tokio::spawn(async move {
                 let mut intervals = Vec::new();
                 while !stop.load(Ordering::Relaxed) {
                     let start = origin.elapsed().as_secs_f64() * 1000.;
-                    if !backend.db.maintain_committed_data_history(Some((warmup - 8) as u64)).unwrap() {
+                    let db = Arc::clone(&backend);
+                    let more = tokio::task::spawn_blocking(move || {
+                        db.db.maintain_committed_data_history(Some((warmup - 8) as u64))
+                    })
+                    .await
+                    .unwrap()
+                    .unwrap();
+                    if !more {
                         break;
                     }
                     intervals.push((start, origin.elapsed().as_secs_f64() * 1000.));
@@ -117,7 +124,7 @@ async fn committed_data_measure_concurrent_http_imports() {
         base_root = Some(root);
     }
     stop.store(true, Ordering::Relaxed);
-    let intervals = tokio::task::spawn_blocking(move || pruner.unwrap().join().unwrap()).await.unwrap();
+    let intervals = pruner.unwrap().await.unwrap();
     let (root, proof) = first.unwrap();
     assert_eq!(backend.db.get_committed_data_batch(root, &keys).unwrap(), proof);
     let latest = CommittedDataSet::new(values).unwrap();
