@@ -123,16 +123,13 @@ jobs:
           AWS_REGION: us-east-1
         run: |
           echo "MADARA_ORCHESTRATOR_MADARA_BINARY_PATH: $MADARA_ORCHESTRATOR_MADARA_BINARY_PATH"
-          # Live Atlantic integration tests depend on external service availability
-          # (and, for submission, paid credits). Mocked Atlantic coverage still runs,
-          # so keep PR CI focused on deterministic code regressions.
+          # This specific Atlantic integration test submits a real job and now
+          # depends on external paid credits. The mocked Atlantic submission
+          # path is still covered in unit/integration tests, so keep PR CI
+          # focused on code regressions rather than account balance.
           RUST_LOG=debug RUST_BACKTRACE=1 cargo nextest run \
             --archive-file target/nextest/orchestrator-tests.tar.zst \
             --workspace-remap "$GITHUB_WORKSPACE" \
             --no-fail-fast \
             -- \
-            --skip atlantic_client_get_bucket_status_works \
-            --skip atlantic_client_get_query_by_dedup_id_found \
-            --skip atlantic_client_get_query_by_dedup_id_not_found \
-            --skip atlantic_client_get_task_status_works \
             --skip atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash

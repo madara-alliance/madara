@@ -586,14 +586,13 @@ async fn process_job_shutdown_retains_lock_before_stale_timeout() {
     let mut queue = MockQueueClient::new();
     queue
         .expect_send_message()
-        .withf(|queue, _, delay| *queue == QueueType::SnosJobProcessing && *delay == Some(Duration::from_secs(30)))
+        .withf(|queue, _, delay| *queue == QueueType::SnosJobProcessing && *delay == Some(Duration::from_secs(900)))
         .times(1)
         .returning(|_, _, _| Ok(()));
 
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
         .configure_queue_client(ConfigType::Mock(MockType::Queue(Box::new(queue))))
-        .configure_snos_job_timeout_seconds(30)
         .build()
         .await;
     let db_client = services.config.database();
@@ -654,14 +653,13 @@ async fn repeated_active_lock_deliveries_are_replaced_with_delayed_messages() {
     let mut queue = MockQueueClient::new();
     queue
         .expect_send_message()
-        .withf(|queue, _, delay| *queue == QueueType::SnosJobProcessing && *delay == Some(Duration::from_secs(30)))
+        .withf(|queue, _, delay| *queue == QueueType::SnosJobProcessing && *delay == Some(Duration::from_secs(900)))
         .times(6)
         .returning(|_, _, _| Ok(()));
 
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
         .configure_queue_client(ConfigType::Mock(MockType::Queue(Box::new(queue))))
-        .configure_snos_job_timeout_seconds(30)
         .build()
         .await;
 

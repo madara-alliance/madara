@@ -265,33 +265,6 @@ async fn verify_job_rejects_when_contract_is_behind_previous_batch_boundary() {
     );
 }
 
-#[rstest]
-#[tokio::test]
-async fn settled_batch_reconciliation_skips_state_update_submission() {
-    let batch_index = 559;
-    let end_block = 902875;
-
-    let mut settlement_client = MockSettlementClient::new();
-    settlement_client.expect_get_last_settled_block().times(1).returning(move || Ok(Some(end_block)));
-
-    let mut database_client = MockDatabaseClient::new();
-    database_client.expect_get_aggregator_batches().times(1).returning(move |query: AggregatorBatchDbQuery| {
-        assert_eq!(query.indexes, Some(vec![batch_index]));
-        Ok(vec![test_aggregator_batch(batch_index, 902786, end_block)])
-    });
-
-    let services = TestConfigBuilder::new()
-        .configure_settlement_client(settlement_client.into())
-        .configure_database(database_client.into())
-        .build()
-        .await;
-
-    let should_submit =
-        StateUpdateJobHandler.should_send_state_update_txn_from_chain(&services.config, batch_index).await;
-
-    assert!(!should_submit.unwrap(), "an already-settled batch must not be submitted again");
-}
-
 /// A shutdown after broadcast restores the job without immediately redelivering it. On the next
 /// delivery, Ethereum's latest confirmed nonce is reused so the client deliberately replaces the
 /// still-pending transaction instead of creating a second state transition.

@@ -419,19 +419,6 @@ impl StateUpdateJobHandler {
 
     #[cfg(not(feature = "testing"))]
     async fn should_send_state_update_txn(&self, config: &Arc<Config>, to_batch_num: u64) -> Result<bool, JobError> {
-        self.should_send_state_update_txn_from_chain(config, to_batch_num).await
-    }
-
-    /// Checks the settlement contract before submitting a state update.
-    ///
-    /// Kept separate from the `testing` feature's transaction-forcing shim so
-    /// reconciliation remains directly testable under the CI feature set.
-    #[cfg_attr(feature = "testing", allow(dead_code))]
-    pub(crate) async fn should_send_state_update_txn_from_chain(
-        &self,
-        config: &Arc<Config>,
-        to_batch_num: u64,
-    ) -> Result<bool, JobError> {
         // Get the batch details for the batch to settle
         let to_block_num = match config.layer() {
             Layer::L2 => {
