@@ -10469,6 +10469,7 @@ dependencies = [
  "base64 0.22.1",
  "bincode",
  "blockifier",
+ "blockifier_test_utils",
  "bson",
  "build-version",
  "bytes",

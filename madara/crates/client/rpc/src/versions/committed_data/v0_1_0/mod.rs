@@ -5,6 +5,12 @@ mod authorization;
 mod tests;
 mod types;
 
+pub use authorization::{import_message_hash, update_message_hash};
+use authorization::{validate_import_signatures, validate_signatures};
+pub use types::{
+    CommittedDataEntries, CommittedDataImport, CommittedDataImports, ImportAndSubmitResult, ImportSignature,
+};
+
 use crate::{Starknet, StarknetRpcApiError};
 use jsonrpsee::core::{async_trait, RpcResult};
 use jsonrpsee::types::ErrorObjectOwned;
@@ -44,12 +50,6 @@ impl From<CommittedDataRpcError> for ErrorObjectOwned {
         Self::owned(code, error.to_string(), None::<()>)
     }
 }
-
-pub use authorization::{import_message_hash, update_message_hash};
-use authorization::{validate_import_signatures, validate_signatures};
-pub use types::{
-    CommittedDataEntries, CommittedDataImport, CommittedDataImports, ImportAndSubmitResult, ImportSignature,
-};
 
 fn local_submission_ready(starknet: &Starknet) -> bool {
     starknet.committed_data_transaction_submission

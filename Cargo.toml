@@ -125,6 +125,8 @@ blockifier = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLL
   "node_api",
 ] }
 starknet_api = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLLO-0.14.2-RC.7-fix" }
+# Reuse the pinned execution fixture for real-node caught-syscall regression coverage.
+blockifier_test_utils = { git = "https://github.com/karnotxyz/sequencer", rev = "d5591c7a6867978d4531eae6e8e79c3babd90394" }
 cairo-lang-starknet-classes = "=2.17.0-rc.4"
 cairo-lang-utils = "=2.17.0-rc.4"
 casm-classes-v2 = { package = "cairo-lang-starknet-classes", version = "=2.17.0-rc.4" }

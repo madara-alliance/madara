@@ -5,14 +5,19 @@ mod node;
 
 use anyhow::{ensure, Context, Result};
 use blockifier::execution::syscalls::committed_data::{self, CommittedDataBatchProof, CommittedDataSet};
+use blockifier_test_utils::{
+    cairo_versions::{CairoVersion, RunnableCairo1},
+    contracts::FeatureContract,
+};
 use cairo_vm::types::layout_name::LayoutName;
 use generate_pie::{generate_pie, ChainConfig, OsHintsConfiguration, PieGenerationInput};
 use node::{rpc, Node};
 use serde_json::{json, Value};
 use starknet::{
     accounts::{Account, ExecutionEncoding, SingleOwnerAccount},
+    contract::{ContractFactory, UdcSelector},
     core::{
-        types::{BlockId, BlockTag, Call},
+        types::{contract::SierraClass, BlockId, BlockTag, Call},
         utils::get_selector_from_name,
     },
     providers::{jsonrpc::HttpTransport, JsonRpcClient},
@@ -68,7 +73,7 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
         .unwrap_or(2048);
     ensure!((1024..=committed_data::MAX_COMMITTED_DATA_VALUES).contains(&entries), "invalid acceptance dataset size");
     let values: Vec<_> =
-        (0..entries).map(|index| (Poseidon::hash(Felt::from(index), Felt::ONE), Felt::from(index + 10))).collect();
+        (0..entries).map(|index| (Poseidon::hash(&Felt::from(index), &Felt::ONE), Felt::from(index + 10))).collect();
     let tree = CommittedDataSet::new(values.clone())?;
     import(&source, &tree).await?;
     // Zero and each power of two form the maximal 252-branch path for key zero.
@@ -81,10 +86,31 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
     let deep = CommittedDataSet::new(deep_values)?;
     import(&source, &deep).await?;
     ensure!(deep.witness(Felt::ZERO).unwrap().siblings.len() == 252, "max-depth fixture drift");
+    // Use the same caught-error contract as Blockifier's VM/native parity regression. The
+    // fixture is compiled from the pinned Sequencer source, rather than copied stale bytecode.
+    let fixture = FeatureContract::TestContract(CairoVersion::Cairo1(RunnableCairo1::Casm));
+    let class: SierraClass = serde_json::from_str(&fixture.get_raw_sierra().context("Sierra fixture missing")?)?;
+    let class = Arc::new(class.flatten()?);
+    let compiled_hash =
+        fixture.get_compiled_class_hash(&starknet_api::contract_class::compiled_class_hash::HashVersion::V2).0;
+    let declared = account.declare_v3(class.clone(), compiled_hash).send().await?;
+    ensure!(
+        source.receipt(declared.transaction_hash).await?["execution_status"] == "SUCCEEDED",
+        "fixture declaration reverted"
+    );
+    let factory = ContractFactory::new_with_udc(class.class_hash(), &account, UdcSelector::Legacy);
+    let deployment = factory.deploy_v3(vec![Felt::ZERO, Felt::ZERO], Felt::from(1261), false);
+    let catcher = deployment.deployed_address();
+    let deployed = deployment.send().await?;
+    ensure!(
+        source.receipt(deployed.transaction_hash).await?["execution_status"] == "SUCCEEDED",
+        "fixture deployment reverted"
+    );
     let mut observations = Vec::new();
     let mut accepted = Vec::new();
     for (name, dataset, keys, batch, gas_limit) in [
         ("single", &tree, vec![values[0].0], false, SUCCESS_GAS_LIMIT),
+        ("caught_out_of_gas", &deep, vec![Felt::ZERO], true, 4_000_000),
         ("batch_100", &tree, values.iter().take(100).map(|entry| entry.0).collect(), true, SUCCESS_GAS_LIMIT),
         ("batch_150", &tree, values.iter().take(150).map(|entry| entry.0).collect(), true, SUCCESS_GAS_LIMIT),
         ("batch_1024", &tree, values.iter().take(1024).map(|entry| entry.0).collect(), true, SUCCESS_GAS_LIMIT),
@@ -92,7 +118,7 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
         ("depth_252", &deep, vec![Felt::ZERO], false, SUCCESS_GAS_LIMIT),
         ("depth_252_out_of_gas", &deep, vec![Felt::ZERO], false, OUT_OF_GAS_LIMIT),
     ] {
-        let (selector, calldata, scheduled_gas) = if batch {
+        let (mut selector, mut calldata, scheduled_gas) = if batch {
             let proof = CommittedDataBatchProof::from_dataset(dataset, &keys)?;
             let mut calldata = vec![dataset.root(), Felt::from(keys.len())];
             calldata.extend(&keys);
@@ -104,12 +130,16 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
                 committed_data::read_gas(dataset.witness(keys[0]).unwrap().siblings.len()),
             )
         };
+        let address = if name == "caught_out_of_gas" {
+            selector = "test_committed_data_catch";
+            // root, Span length, key, expect_error, three independent caught calls.
+            calldata = vec![dataset.root(), Felt::ONE, Felt::ZERO, Felt::ONE, Felt::from(3)];
+            catcher
+        } else {
+            Felt::from_hex(READ_ADDRESS)?
+        };
         let submitted = account
-            .execute_v3(vec![Call {
-                to: Felt::from_hex(READ_ADDRESS)?,
-                selector: get_selector_from_name(selector)?,
-                calldata,
-            }])
+            .execute_v3(vec![Call { to: address, selector: get_selector_from_name(selector)?, calldata }])
             .l1_gas(100_000)
             .l1_gas_price(1_000_000_000_000_000)
             .l1_data_gas(100_000)
@@ -166,6 +196,22 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
         let replicated = rpc(&replica.rpc, "starknet_traceTransaction", json!([hash])).await?;
         ensure!(original == replicated, "replicated historical trace differs");
     }
+    let legacy_reader = Node::start_with_data(Some(&source), false).await?;
+    for _ in 0..180 {
+        if rpc(&legacy_reader.rpc, "starknet_blockNumber", json!([]))
+            .await
+            .ok()
+            .and_then(|tip| tip.as_u64())
+            .is_some_and(|tip| tip >= target)
+        {
+            break;
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+    let legacy_tip = rpc(&legacy_reader.rpc, "starknet_blockNumber", json!([])).await?;
+    ensure!(legacy_tip.as_u64().is_some_and(|tip| tip >= target), "feature-disabled block sync stalled");
+    let legacy_receipt = rpc(&legacy_reader.rpc, "starknet_getTransactionReceipt", json!([accepted[0].0])).await?;
+    ensure!(legacy_receipt == observations[0]["receipt"], "feature-disabled reader receipt differs");
     let retained = &observations[0]["receipt"];
     source.restart_after_revert(retained["block_hash"].clone()).await?;
     ensure!(
@@ -190,7 +236,7 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
     ensure!(!witness.is_null(), "revert deleted immutable dataset");
     save(
         "summary",
-        &json!({"scenarios":observations.len(),"fullnode_traces_equal":true,"revert_and_restart":true,
+        &json!({"scenarios":observations.len(),"fullnode_traces_equal":true,"feature_disabled_reader_syncs":true,"revert_and_restart":true,
         "dataset_survives_revert":true,"snos_pies_valid":true,"proof_or_settlement_submitted":false}),
     )?;
     Ok(())

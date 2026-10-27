@@ -40,6 +40,12 @@ pub(super) async fn rpc(url: &str, method: &str, params: Value) -> Result<Value>
 
 impl Node {
     pub async fn start(upstream: Option<&Self>) -> Result<Self> {
+        Self::start_with_data(upstream, true).await
+    }
+
+    /// Feature-disabled reader exercises the unchanged block/bouncer protocol. This emulates
+    /// the legacy sync path; it is not evidence about an untested older executable.
+    pub async fn start_with_data(upstream: Option<&Self>, committed_data: bool) -> Result<Self> {
         let directory = tempfile::tempdir()?;
         let binary = PathBuf::from(
             std::env::var("MADARA_ORCHESTRATOR_MADARA_BINARY_PATH")
@@ -52,7 +58,6 @@ impl Node {
         let mut args: Vec<String> = [
             "--base-path",
             directory.path().to_str().unwrap(),
-            "--use-committed-data",
             "--l1-sync-disabled",
             "--otel-export-metrics",
             "false",
@@ -74,6 +79,9 @@ impl Node {
         .into_iter()
         .map(str::to_owned)
         .collect();
+        if committed_data {
+            args.push("--use-committed-data".into());
+        }
         match upstream {
             Some(upstream) => args.extend([
                 "--full".into(),
@@ -146,7 +154,7 @@ impl Node {
     pub async fn receipt(&self, hash: starknet_types_core::felt::Felt) -> Result<Value> {
         for _ in 0..120 {
             if let Ok(receipt) = rpc(&self.rpc, "starknet_getTransactionReceipt", json!([hash])).await {
-                if receipt.get("block_number").is_some() {
+                if receipt.get("block_hash").is_some_and(|hash| !hash.is_null()) {
                     return Ok(receipt);
                 }
             }
