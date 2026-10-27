@@ -363,7 +363,7 @@ impl SubmitTransaction for TransactionValidator {
         tx: mp_rpc::v0_10_2::BroadcastedTxn,
         dependencies: Vec<String>,
     ) -> Result<Felt, SubmitTransactionError> {
-        if !(1..=4).contains(&dependencies.len()) {
+        if !(1..=mp_gateway::committed_data::MAX_DATASETS_PER_TRANSACTION).contains(&dependencies.len()) {
             return Err(SubmitTransactionError::Internal(anyhow::anyhow!("Invalid dataset dependencies")));
         }
         let validator = Self {

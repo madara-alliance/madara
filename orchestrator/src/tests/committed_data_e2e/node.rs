@@ -63,6 +63,14 @@ impl Node {
             "--rpc-unsafe",
             "--feeder-gateway-enable",
             "--gateway-enable",
+            // SNOS needs the preceding block's Starknet state proof. The public default
+            // permits only latest-block proofs; this isolated prover fixture retains 128.
+            "--rpc-storage-proof-max-distance",
+            "128",
+            "--db-max-kept-snapshots",
+            "128",
+            "--db-snapshot-interval",
+            "1",
             "--rpc-port",
             &rpc_port.to_string(),
             "--rpc-admin-port",

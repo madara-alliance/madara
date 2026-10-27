@@ -174,6 +174,9 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
             .error_for_status()?
             .json()
             .await?;
+        // Preserve node-side evidence even if proving fails. A receipt alone does not
+        // establish that the accepted transaction can be replayed by SNOS.
+        save(&format!("{name}_node"), &json!({"receipt":receipt,"trace":trace,"bouncer_weights":weights}))?;
         let result = generate_pie(PieGenerationInput {
             rpc_url: source.rpc.clone(),
             committed_data_rpc_url: Some(source.feeder.clone()),
@@ -185,7 +188,8 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
             versioned_constants: None,
             public_keys: None,
         })
-        .await?;
+        .await
+        .with_context(|| format!("{name}: SNOS replay of Madara block {block}"))?;
         result.output.cairo_pie.run_validity_checks()?;
         let observation = json!({"case":name,"entries":dataset.entries().len(),"keys":keys.len(),
             "scheduled_special_call_gas_per_attempt":scheduled_gas,
