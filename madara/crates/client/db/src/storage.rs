@@ -270,7 +270,7 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
 /// Trait abstracting over the storage interface.
 pub trait MadaraStorageWrite: Send + Sync + 'static {
     /// Performs one bounded migration/pruning operation. Values remain permanently reconstructible.
-    fn maintain_committed_data_history(&self, _cutoff: Option<u64>, _head: u64) -> Result<bool> {
+    fn maintain_committed_data_history(&self, _cutoff: Option<u64>) -> Result<bool> {
         Ok(false)
     }
 

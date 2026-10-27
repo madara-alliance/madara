@@ -49,10 +49,7 @@ impl<D: crate::MadaraStorage> crate::MadaraBackend<D> {
         if self.config.committed_data_retention.proof_retention_secs.is_none() {
             return Ok(false);
         }
-        self.db.maintain_committed_data_history(
-            self.committed_data_proof_cutoff(),
-            self.chain_head_state().confirmed_tip.unwrap_or(0),
-        )
+        self.db.maintain_committed_data_history(self.committed_data_proof_cutoff())
     }
 }
 

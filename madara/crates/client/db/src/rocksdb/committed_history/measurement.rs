@@ -2,7 +2,7 @@
 use super::*;
 use crate::{MadaraBackend, MadaraBackendConfig, MadaraStorageRead, MadaraStorageWrite};
 use sha2::{Digest, Sha256};
-use std::time::Instant;
+use std::{collections::BTreeMap, time::Instant};
 
 fn parameter(name: &str, default: usize) -> usize {
     std::env::var(name).map(|s| s.parse().expect("integer benchmark parameter")).unwrap_or(default)
@@ -19,7 +19,7 @@ fn footprint(db: &RocksDBStorage) -> serde_json::Value {
     let mut buckets = BTreeMap::<String, (u64, u64)>::new();
     for row in db.inner.db.iterator_cf(&cf, IteratorMode::Start) {
         let (key, value) = row.unwrap();
-        let name = if key.starts_with(HISTORY) {
+        let name = if key.starts_with(HISTORY) || key.starts_with(archive::DICTIONARY) {
             "permanent_values"
         } else if key.starts_with(b"cdm/n/") {
             "proof_nodes"
@@ -76,6 +76,9 @@ fn committed_history_measure_storage_and_memory() {
     let updates = parameter("CD_MEASURE_UPDATES", 1024);
     let versions = parameter("CD_MEASURE_VERSIONS", 70);
     let retained = parameter("CD_MEASURE_RETAINED", 8);
+    let rolling_versions = parameter("CD_MEASURE_ROLLING_VERSIONS", 16);
+    let large_moves = std::env::var("CD_MEASURE_LARGE_MOVES").is_ok_and(|v| v == "true");
+    let runtime = tokio::runtime::Runtime::new().unwrap();
     let price_values = std::env::var("CD_MEASURE_PRICE_VALUES").is_ok_and(|value| value == "true");
     assert!(entries > 0 && entries <= MAX_COMMITTED_DATA_VALUES);
     assert!(updates > 0 && updates <= entries && retained > 0 && retained < versions && versions <= 1000);
@@ -91,7 +94,6 @@ fn committed_history_measure_storage_and_memory() {
     )
     .unwrap();
     let db = &backend.db;
-    assert!(db.maintain_history(None, 0).unwrap()); // Empty legacy scan.
     let baseline = footprint(db);
     let mut values: Vec<_> = (0..entries)
         .map(|key| (value(key, usize::MAX), if price_values { price(key, 0, None) } else { value(key, 0) }))
@@ -102,22 +104,44 @@ fn committed_history_measure_storage_and_memory() {
     db.write_committed_data_dataset(&tree, Some(0)).unwrap();
     let initial_ms = started.elapsed().as_secs_f64() * 1000.;
     drop(tree);
+    let namespace = mp_gateway::committed_data::CommittedDataUpdate {
+        application_id: Felt::ONE,
+        dataset_id: Felt::TWO,
+        base_root: None,
+    };
+    // Register the initial checkpoint through the same backend + outbox path as the private RPC.
+    runtime.block_on(backend.update_committed_data(namespace, root, values.clone())).unwrap();
+    let journal = runtime.block_on(backend.journal_committed_data(Some(namespace), root, values.clone())).unwrap();
+    db.mark_recovery_exported(&journal).unwrap(); // Simulated exporter ACK, never a Mongo durability claim.
     let initial = footprint(db);
     let mut roots = vec![root];
     let mut import_ms = Vec::new();
+    let mut journal_ms = Vec::new();
+    let mut acknowledged_ms = Vec::new();
     for tick in 1..=versions {
         let patch: Vec<_> = (0..updates)
             .map(|i| {
                 let key = (tick * updates + i) % entries;
-                values[key].1 = if price_values { price(key, tick, Some(values[key].1)) } else { value(key, tick) };
+                let previous = values[key].1;
+                values[key].1 =
+                    if price_values { price(key, tick, (!large_moves).then_some(previous)) } else { value(key, tick) };
+                assert_ne!(values[key].1, previous, "Every benchmark price must change");
                 values[key]
             })
             .collect();
         // Independent full construction is outside the timed incremental import, but within RSS.
         let next = CommittedDataSet::new(values.clone()).unwrap().root();
         let started = Instant::now();
-        db.patch_committed_data_dataset(root, next, patch, Some(tick as u64)).unwrap();
+        let update = mp_gateway::committed_data::CommittedDataUpdate { base_root: Some(root), ..namespace };
+        backend.chain_head_state.send_modify(|state| state.confirmed_tip = Some(tick as u64));
+        backend.check_recovery_capacity(Some(update), next, patch.len()).unwrap();
+        runtime.block_on(backend.update_committed_data(update, next, patch.clone())).unwrap();
         import_ms.push(started.elapsed().as_secs_f64() * 1000.);
+        let journal_started = Instant::now();
+        let journal = runtime.block_on(backend.journal_committed_data(Some(update), next, patch)).unwrap();
+        journal_ms.push(journal_started.elapsed().as_secs_f64() * 1000.);
+        acknowledged_ms.push(started.elapsed().as_secs_f64() * 1000.);
+        db.mark_recovery_exported(&journal).unwrap();
         root = next;
         roots.push(root);
     }
@@ -132,7 +156,7 @@ fn committed_history_measure_storage_and_memory() {
     let started = Instant::now();
     let cutoff = (versions - retained + 2) as u64;
     let mut pruned = 0;
-    while db.maintain_history(Some(cutoff), 0).unwrap() {
+    while db.maintain_history(Some(cutoff)).unwrap() {
         pruned += 1;
     }
     let prune_ms = started.elapsed().as_secs_f64() * 1000.;
@@ -150,7 +174,7 @@ fn committed_history_measure_storage_and_memory() {
     let after_compaction = footprint(db);
     let latest = db.get_committed_data_batch(root, &keys).unwrap();
     let mut remaining = 0;
-    while db.maintain_history(Some(u64::MAX), 0).unwrap() {
+    while db.maintain_history(Some(u64::MAX)).unwrap() {
         remaining += 1;
     }
     assert_eq!(remaining, retained);
@@ -163,14 +187,52 @@ fn committed_history_measure_storage_and_memory() {
         before["logical_rows_and_bytes"]["permanent_values"],
         values_only["logical_rows_and_bytes"]["permanent_values"]
     );
+    // Separately measure repeated imports while reclaiming obsolete proof roots every tick.
+    // Serialize maintenance after import: cycle time includes its entire writer-lock cost.
+    db.write_committed_data_dataset(&CommittedDataSet::new(values.clone()).unwrap(), Some(versions as u64)).unwrap();
+    let mut rolling_ack_ms = Vec::new();
+    let mut rolling_cycle_ms = Vec::new();
+    for tick in versions + 1..=versions + rolling_versions {
+        let patch: Vec<_> = (0..updates)
+            .map(|i| {
+                let key = (tick * updates + i) % entries;
+                let previous = values[key].1;
+                values[key].1 =
+                    if price_values { price(key, tick, (!large_moves).then_some(previous)) } else { value(key, tick) };
+                assert_ne!(values[key].1, previous);
+                values[key]
+            })
+            .collect();
+        let next = CommittedDataSet::new(values.clone()).unwrap().root();
+        let update = mp_gateway::committed_data::CommittedDataUpdate { base_root: Some(root), ..namespace };
+        backend.chain_head_state.send_modify(|state| state.confirmed_tip = Some(tick as u64));
+        let started = Instant::now();
+        backend.check_recovery_capacity(Some(update), next, patch.len()).unwrap();
+        runtime.block_on(backend.update_committed_data(update, next, patch.clone())).unwrap();
+        let journal = runtime.block_on(backend.journal_committed_data(Some(update), next, patch)).unwrap();
+        rolling_ack_ms.push(started.elapsed().as_secs_f64() * 1000.);
+        db.mark_recovery_exported(&journal).unwrap();
+        while db.maintain_history(Some((tick + 2 - retained) as u64)).unwrap() {}
+        rolling_cycle_ms.push(started.elapsed().as_secs_f64() * 1000.);
+        root = next;
+    }
+    assert_eq!(
+        db.get_committed_data_batch(root, &keys).unwrap(),
+        blockifier::execution::syscalls::committed_data::CommittedDataBatchProof::from_dataset(
+            &CommittedDataSet::new(values).unwrap(),
+            &keys
+        )
+        .unwrap()
+    );
     let report = serde_json::json!({"entries": entries, "updates_per_version": updates, "versions": versions + 1,
-        "retained_versions": retained, "price_values": price_values, "cache_budget_bytes": cache_bytes,
+        "retained_versions": retained, "price_values": price_values, "large_moves": large_moves, "all_submitted_values_changed": true, "cache_budget_bytes": cache_bytes,
         "baseline": baseline, "initial": initial, "before_prune_uncompacted": before_compaction,
         "before_prune": before, "after_delete": after_delete, "after_compaction": after_compaction,
         "values_only_after_compaction": values_only,
+        "rolling_ack_ms": rolling_ack_ms, "rolling_cycle_ms": rolling_cycle_ms, "journal_ms": journal_ms, "acknowledged_ms": acknowledged_ms, "final_peak_rss_kib": resident_kib("VmHWM:"),
         "initial_import_ms": initial_ms, "incremental_import_ms": import_ms, "prune_total_ms": prune_ms,
         "retained_batch_ms": warm_ms, "reconstructed_batch_ms": cold_ms,
-        "limitations": "Synthetic single-process functional workload. Price mode uses captured price-width deciles and synthetic bounded movements, not captured transactions. RSS includes independent reference construction and allocator retention. Live SST bytes exclude WAL and obsolete files. No throughput or production capacity claim."});
+        "limitations": "Synthetic single-process functional workload. Price mode uses captured price-width deciles and synthetic bounded movements, not captured transactions. RSS includes independent reference construction and allocator retention. Live SST bytes exclude WAL and obsolete files. Timed ACK includes backend import, namespace fsync and recovery journal fsync; excludes RPC parsing/signatures/network/account transaction validation. Export ACK is simulated, no Mongo durability measurement. Rolling cycle also includes pruning. No production capacity claim."});
     println!("{}", serde_json::to_string_pretty(&report).unwrap());
     if let Ok(path) = std::env::var("CD_MEASURE_REPORT") {
         std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();

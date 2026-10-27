@@ -25,7 +25,7 @@ const KEY_BYTES: usize = PREFIX.len() + FELT_BYTES + 1 + 4;
 pub(super) const METADATA_LEVEL: u8 = u8::MAX;
 pub(super) const METADATA_BYTES: usize = 13;
 
-/// Root metadata retains its original key layout: root, kind 255, and offset zero.
+/// Root metadata key: root, kind 255, and offset zero.
 pub(super) fn metadata_key(root: Felt, kind: u8, page: u32) -> Vec<u8> {
     let mut key = PREFIX.to_vec();
     key.extend_from_slice(&root.to_bytes_be());
@@ -381,9 +381,9 @@ impl RocksDBStorage {
         metadata.extend(checkpoint.unwrap_or(0).to_be_bytes());
         metadata.extend(id.to_be_bytes());
         let mut batch = WriteBatch::default();
-        self.stage_value_history(&mut batch, root, base, &entries, &mut tree, (id, count))?;
+        self.stage_value_history(&mut batch, root, base, &mut tree, (id, count))?;
         let old_id = old_metadata.as_ref().map(|b| persistent_id(b)).transpose()?.filter(|id| *id != 0);
-        self.stage_root_reference(&mut batch, root, old_id, id, first_id, &tree.nodes)?;
+        self.stage_root_reference(&mut batch, old_id, id, first_id, &tree.nodes)?;
         self.stage_root_use(&mut batch, root, last_used)?;
         batch.put_cf(&cf, NEXT_KEY, tree.next_id().to_be_bytes());
         batch.put_cf(&cf, metadata_key(root, METADATA_LEVEL, 0), metadata);

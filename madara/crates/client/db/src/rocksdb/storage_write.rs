@@ -4,8 +4,8 @@
 use super::*;
 
 impl MadaraStorageWrite for RocksDBStorage {
-    fn maintain_committed_data_history(&self, cutoff: Option<u64>, head: u64) -> Result<bool> {
-        self.maintain_history(cutoff, head)
+    fn maintain_committed_data_history(&self, cutoff: Option<u64>) -> Result<bool> {
+        self.maintain_history(cutoff)
     }
 
     fn configure_committed_data(

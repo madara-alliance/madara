@@ -2,30 +2,20 @@
 //! Reference counts count incoming node edges plus retained root pointers, never historical values.
 use super::proof_references::References;
 use super::{committed_data::*, meta, rocksdb_snapshot::SnapshotWithDBArc, *};
-use crate::{
-    committed_data_recovery::{digest, RecoveryRecord},
-    persistent_committed_data::{node_key, Node, Tree},
-};
+use crate::persistent_committed_data::Node;
 use blockifier::execution::syscalls::committed_data::{CommittedDataSet, MAX_COMMITTED_DATA_VALUES};
 use rocksdb::WriteBatch;
-use std::collections::BTreeMap;
+mod archive;
+mod codec;
+use archive::{history_chain, reconstruct};
+#[cfg(test)]
+use archive::{ValueHistory, HISTORY};
 
-const HISTORY: &[u8] = b"cdh/v1/";
-const HISTORY_HASH: &[u8] = b"cdh/hash/";
-const REGISTERED: &[u8] = b"cdh/registered/";
 const USED: &[u8] = b"cdh/used/";
 const AGE: &[u8] = b"cdh/age/";
-const MIGRATION: &[u8] = b"cdh/migration";
 // Bounds cold replay work even when many updates occur in the same block.
 const MAX_DELTAS: u32 = 64;
 
-#[derive(serde::Serialize, serde::Deserialize)]
-pub(super) struct ValueHistory {
-    base: Option<Felt>,
-    depth: u32,
-    count: u32,
-    record: RecoveryRecord,
-}
 fn named(prefix: &[u8], suffix: &[u8]) -> Vec<u8> {
     [prefix, suffix].concat()
 }
@@ -57,117 +47,22 @@ pub(super) fn with_reconstructed<T>(
     let tree = reconstruct(snapshot, root)?;
     use_tree(&tree)
 }
-fn read_history(snapshot: &SnapshotWithDBArc, root: Felt) -> Result<ValueHistory> {
-    let cf = snapshot.db.get_column(meta::META_COLUMN);
-    let bytes = snapshot.get_pinned_cf(&cf, root_key(HISTORY, root))?.context("Missing historical values")?;
-    let hash = snapshot.get_pinned_cf(&cf, root_key(HISTORY_HASH, root))?.context("Missing historical checksum")?;
-    anyhow::ensure!(hash.as_ref() == digest(&bytes).as_bytes(), "Historical archive checksum mismatch");
-    let history: ValueHistory = deserialize(bytes)?;
-    anyhow::ensure!(history.record.manifest.root == root, "Historical root identity mismatch");
-    anyhow::ensure!((1..=MAX_COMMITTED_DATA_VALUES).contains(&(history.count as usize)), "Invalid historical count");
-    history.record.manifest.validate()?;
-    Ok(history)
-}
-
-/// Each archive was constructed from a root-verified import and committed with its checksum.
-/// Verify all immutable ancestors before GC, without rebuilding every old Merkle tree.
-fn history_chain(snapshot: &SnapshotWithDBArc, root: Felt) -> Result<(Vec<Felt>, u32)> {
-    let mut next = Some(root);
-    let mut records = Vec::new();
-    let mut expected_depth = None;
-    let mut count = 0;
-    while let Some(current) = next {
-        anyhow::ensure!(records.len() <= MAX_DELTAS as usize, "Historical value chain exceeds bound");
-        let history = read_history(snapshot, current)?;
-        if records.is_empty() {
-            count = history.count;
-        }
-        anyhow::ensure!(
-            history.depth <= MAX_DELTAS && expected_depth.is_none_or(|d| d == history.depth),
-            "Invalid historical depth"
-        );
-        anyhow::ensure!(history.base.is_some() == (history.depth > 0), "Invalid historical base");
-        expected_depth = history.depth.checked_sub(1);
-        next = history.base;
-        records.push(current);
-    }
-    Ok((records, count))
-}
-fn reconstruct(snapshot: &SnapshotWithDBArc, root: Felt) -> Result<CommittedDataSet> {
-    let (records, count) = history_chain(snapshot, root)?;
-    let mut values = BTreeMap::new();
-    for current in records.into_iter().rev() {
-        values.extend(read_history(snapshot, current)?.record.decode()?);
-        anyhow::ensure!(values.len() <= MAX_COMMITTED_DATA_VALUES, "Historical dataset exceeds bound");
-    }
-    anyhow::ensure!(values.len() == count as usize, "Historical count mismatch");
-    let tree = CommittedDataSet::new(values.into_iter().collect())?;
-    anyhow::ensure!(tree.root() == root, "Reconstructed historical root mismatch");
-    Ok(tree)
-}
 
 impl RocksDBStorage {
-    /// Called with the import lock held. Returns true when the old pointer had a root reference.
-    pub(super) fn history_registered(&self, root: Felt) -> Result<bool> {
-        Ok(self.inner.db.get_cf(&self.inner.get_column(meta::META_COLUMN), root_key(REGISTERED, root))?.is_some())
-    }
-    /// Archive submitted deltas, with periodic full checkpoints bounding reconstruction work.
-    pub(super) fn stage_value_history<F: FnMut(u64) -> Result<Option<Vec<u8>>>>(
-        &self,
-        batch: &mut WriteBatch,
-        root: Felt,
-        base: Option<Felt>,
-        entries: &[(Felt, Felt)],
-        tree: &mut Tree<F>,
-        tree_root: (u64, u32),
-    ) -> Result<()> {
-        let (id, count) = tree_root;
-        let cf = self.inner.get_column(meta::META_COLUMN);
-        if self.inner.db.get_cf(&cf, root_key(HISTORY, root))?.is_some() {
-            return Ok(());
-        }
-        let parent = base
-            .filter(|base| *base != root)
-            .map(|base| -> Result<Option<ValueHistory>> {
-                if self.inner.db.get_cf(&cf, root_key(HISTORY, base))?.is_none() {
-                    return Ok(None);
-                }
-                Ok(Some(read_history(&SnapshotWithDBArc::new(Arc::clone(&self.inner)), base)?))
-            })
-            .transpose()?
-            .flatten();
-        let (base, depth, values) = if let Some(parent) = parent.filter(|p| p.depth < MAX_DELTAS) {
-            (base, parent.depth + 1, entries.to_vec())
-        } else {
-            let mut values = Vec::with_capacity(count as usize);
-            tree.page(id, 0, count, &mut values)?;
-            (None, 0, values)
-        };
-        // This is an independent local value archive, not the temporary Mongo export record.
-        let history =
-            ValueHistory { base, depth, count, record: RecoveryRecord::encode(Felt::ZERO, None, root, None, values)? };
-        let bytes = serialize(&history)?;
-        batch.put_cf(&cf, root_key(HISTORY_HASH, root), digest(&bytes));
-        batch.put_cf(&cf, root_key(HISTORY, root), bytes);
-        Ok(())
-    }
     pub(super) fn stage_root_reference(
         &self,
         batch: &mut WriteBatch,
-        root: Felt,
         old: Option<u64>,
         id: u64,
         first: u64,
         nodes: &[Node],
     ) -> Result<()> {
-        let registered = self.history_registered(root)?;
         let mut refs = References::new(&self.inner, first, nodes);
         refs.add(id)?;
-        if let Some(old) = old.filter(|_| registered) {
+        if let Some(old) = old {
             refs.remove(old)?;
         }
         refs.write(batch);
-        batch.put_cf(&self.inner.get_column(meta::META_COLUMN), root_key(REGISTERED, root), []);
         Ok(())
     }
     pub(super) fn note_root_use(&self, root: Felt, block: u64) -> Result<()> {
@@ -203,47 +98,11 @@ impl RocksDBStorage {
 }
 
 impl RocksDBStorage {
-    /// One root per call bounds migration/pruning work and lets the service check cancellation.
-    /// Legacy roots are all adopted before any refcounts can be used for deletion.
-    pub(super) fn maintain_history(&self, cutoff: Option<u64>, observed_head: u64) -> Result<bool> {
+    /// One root per call lets the maintenance service check cancellation between roots.
+    pub(super) fn maintain_history(&self, cutoff: Option<u64>) -> Result<bool> {
         let cache =
             self.inner.committed_data_write.lock().map_err(|_| anyhow::anyhow!("Committed-data lock poisoned"))?;
         let cf = self.inner.get_column(meta::META_COLUMN);
-        let cursor = self.inner.db.get_cf(&cf, MIGRATION)?;
-        if cursor.as_deref() != Some(&[2]) {
-            let after = cursor
-                .as_ref()
-                .map(|bytes| -> Result<Felt> {
-                    anyhow::ensure!(bytes.len() == 33 && bytes[0] == 1, "Invalid history migration cursor");
-                    Ok(Felt::from_bytes_be(&bytes[1..].try_into()?))
-                })
-                .transpose()?;
-            let mut batch = WriteBatch::default();
-            if let Some(root) = self.read_committed_data_roots(after)?.first().copied() {
-                let metadata = self
-                    .inner
-                    .db
-                    .get_cf(&cf, metadata_key(root, METADATA_LEVEL, 0))?
-                    .context("Missing migration root")?;
-                let id = persistent_id(&metadata)?;
-                if !self.history_registered(root)? {
-                    anyhow::ensure!(id != 0, "Legacy root cannot have a cold pointer");
-                    let mut tree = Tree::new(u64::MAX, MAX_COMMITTED_DATA_VALUES as u32, |id| {
-                        Ok(self.inner.db.get_cf(&cf, node_key(id))?)
-                    });
-                    tree.check_root(id, root, count(&metadata)? as u32)?;
-                    self.stage_value_history(&mut batch, root, None, &[], &mut tree, (id, count(&metadata)? as u32))?;
-                    self.stage_root_reference(&mut batch, root, None, id, u64::MAX, &[])?;
-                }
-                // Unknown historical usage is conservatively retained from this observed head.
-                self.stage_root_use(&mut batch, root, observed_head)?;
-                batch.put_cf(&cf, MIGRATION, [&[1], root.to_bytes_be().as_slice()].concat());
-            } else {
-                batch.put_cf(&cf, MIGRATION, [2]);
-            }
-            self.inner.db.write_opt(batch, &sync_options())?;
-            return Ok(true);
-        }
         let Some(cutoff) = cutoff else { return Ok(false) };
         let candidate =
             self.inner.db.iterator_cf(&cf, IteratorMode::From(AGE, rocksdb::Direction::Forward)).next().transpose()?;
@@ -280,14 +139,15 @@ impl RocksDBStorage {
         if id != 0 {
             let mut refs = References::new(&self.inner, u64::MAX, &[]);
             refs.remove(id)?;
+            for &deleted in refs.deleted() {
+                cache.remove(deleted);
+            }
             refs.write(&mut batch);
             metadata[METADATA_BYTES..].copy_from_slice(&0u64.to_be_bytes());
             batch.put_cf(&cf, metadata_key(root, METADATA_LEVEL, 0), metadata);
         }
         batch.delete_cf(&cf, key);
         self.inner.db.write_opt(batch, &sync_options())?;
-        // A cached node must not hide a missing/corrupt durable node after reclamation.
-        cache.clear();
         Ok(true)
     }
 

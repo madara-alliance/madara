@@ -43,8 +43,8 @@ impl NodeCache {
     fn disabled() -> Self {
         Self(LruCache::unbounded(), 0, 0, false)
     }
-    pub(crate) fn clear(&mut self) {
-        self.0.clear();
+    pub(crate) fn remove(&mut self, id: u64) {
+        self.0.pop(&id);
     }
     fn put(&mut self, id: u64, node: Node, checked: bool) {
         if self.3 {
@@ -152,14 +152,24 @@ pub(crate) struct Tree<F> {
     pub(crate) nodes: Vec<Node>,
     cache: NodeCache,
     replaced: Vec<u64>,
+    /// Changed existing leaves, in key order; consumed by the permanent value archive.
+    pub(crate) changes: Vec<(Felt, Felt, Felt)>,
     limit: u32,
 }
 impl<F: FnMut(u64) -> Result<Option<Vec<u8>>>> Tree<F> {
     pub(crate) fn new(first_id: u64, limit: u32, read: F) -> Self {
-        Self { read, first_id, nodes: Vec::new(), cache: NodeCache::disabled(), replaced: Vec::new(), limit }
+        Self {
+            read,
+            first_id,
+            nodes: Vec::new(),
+            cache: NodeCache::disabled(),
+            replaced: Vec::new(),
+            changes: Vec::new(),
+            limit,
+        }
     }
     pub(crate) fn with_cache(first_id: u64, limit: u32, read: F, cache: NodeCache) -> Self {
-        Self { read, first_id, nodes: Vec::new(), cache, replaced: Vec::new(), limit }
+        Self { read, first_id, nodes: Vec::new(), cache, replaced: Vec::new(), changes: Vec::new(), limit }
     }
     pub(crate) fn into_read_cache(self) -> NodeCache {
         self.cache
@@ -275,6 +285,7 @@ impl<F: FnMut(u64) -> Result<Option<Vec<u8>>>> Tree<F> {
                 return Ok(id);
             }
             self.replaced.push(id);
+            self.changes.push((first, value, patch[0].1));
             return self.push(Node::new_leaf(first, patch[0].1));
         }
         let split = patch.partition_point(|e| !key_bit(e.0, bit as u8));

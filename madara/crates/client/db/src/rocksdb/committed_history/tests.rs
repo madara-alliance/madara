@@ -1,4 +1,5 @@
 use super::*;
+use crate::persistent_committed_data::{node_key, Tree};
 use crate::{MadaraBackend, MadaraBackendConfig, MadaraStorageRead, MadaraStorageWrite};
 use blockifier::execution::syscalls::committed_data::CommittedDataBatchProof;
 
@@ -34,7 +35,7 @@ fn rows(db: &RocksDBStorage, prefix: &[u8]) -> Vec<StoredRow> {
 }
 fn drain(db: &RocksDBStorage, cutoff: Option<u64>) {
     for _ in 0..1000 {
-        if !db.maintain_history(cutoff, 0).unwrap() {
+        if !db.maintain_history(cutoff).unwrap() {
             return;
         }
     }
@@ -75,10 +76,10 @@ fn committed_history_prunes_only_old_references_and_reopens_cold_values() {
             .unwrap();
         drain(db, None);
         let before = rows(db, b"cdm/n/").len();
-        assert!(!db.maintain_history(Some(11), 0).unwrap(), "cutoff is exclusive");
+        assert!(!db.maintain_history(Some(11)).unwrap(), "cutoff is exclusive");
         let snapshot = SnapshotWithDBArc::new(Arc::clone(&db.inner));
         let old_id = pointer(db, first.root());
-        assert!(db.maintain_history(Some(12), 0).unwrap());
+        assert!(db.maintain_history(Some(12)).unwrap());
         let cf = db.inner.get_column(meta::META_COLUMN);
         let mut concurrent =
             Tree::new(u64::MAX, MAX_COMMITTED_DATA_VALUES as u32, |id| Ok(snapshot.get_cf(&cf, node_key(id))?));
@@ -95,8 +96,8 @@ fn committed_history_prunes_only_old_references_and_reopens_cold_values() {
         assert_eq!(rows(db, b"cdm/n/").len(), after, "Cold reads do not repopulate proof nodes");
         // Retention follows execution height, including an old root used in a new block.
         backend.committed_data_provider_at(100).value(second.root(), Felt::ZERO).unwrap();
-        assert!(!db.maintain_history(Some(100), 0).unwrap());
-        assert!(db.maintain_history(Some(101), 0).unwrap());
+        assert!(!db.maintain_history(Some(100)).unwrap());
+        assert!(db.maintain_history(Some(101)).unwrap());
         assert!(rows(db, b"cdm/n/").is_empty());
         assert!(rows(db, b"cdh/ref/").is_empty());
     }
@@ -155,40 +156,24 @@ fn committed_history_checkpoints_bound_replay_without_expiring_values() {
 }
 
 #[test]
-fn committed_history_legacy_migration_resumes_and_corruption_blocks_deletion() {
+fn committed_history_archive_corruption_blocks_deletion() {
     let dir = tempfile::tempdir().unwrap();
     let datasets = [dataset(10), dataset(20), dataset(30)];
-    {
-        let backend = open(dir.path());
-        let db = &backend.db;
-        for tree in &datasets {
-            db.write_committed_data_dataset(tree, Some(1)).unwrap();
-        }
-        // A pre-retention DB has only node/root records. Preserve those exact records.
-        let cf = db.inner.get_column(meta::META_COLUMN);
-        let mut batch = WriteBatch::default();
-        for (key, _) in rows(db, b"cdh/") {
-            batch.delete_cf(&cf, key);
-        }
-        db.inner.db.write(batch).unwrap();
-        assert!(db.maintain_history(Some(100), 0).unwrap());
-        assert_eq!(rows(db, REGISTERED).len(), 1);
-        assert!(datasets.iter().all(|tree| pointer(db, tree.root()) != 0));
-    }
     let backend = open(dir.path());
     let db = &backend.db;
-    drain(db, None);
-    assert_eq!(rows(db, REGISTERED).len(), 3);
+    for tree in &datasets {
+        db.write_committed_data_dataset(tree, Some(1)).unwrap();
+    }
     let cf = db.inner.get_column(meta::META_COLUMN);
     // The lexically first root is the first candidate: every root has the same age.
     let root = datasets.iter().map(CommittedDataSet::root).min().unwrap();
     let key = root_key(HISTORY, root);
     let original = db.inner.db.get_cf(&cf, &key).unwrap().unwrap();
     let mut history: ValueHistory = deserialize(&original).unwrap();
-    history.record.chunks[0][0] ^= 1;
+    history.record.data[0] ^= 1;
     db.inner.db.put_cf(&cf, &key, serialize(&history).unwrap()).unwrap();
     let nodes = rows(db, b"cdm/n/");
-    assert!(db.maintain_history(Some(100), 0).is_err());
+    assert!(db.maintain_history(Some(100)).is_err());
     assert_eq!(rows(db, b"cdm/n/"), nodes);
     assert_ne!(pointer(db, root), 0);
     db.inner.db.put_cf(&cf, key, original).unwrap();
@@ -218,7 +203,6 @@ fn committed_history_no_settlement_stalls_and_boundary_controls_pruning() {
     let backend =
         MadaraBackend::open_rocksdb(dir.path(), chain.into(), config, RocksDBConfig::default(), Default::default())
             .unwrap();
-    drain(&backend.db, None); // Finish empty migration before observing newer blocks.
     let tree = dataset(10);
     backend.db.write_committed_data_dataset(&tree, Some(97)).unwrap();
     backend.chain_head_state.send_modify(|state| state.confirmed_tip = Some(100));
@@ -262,7 +246,7 @@ fn committed_history_concurrent_imports_pruning_and_reads_preserve_roots() {
         let pruner = scope.spawn(|| {
             start.wait();
             while !done.load(std::sync::atomic::Ordering::Acquire) {
-                backend.db.maintain_history(Some(u64::MAX), 0).unwrap();
+                backend.db.maintain_history(Some(u64::MAX)).unwrap();
                 std::thread::yield_now();
             }
         });
@@ -288,5 +272,52 @@ fn committed_history_concurrent_imports_pruning_and_reads_preserve_roots() {
     assert!(rows(&backend.db, b"cdm/n/").is_empty());
     for value in 10..30 {
         assert_dataset(&backend.db, &dataset(value));
+    }
+}
+
+#[test]
+fn committed_history_dictionary_key_additions_forks_and_corruption() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = dataset(10);
+    let mut added = first.entries().to_vec();
+    added.push((Felt::MAX, Felt::MAX));
+    let second = CommittedDataSet::new(added).unwrap();
+    let fork = dataset(999);
+    {
+        let backend = open(dir.path());
+        let db = &backend.db;
+        db.write_committed_data_dataset(&first, None).unwrap();
+        db.patch_committed_data_dataset(first.root(), second.root(), vec![(Felt::MAX, Felt::MAX)], Some(1)).unwrap();
+        db.patch_committed_data_dataset(first.root(), fork.root(), vec![(Felt::ZERO, Felt::from(999))], Some(2))
+            .unwrap();
+        assert_eq!(rows(db, archive::DICTIONARY).len(), 2, "Fork reuses original dictionary");
+        let cf = db.inner.get_column(meta::META_COLUMN);
+        let (key, bytes) = rows(db, archive::DICTIONARY).remove(0);
+        let mut corrupt = bytes.to_vec();
+        corrupt[0] ^= 1;
+        db.inner.db.put_cf(&cf, &key, &corrupt).unwrap();
+        // Both cold reconstruction and reclamation authenticate dictionary bytes.
+        let snapshot = SnapshotWithDBArc::new(Arc::clone(&db.inner));
+        assert!([first.root(), second.root()].into_iter().any(|root| reconstruct(&snapshot, root).is_err()));
+        drain(db, None);
+        let mut rejected = false;
+        for _ in 0..3 {
+            if db.maintain_history(Some(u64::MAX)).is_err() {
+                rejected = true;
+                break;
+            }
+        }
+        assert!(rejected);
+        db.inner.db.put_cf(&cf, key, bytes).unwrap();
+        drain(db, Some(u64::MAX));
+    }
+    let backend = open(dir.path());
+    for expected in [&first, &second, &fork] {
+        let keys: Vec<_> = expected.entries().iter().map(|(key, _)| *key).collect();
+        assert_eq!(
+            backend.db.get_committed_data_batch(expected.root(), &keys).unwrap(),
+            CommittedDataBatchProof::from_dataset(expected, &keys).unwrap()
+        );
+        assert_eq!(backend.db.get_committed_data_page(expected.root(), 0).unwrap().unwrap().1, expected.entries());
     }
 }

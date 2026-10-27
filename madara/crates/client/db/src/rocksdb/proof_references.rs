@@ -5,8 +5,7 @@ use rocksdb::WriteBatch;
 use std::collections::HashMap;
 const REFERENCES: &[u8] = b"cdh/ref/";
 
-// Refcounts are staged in the same atomic batch as nodes and root metadata. Missing counts mean
-// legacy nodes: adopt each edge exactly once, recursively, before admitting its first reference.
+// Refcounts are staged atomically with nodes and root metadata. Missing durable counts are corruption.
 #[derive(Clone, Copy)]
 struct Reference {
     count: u64,
@@ -55,6 +54,10 @@ impl<'a> References<'a> {
         if let Some(value) = self.changes.get(&id) {
             return Ok(Some(*value));
         }
+        // Allocator IDs in this batch cannot already have durable references.
+        if id.checked_sub(self.first).is_some_and(|offset| offset < self.new_nodes.len() as u64) {
+            return Ok(None);
+        }
         self.db
             .db
             .get_cf(&self.db.get_column(meta::META_COLUMN), [REFERENCES, &id.to_be_bytes()].concat())?
@@ -62,17 +65,10 @@ impl<'a> References<'a> {
             .transpose()
     }
     fn node(&self, id: u64) -> Result<Node> {
-        if let Some(node) = id.checked_sub(self.first).and_then(|offset| self.new_nodes.get(offset as usize)) {
-            return Ok(*node);
-        }
-        Node::decode(
-            id,
-            &self
-                .db
-                .db
-                .get_cf(&self.db.get_column(meta::META_COLUMN), node_key(id))?
-                .context("Missing referenced proof node")?,
-        )
+        id.checked_sub(self.first)
+            .and_then(|offset| self.new_nodes.get(offset as usize))
+            .copied()
+            .context("Missing durable proof reference")
     }
     pub(super) fn add(&mut self, id: u64) -> Result<()> {
         let mut reference = match self.reference(id)? {
@@ -106,6 +102,9 @@ impl<'a> References<'a> {
             }
         }
         Ok(())
+    }
+    pub(super) fn deleted(&self) -> &[u64] {
+        &self.deleted
     }
     pub(super) fn write(self, batch: &mut WriteBatch) {
         let cf = self.db.get_column(meta::META_COLUMN);

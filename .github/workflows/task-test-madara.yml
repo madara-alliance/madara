@@ -30,6 +30,14 @@ on:
         description: "Use synthetic price values matching captured price-width deciles"
         default: false
         type: boolean
+      large-moves:
+        description: "Independently redraw every price each tick instead of small price movements"
+        default: false
+        type: boolean
+      rolling-versions:
+        description: "Additional updates with pruning active every tick"
+        default: "16"
+        type: string
   workflow_call:
     inputs:
       proptest-cases:
@@ -203,6 +211,8 @@ jobs:
           CD_MEASURE_VERSIONS: ${{ inputs.versions }}
           CD_MEASURE_RETAINED: ${{ inputs.retained }}
           CD_MEASURE_PRICE_VALUES: ${{ inputs.price-values }}
+          CD_MEASURE_LARGE_MOVES: ${{ inputs.large-moves }}
+          CD_MEASURE_ROLLING_VERSIONS: ${{ inputs.rolling-versions }}
           CD_MEASURE_REPORT: ${{ github.workspace }}/retention-measurement.json
         run: |
           cargo nextest run --archive-file target/nextest/madara-tests.tar.zst \
