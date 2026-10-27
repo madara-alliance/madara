@@ -363,6 +363,9 @@ impl RocksDBStorage {
         let (actual_root, count) = tree.root(id)?;
         let profile_tree = profile_start.elapsed().as_secs_f64() * 1000.;
         anyhow::ensure!(actual_root == root, "Committed-data root does not match updated dataset");
+        // A full retry can reuse an existing tree, but must still supply every entry. Otherwise
+        // an unchanged subset could pass the root check through upsert semantics.
+        anyhow::ensure!(!full_import || count as usize == entries.len(), "Incomplete committed-data full import");
         // Retry/fork from an older base may reproduce a root already present. Authenticate the
         // request first, then discard its staged nodes instead of duplicating that version.
         // Full imports retain their explicit repair path, including damaged descendants.

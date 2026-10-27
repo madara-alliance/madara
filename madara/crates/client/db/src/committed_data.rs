@@ -128,14 +128,10 @@ impl<D: MadaraStorage> MadaraBackend<D> {
                 backend.db.patch_committed_data_dataset(base_root, root, entries, imported_after_block)?;
                 return backend.db.write_committed_data_version(version, false);
             }
-            // The same constructor is used by full imports and clients; no new hash format.
-            let profile_start = std::time::Instant::now();
-            let tree = Arc::new(CommittedDataSet::new(entries)?);
-            eprintln!("CD_PROFILE canonical_tree ms={}", profile_start.elapsed().as_secs_f64() * 1000.);
-            anyhow::ensure!(tree.root() == root, "Committed-data root does not match updated dataset");
-            backend.db.write_committed_data_dataset(&tree, imported_after_block)?;
-            backend.db.write_committed_data_version(version, update.base_root.is_none())?;
-            backend.committed_data_cache.insert(tree, imported_after_block.unwrap_or(0))
+            // ponytail: authenticate initialization in the persistent tree instead of hashing
+            // the entire map twice. Snapshot imports still populate their separate read cache.
+            backend.db.import_committed_data_values(root, entries, imported_after_block)?;
+            backend.db.write_committed_data_version(version, true)
         })
         .await?
     }
