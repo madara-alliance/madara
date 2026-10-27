@@ -34,6 +34,10 @@ on:
         description: "Independently redraw every price each tick instead of small price movements"
         default: false
         type: boolean
+      signed-rpc:
+        description: "Also measure signed JSON RPC imports with pruning"
+        default: false
+        type: boolean
       rolling-versions:
         description: "Additional updates with pruning active every tick"
         default: "16"
@@ -218,8 +222,21 @@ jobs:
           cargo nextest run --archive-file target/nextest/madara-tests.tar.zst \
             --workspace-remap "$GITHUB_WORKSPACE" --run-ignored only --test-threads 1 \
             -E 'test(committed_history_measure_storage_and_memory)' --success-output immediate
+      - name: Measure signed private RPC imports
+        if: inputs.signed-rpc
+        env:
+          CD_MEASURE_ENTRIES: ${{ inputs.entries }}
+          CD_MEASURE_VERSIONS: ${{ inputs.versions }}
+          CD_MEASURE_RETAINED: ${{ inputs.retained }}
+          CD_MEASURE_RPC_REPORT: ${{ github.workspace }}/rpc-measurement.json
+        run: |
+          cargo nextest run --archive-file target/nextest/madara-tests.tar.zst \
+            --workspace-remap "$GITHUB_WORKSPACE" --run-ignored only --test-threads 1 \
+            -E 'test(committed_data_measure_signed_rpc_imports)' --success-output immediate
       - uses: actions/upload-artifact@v6
         with:
           name: committed-data-retention-measurement
-          path: retention-measurement.json
+          path: |
+            retention-measurement.json
+            rpc-measurement.json
           if-no-files-found: error

@@ -312,3 +312,5 @@ async fn committed_data_update_rpc_authenticates_namespace_base_and_expected_roo
 }
 
 mod admission;
+
+mod measurement;

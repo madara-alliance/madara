@@ -224,11 +224,14 @@ fn committed_history_measure_storage_and_memory() {
         )
         .unwrap()
     );
+    while db.maintain_history(Some(u64::MAX)).unwrap() {}
+    compact(db);
+    let final_values_only = footprint(db);
     let report = serde_json::json!({"entries": entries, "updates_per_version": updates, "versions": versions + 1,
         "retained_versions": retained, "price_values": price_values, "large_moves": large_moves, "all_submitted_values_changed": true, "cache_budget_bytes": cache_bytes,
         "baseline": baseline, "initial": initial, "before_prune_uncompacted": before_compaction,
         "before_prune": before, "after_delete": after_delete, "after_compaction": after_compaction,
-        "values_only_after_compaction": values_only,
+        "values_only_after_compaction": values_only, "final_values_only_after_compaction": final_values_only, "rolling_versions": rolling_versions,
         "rolling_ack_ms": rolling_ack_ms, "rolling_cycle_ms": rolling_cycle_ms, "journal_ms": journal_ms, "acknowledged_ms": acknowledged_ms, "final_peak_rss_kib": resident_kib("VmHWM:"),
         "initial_import_ms": initial_ms, "incremental_import_ms": import_ms, "prune_total_ms": prune_ms,
         "retained_batch_ms": warm_ms, "reconstructed_batch_ms": cold_ms,
