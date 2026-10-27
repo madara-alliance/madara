@@ -9,8 +9,8 @@ use mp_rpc::v0_10_2::{
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-/// Account multicalls, including Oracle root + final-price calls, are one signed INVOKE.
-/// Use two fee-token calls here so the RPC routing test does not depend on an Oracle fixture.
+/// Multiple account calls remain one signed INVOKE through the combined import/submission route.
+/// Two fee-token calls exercise routing independently of any application's dataset semantics.
 fn signed_two_call_tx(backend: &MadaraBackend, account: &DevnetPredeployedContract) -> BroadcastedTxn {
     use mp_rpc::v0_9_0::{BroadcastedInvokeTxn as OldInvoke, BroadcastedTxn as OldTxn};
     use mp_transactions::{validated::TxTimestamp, IntoStarknetApiExt};

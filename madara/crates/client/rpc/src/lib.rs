@@ -1079,7 +1079,7 @@ impl Starknet {
         self.committed_data_transaction_submission = enabled;
     }
 
-    /// Sets the node-local ingestion allowlist; it is not a consensus or Oracle publication policy.
+    /// Sets the node-local ingestion allowlist; applications authorize root publication on-chain.
     pub fn set_committed_data_signers(&mut self, keys: Vec<mp_convert::Felt>) -> anyhow::Result<()> {
         let mut seen = HashSet::new();
         for key in &keys {

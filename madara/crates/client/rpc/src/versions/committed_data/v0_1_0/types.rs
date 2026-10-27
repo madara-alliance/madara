@@ -53,7 +53,7 @@ impl<'de> Deserialize<'de> for CommittedDataEntries {
     }
 }
 
-/// One allowlisted Stark-curve signer. This authorizes storage, not publication of an Oracle root.
+/// One allowlisted Stark-curve signer authorizing storage. Applications authorize root publication on-chain.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ImportSignature {
