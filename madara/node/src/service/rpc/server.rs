@@ -344,7 +344,7 @@ mod tests {
             ContractAndTxnHash,
         },
     };
-    use mp_utils::service::ServiceContext;
+    use mp_utils::service::{MadaraServiceId, ServiceContext};
     use std::{sync::Arc, time::Duration};
     use tokio::sync::{mpsc, Semaphore};
 
@@ -435,7 +435,7 @@ mod tests {
             .unwrap();
         module.register_method("starknet_V0_10_2_blockNumber", |_, _| 1_u64).unwrap();
 
-        let ctx = ServiceContext::new_for_testing();
+        let ctx = ServiceContext::new_for_testing().with_id(MadaraServiceId::RpcUser);
         let (stop_handle, _server_handle) = jsonrpsee::server::stop_channel();
         let server = tokio::spawn(serve(
             listener,
