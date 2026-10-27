@@ -51,6 +51,33 @@ pub struct SNOSCliArgs {
     pub versioned_constants: Option<VersionedConstants>,
 }
 
+impl SNOSCliArgs {
+    /// Validate the committed-data execution path before constructing runtime services.
+    pub(crate) fn validate_committed_data(
+        &self,
+        prover: crate::types::params::prover::ProverKind,
+        layer: &crate::types::Layer,
+    ) -> anyhow::Result<()> {
+        use crate::types::{params::prover::ProverKind, Layer};
+        if !self.use_committed_data {
+            anyhow::ensure!(
+                self.committed_data_rpc_url.is_none(),
+                "A committed-data witness RPC requires use_committed_data=true"
+            );
+            return Ok(());
+        }
+        anyhow::ensure!(
+            prover == ProverKind::Sharp && *layer == Layer::L2,
+            "Committed-data reads currently require the SHARP L2 local-aggregator path"
+        );
+        anyhow::ensure!(
+            self.committed_data_rpc_url.is_some(),
+            "Committed-data reads require a Madara witness RPC for SNOS replay"
+        );
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -115,5 +142,31 @@ mod tests {
         .err()
         .expect("unsupported transport must fail CLI parsing");
         assert!(error.to_string().contains("requires HTTP or HTTPS"));
+    }
+    #[test]
+    fn committed_data_execution_path_configuration_matrix() {
+        use crate::types::{params::prover::ProverKind, Layer};
+        let mut args = parse(&["test", "--rpc-for-snos", "http://localhost:9545"]).unwrap().snos;
+        for enabled in [false, true] {
+            for endpoint in [None, Some(Url::parse("http://localhost:9944").unwrap())] {
+                args.use_committed_data = enabled;
+                args.committed_data_rpc_url = endpoint;
+                for prover in [ProverKind::Sharp, ProverKind::Atlantic, ProverKind::Mock] {
+                    for layer in [Layer::L2, Layer::L3] {
+                        let expected = if enabled {
+                            args.committed_data_rpc_url.is_some() && prover == ProverKind::Sharp && layer == Layer::L2
+                        } else {
+                            args.committed_data_rpc_url.is_none()
+                        };
+                        assert_eq!(
+                            args.validate_committed_data(prover, &layer).is_ok(),
+                            expected,
+                            "enabled={enabled}, endpoint={}, prover={prover:?}, layer={layer:?}",
+                            args.committed_data_rpc_url.is_some()
+                        );
+                    }
+                }
+            }
+        }
     }
 }
