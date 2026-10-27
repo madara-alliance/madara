@@ -25,6 +25,8 @@ A retained-index witness read follows only the requested branch path, reads sibl
 
 ## Settlement-gated proof retention
 
+Cleanup runs once at startup, then waits `--committed-data-proof-sweep-secs 21600` (six hours) after finishing each eligible backlog. The interval is configurable and must be nonzero. Reads never trigger a sweep. The sweep interval is separate from the retention buffer below: between sweeps, extra eligible proof nodes remain on disk. Capacity planning must include that delay, sweep duration and L1 settlement lag. Larger intervals create larger cleanup batches; the worker still checks shutdown between roots and awaits each admitted DB mutation.
+
 Historical values never expire. Enable `--committed-data-proof-retention-secs 172800` for a two-day buffer behind the latest L1-confirmed **L2** height. Omission retains every proof index. The cutoff is:
 
 ```text
@@ -43,6 +45,8 @@ This is the feature's first storage format. There is no reader or migration for 
 Older proofs remain available without an age cutoff. Madara reconstructs the canonical tree from retained values, verifies its root, then produces the requested proof. A batch reconstructs once for all requested keys. Only one reconstruction runs per backend at a time, and ordinary old-proof requests do not repopulate the durable index. Older paginated value reads also reconstruct; repeated pages or single-key calls can therefore be slow. This is a correctness-first cold path, not a cold-query throughput guarantee.
 
 ### Memory and backup controls
+
+An old-proof rebuild is temporary and is dropped before its read returns, including on error. It is not inserted into a reusable tree cache or persisted for a later sweep. One rebuild per backend bounds concurrent reconstruction; repeated old reads may repeat the work. Dropping a tree releases its allocations, but the allocator may retain pages, so process RSS need not fall immediately. A recent execution that deliberately reuses an old root is different: its restored durable index follows the normal last-use retention cutoff.
 
 - `--committed-data-memory-blocks 7200`: cached objects expire after this many observed blocks; zero disables reuse. At a five-second block time, 7200 blocks is ten hours.
 - `--committed-data-cache-mib 256`: estimated reusable-cache ceiling, split equally between decoded Patricia nodes and the existing two-full-import cache. Both portions also obey the block window. Zero disables caching. It is **not** a process RSS limit.

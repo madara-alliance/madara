@@ -101,6 +101,11 @@ pub struct BackendParams {
     #[serde(default)]
     pub committed_data_proof_retention_secs: Option<u64>,
 
+    /// Delay between completed proof-pruning sweeps. Does not change the L1 retention cutoff.
+    #[arg(long, env = "MADARA_COMMITTED_DATA_PROOF_SWEEP_SECS", default_value = "21600")]
+    #[serde(default = "default_committed_data_proof_sweep_secs")]
+    pub committed_data_proof_sweep_secs: std::num::NonZeroU64,
+
     /// Recent block distance retained by the decoded tree-node cache.
     #[arg(long, env = "MADARA_COMMITTED_DATA_MEMORY_BLOCKS", default_value_t = 7200)]
     #[serde(default = "default_committed_data_memory_blocks")]
@@ -466,6 +471,9 @@ impl BackendParams {
     }
 }
 
+fn default_committed_data_proof_sweep_secs() -> std::num::NonZeroU64 {
+    std::num::NonZeroU64::new(6 * 60 * 60).expect("six hours is nonzero")
+}
 fn default_committed_data_memory_blocks() -> u64 {
     7200
 }

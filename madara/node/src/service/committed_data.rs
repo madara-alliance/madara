@@ -3,11 +3,12 @@ use mc_db::MadaraBackend;
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
 use std::{sync::Arc, time::Duration};
 
-pub struct CommittedDataHistoryService(pub Arc<MadaraBackend>);
+pub struct CommittedDataHistoryService(pub Arc<MadaraBackend>, pub Duration);
 #[async_trait::async_trait]
 impl Service for CommittedDataHistoryService {
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
         let backend = Arc::clone(&self.0);
+        let sweep_interval = self.1;
         runner.service_loop_with_graceful_shutdown(move |mut ctx| async move {
             loop {
                 if ctx.is_cancelled() {
@@ -22,7 +23,8 @@ impl Service for CommittedDataHistoryService {
                         false
                     }
                 };
-                if !more && ctx.run_until_cancelled(tokio::time::sleep(Duration::from_secs(5))).await.is_none() {
+                // Finish the eligible backlog, then wait. Reads never schedule a sweep.
+                if !more && ctx.run_until_cancelled(tokio::time::sleep(sweep_interval)).await.is_none() {
                     return anyhow::Ok(());
                 }
             }

@@ -91,7 +91,12 @@ fn committed_history_prunes_only_old_references_and_reopens_cold_values() {
         let after = rows(db, b"cdm/n/").len();
         assert!(after < before);
         assert_eq!(after, 15, "Exactly the surviving eight-leaf tree remains");
-        assert_dataset(db, &first);
+        for _ in 0..3 {
+            assert_dataset(db, &first);
+            assert_eq!(pointer(db, first.root()), 0, "Historical reads keep the root cold");
+            assert_eq!(rows(db, b"cdm/n/").len(), after, "Rebuilds never persist nodes for a later sweep");
+            assert!(!db.maintain_history(Some(12)).unwrap(), "A rebuild creates no new pruning work");
+        }
         assert_dataset(db, &second);
         assert_eq!(rows(db, b"cdm/n/").len(), after, "Cold reads do not repopulate proof nodes");
         // Retention follows execution height, including an old root used in a new block.
