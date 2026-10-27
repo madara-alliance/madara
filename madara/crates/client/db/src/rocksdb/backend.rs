@@ -169,6 +169,8 @@ impl RocksDBStorage {
             db,
             config: config.clone(),
             committed_data_write: Default::default(),
+            committed_data_reconstruction: Default::default(),
+            committed_data_config: Default::default(),
         });
 
         let head_block_n = inner.get_head_projection_without_content()?.and_then(|c| match c {

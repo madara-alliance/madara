@@ -1,6 +1,6 @@
 use super::{Column, RocksDBStorageInner};
 use crate::{
-    committed_data_recovery::{namespace_key, RecoveryManifest, RecoveryRecord, MAX_PENDING_BYTES},
+    committed_data_recovery::{namespace_key, RecoveryManifest, RecoveryRecord},
     prelude::*,
 };
 use mp_convert::Felt;
@@ -78,7 +78,15 @@ impl RocksDBStorageInner {
         let bytes = super::serialize(record)?;
         let pending =
             self.pending_recovery_bytes()?.checked_add(bytes.len() as u64).context("Recovery outbox overflow")?;
-        anyhow::ensure!(pending <= MAX_PENDING_BYTES, "Committed-data backup backlog full; retry after export");
+        anyhow::ensure!(
+            pending
+                <= self
+                    .committed_data_config
+                    .read()
+                    .map_err(|_| anyhow::anyhow!("Committed-data config poisoned"))?
+                    .pending_backup_bytes,
+            "Committed-data backup backlog full; retry after export"
+        );
         let cf = self.get_column(RECOVERY_COLUMN);
         let mut batch = WriteBatch::default();
         batch.put_cf(&cf, key(b'm', id.as_bytes()), super::serialize(&record.manifest)?);

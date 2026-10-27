@@ -11,31 +11,54 @@ use tokio::sync::Semaphore;
 // ponytail: a two-entry FIFO needs only a short mutex, not an LRU framework.
 #[derive(Debug)]
 pub(crate) struct SnapshotCache {
-    entries: Mutex<VecDeque<Arc<CommittedDataSet>>>,
+    entries: Mutex<VecDeque<(Arc<CommittedDataSet>, u64)>>,
+    budget: usize,
+    blocks: u64,
     import: Arc<Semaphore>,
 }
 
 impl Default for SnapshotCache {
     fn default() -> Self {
-        Self { entries: Mutex::new(VecDeque::new()), import: Arc::new(Semaphore::new(1)) }
+        Self::new(&Default::default())
     }
 }
 
 impl SnapshotCache {
+    pub(crate) fn new(config: &crate::committed_data_retention::CommittedDataRetentionConfig) -> Self {
+        Self {
+            entries: Mutex::new(VecDeque::new()),
+            import: Arc::new(Semaphore::new(1)),
+            budget: config.cache_bytes / 2,
+            blocks: config.memory_blocks,
+        }
+    }
+    // Conservative allocation estimate for entries, branches, Arc and vector bookkeeping.
+    fn weight(tree: &CommittedDataSet) -> usize {
+        256 + tree.entries().len() * 256
+    }
+
     /// Returns a shared immutable tree without hashing or waiting for imports.
-    fn get(&self, root: Felt) -> Result<Option<Arc<CommittedDataSet>>> {
-        let cache = self.entries.lock().map_err(|_| anyhow::anyhow!("Committed-data cache poisoned"))?;
-        Ok(cache.iter().find(|tree| tree.root() == root).cloned())
+    fn get(&self, root: Felt, block: u64) -> Result<Option<Arc<CommittedDataSet>>> {
+        let mut cache = self.entries.lock().map_err(|_| anyhow::anyhow!("Committed-data cache poisoned"))?;
+        cache.retain(|(_, imported)| block.saturating_sub(*imported) < self.blocks);
+        Ok(cache.iter().find(|(tree, _)| tree.root() == root).map(|(tree, _)| Arc::clone(tree)))
     }
 
     /// Retains two distinct roots in insertion order; duplicate imports do not reorder them.
-    fn insert(&self, tree: Arc<CommittedDataSet>) -> Result<()> {
+    fn insert(&self, tree: Arc<CommittedDataSet>, block: u64) -> Result<()> {
         let mut cache = self.entries.lock().map_err(|_| anyhow::anyhow!("Committed-data cache poisoned"))?;
-        if !cache.iter().any(|old| old.root() == tree.root()) {
-            if cache.len() == 2 {
+        cache.retain(|(_, imported)| block.saturating_sub(*imported) < self.blocks);
+        let weight = Self::weight(&tree);
+        if self.blocks == 0 || weight > self.budget {
+            return Ok(());
+        }
+        if !cache.iter().any(|(old, _)| old.root() == tree.root()) {
+            while cache.len() >= 2
+                || cache.iter().map(|(tree, _)| Self::weight(tree)).sum::<usize>() + weight > self.budget
+            {
                 cache.pop_front();
             }
-            cache.push_back(tree);
+            cache.push_back((tree, block));
         }
         Ok(())
     }
@@ -50,10 +73,10 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     /// Returns an authenticated proof for an imported root and present key.
     ///
     /// Missing roots/keys return `None`; corrupt records and
-    /// mismatched proofs return an error. Cold reads have depth-bounded I/O and never rebuild
-    /// a tree. This is synchronous storage work; async callers must use a blocking worker.
+    /// mismatched proofs return an error. Retained proofs use depth-bounded I/O; pruned
+    /// proofs rebuild from permanent values under a separate concurrency gate. This is synchronous storage work; async callers must use a blocking worker.
     pub fn committed_data_witness(&self, root: Felt, index: Felt) -> Result<Option<CommittedDataWitness>> {
-        if let Some(tree) = self.committed_data_cache.get(root)? {
+        if let Some(tree) = self.committed_data_cache.get(root, self.chain_head_state().confirmed_tip.unwrap_or(0))? {
             return Ok(tree.witness(index));
         }
         let witness = self.db.get_committed_data_witness(root, index)?;
@@ -69,7 +92,11 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     /// Creates the shared execution provider; cold values are authenticated before returning.
     /// The Cairo OS independently verifies witnesses during proving.
     pub fn committed_data_provider(self: &Arc<Self>) -> Arc<dyn CommittedDataProvider> {
-        Arc::new(BackendCommittedData(Arc::clone(self)))
+        self.committed_data_provider_at(self.chain_head_state().confirmed_tip.unwrap_or(0).saturating_add(1))
+    }
+
+    pub fn committed_data_provider_at(self: &Arc<Self>, block: u64) -> Arc<dyn CommittedDataProvider> {
+        Arc::new(BackendCommittedData(Arc::clone(self), block, Mutex::new(std::collections::HashSet::new())))
     }
 }
 
@@ -106,7 +133,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             anyhow::ensure!(tree.root() == root, "Committed-data root does not match updated dataset");
             backend.db.write_committed_data_dataset(&tree, imported_after_block)?;
             backend.db.write_committed_data_version(version, update.base_root.is_none())?;
-            backend.committed_data_cache.insert(tree)
+            backend.committed_data_cache.insert(tree, imported_after_block.unwrap_or(0))
         })
         .await?
     }
@@ -130,13 +157,29 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             let tree = Arc::new(CommittedDataSet::new(values)?);
             anyhow::ensure!(tree.root() == root, "Committed-data root does not match dataset");
             backend.db.write_committed_data_dataset(&tree, imported_after_block)?;
-            backend.committed_data_cache.insert(tree)
+            backend.committed_data_cache.insert(tree, imported_after_block.unwrap_or(0))
         })
         .await?
     }
 }
 
-struct BackendCommittedData<D>(Arc<MadaraBackend<D>>);
+struct BackendCommittedData<D>(Arc<MadaraBackend<D>>, u64, Mutex<std::collections::HashSet<Felt>>);
+impl<D: MadaraStorageRead> BackendCommittedData<D> {
+    fn retain(&self, root: Felt) -> std::result::Result<(), CommittedDataError> {
+        if self.0.committed_data_proof_cutoff().is_some_and(|cutoff| self.1 < cutoff) {
+            return Ok(());
+        }
+        let record = || -> Result<()> {
+            let mut seen = self.2.lock().map_err(|_| anyhow::anyhow!("Committed-data use lock poisoned"))?;
+            if !seen.contains(&root) && self.0.db.get_committed_data_count(root)?.is_some() {
+                self.0.db.note_committed_data_use(root, self.1)?;
+                seen.insert(root);
+            }
+            Ok(())
+        };
+        record().map_err(|e| CommittedDataError::Provider(e.to_string()))
+    }
+}
 impl<D> std::fmt::Debug for BackendCommittedData<D> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str("BackendCommittedData")
@@ -144,21 +187,28 @@ impl<D> std::fmt::Debug for BackendCommittedData<D> {
 }
 impl<D: MadaraStorageRead> CommittedDataProvider for BackendCommittedData<D> {
     fn batch(&self, root: Felt, keys: &[Felt]) -> std::result::Result<CommittedDataBatchProof, CommittedDataError> {
-        let tree =
-            self.0.committed_data_cache.get(root).map_err(|error| CommittedDataError::Provider(error.to_string()))?;
+        self.retain(root)?;
+        let tree = self
+            .0
+            .committed_data_cache
+            .get(root, self.0.chain_head_state().confirmed_tip.unwrap_or(0))
+            .map_err(|error| CommittedDataError::Provider(error.to_string()))?;
         match tree {
             Some(tree) => CommittedDataBatchProof::from_dataset(&tree, keys),
-            None => CommittedDataBatchProof::new(root, keys, |key| {
-                self.0
-                    .committed_data_witness(root, key)
-                    .map_err(|error| CommittedDataError::Provider(error.to_string()))
-            }),
+            None => self
+                .0
+                .db
+                .get_committed_data_batch(root, keys)
+                .map_err(|error| CommittedDataError::Provider(error.to_string())),
         }
     }
 
     fn value(&self, root: Felt, index: Felt) -> std::result::Result<Option<(Felt, usize)>, CommittedDataError> {
+        self.retain(root)?;
         let read = || -> Result<Option<(Felt, usize)>> {
-            let value = if let Some(tree) = self.0.committed_data_cache.get(root)? {
+            let value = if let Some(tree) =
+                self.0.committed_data_cache.get(root, self.0.chain_head_state().confirmed_tip.unwrap_or(0))?
+            {
                 tree.value_and_depth(index)
             } else {
                 self.0.committed_data_witness(root, index)?.map(|witness| (witness.value, witness.siblings.len()))

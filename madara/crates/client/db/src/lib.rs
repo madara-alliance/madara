@@ -447,6 +447,7 @@ pub struct ExecutionReadCacheConfig {
 
 #[derive(Debug, Default)]
 pub struct MadaraBackendConfig {
+    pub committed_data_retention: committed_data_retention::CommittedDataRetentionConfig,
     /// Permit committed reads during account execution, independently of dataset ingestion.
     /// L1 handlers must not read committed data, directly or through another contract;
     /// their availability-failure semantics are unsupported.
@@ -485,5 +486,6 @@ pub use writer::MadaraBackendWriter;
 
 mod committed_data;
 pub mod committed_data_recovery;
+pub mod committed_data_retention;
 mod persistent_committed_data;
 mod service_storage;

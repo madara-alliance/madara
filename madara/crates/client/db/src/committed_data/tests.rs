@@ -190,7 +190,7 @@ async fn committed_data_snapshot_persists_and_authenticates_after_reopen() {
         let importing = backend.committed_data_cache.import.try_acquire().unwrap();
         assert!(backend.committed_data_witness(root, Felt::from(2_u32)).unwrap().unwrap().verify());
         assert_eq!(BackendCommittedData(Arc::clone(&backend)).batch(root, &keys).unwrap(), batch);
-        assert!(backend.committed_data_cache.get(root).unwrap().is_none());
+        assert!(backend.committed_data_cache.get(root, 0).unwrap().is_none());
         drop(importing);
         assert!(backend.committed_data_witness(root, Felt::from(3_u32)).unwrap().is_none());
         assert!(backend.committed_data_witness(root + Felt::ONE, Felt::ONE).unwrap().is_none());
@@ -398,11 +398,11 @@ fn committed_data_cache_is_bounded_and_hot_reads_do_not_take_import_lock() {
     let trees: Vec<_> =
         (0..3_u32).map(|i| Arc::new(CommittedDataSet::new(vec![(Felt::ZERO, Felt::from(i))]).unwrap())).collect();
     for tree in &trees {
-        cache.insert(tree.clone()).unwrap();
+        cache.insert(tree.clone(), 0).unwrap();
     }
     let _building = cache.import.try_acquire().unwrap();
-    assert!(cache.get(trees[0].root()).unwrap().is_none());
-    assert!(cache.get(trees[2].root()).unwrap().is_some());
+    assert!(cache.get(trees[0].root(), 0).unwrap().is_none());
+    assert!(cache.get(trees[2].root(), 0).unwrap().is_some());
     assert_eq!(cache.entries.lock().unwrap().len(), 2);
 }
 #[tokio::test]
@@ -439,4 +439,26 @@ async fn committed_data_concurrent_storage_writers_retain_both_roots() {
     for dataset in &datasets {
         assert!(backend.committed_data_witness(dataset.root(), Felt::ZERO).unwrap().unwrap().verify());
     }
+}
+
+#[test]
+fn committed_snapshot_cache_enforces_byte_budget_and_block_age() {
+    let tree = Arc::new(CommittedDataSet::new(vec![(Felt::ZERO, Felt::ONE)]).unwrap());
+    let mut config = crate::committed_data_retention::CommittedDataRetentionConfig {
+        cache_bytes: SnapshotCache::weight(&tree) * 2,
+        memory_blocks: 2,
+        ..Default::default()
+    };
+    let cache = SnapshotCache::new(&config);
+    cache.insert(tree.clone(), 10).unwrap();
+    assert!(cache.get(tree.root(), 11).unwrap().is_some());
+    assert!(cache.get(tree.root(), 12).unwrap().is_none());
+    config.cache_bytes -= 1;
+    let cache = SnapshotCache::new(&config);
+    cache.insert(tree.clone(), 10).unwrap();
+    assert!(cache.get(tree.root(), 10).unwrap().is_none());
+    config.memory_blocks = 0;
+    let cache = SnapshotCache::new(&config);
+    cache.insert(tree.clone(), 10).unwrap();
+    assert!(cache.get(tree.root(), 10).unwrap().is_none());
 }

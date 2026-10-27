@@ -109,6 +109,11 @@ pub struct StoredChainInfo {
 
 /// Trait abstracting over the storage interface.
 pub trait MadaraStorageRead: Send + Sync + 'static {
+    /// Operational proof-cache access metadata only; never modifies chain state or dataset values.
+    fn note_committed_data_use(&self, _root: Felt, _block: u64) -> Result<()> {
+        Ok(())
+    }
+
     /// Lists at most 64 namespace/root labels strictly after a lexical cursor. Rescan each pass.
     fn list_committed_data_versions(
         &self,
@@ -122,13 +127,25 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
         anyhow::bail!("Committed-data version storage is unsupported by this backend")
     }
 
-    /// Immutable private data; reads must be bounded by the proof path, not dataset size.
+    /// Immutable private data; retained proofs use path reads, pruned proofs reconstruct from values.
     fn get_committed_data_witness(
         &self,
         _root: Felt,
         _index: Felt,
     ) -> Result<Option<blockifier::execution::syscalls::committed_data::CommittedDataWitness>> {
         anyhow::bail!("Committed-data storage is unsupported by this backend")
+    }
+
+    /// Build one batch; cold implementations must reconstruct once rather than once per key.
+    fn get_committed_data_batch(
+        &self,
+        root: Felt,
+        keys: &[Felt],
+    ) -> Result<blockifier::execution::syscalls::committed_data::CommittedDataBatchProof> {
+        use blockifier::execution::syscalls::committed_data::{CommittedDataBatchProof, CommittedDataError};
+        Ok(CommittedDataBatchProof::new(root, keys, |key| {
+            self.get_committed_data_witness(root, key).map_err(|error| CommittedDataError::Provider(error.to_string()))
+        })?)
     }
 
     /// Lists at most 64 complete root-keyed datasets strictly after the cursor.
@@ -252,6 +269,19 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
 
 /// Trait abstracting over the storage interface.
 pub trait MadaraStorageWrite: Send + Sync + 'static {
+    /// Performs one bounded migration/pruning operation. Values remain permanently reconstructible.
+    fn maintain_committed_data_history(&self, _cutoff: Option<u64>, _head: u64) -> Result<bool> {
+        Ok(false)
+    }
+
+    /// Configure operational caches and backup admission; does not change committed roots.
+    fn configure_committed_data(
+        &self,
+        _config: crate::committed_data_retention::CommittedDataRetentionConfig,
+    ) -> Result<()> {
+        Ok(())
+    }
+
     /// Durably registers a namespace/root label only after its complete dataset is present.
     /// A crash before this write may leave an unused dataset; replay is idempotent.
     /// Initialization may only create an empty namespace or repeat an existing root.

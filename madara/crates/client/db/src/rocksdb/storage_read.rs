@@ -5,6 +5,10 @@ use super::*;
 use crate::storage::CommittedDataPageEntries;
 
 impl MadaraStorageRead for RocksDBStorage {
+    fn note_committed_data_use(&self, root: Felt, block: u64) -> Result<()> {
+        self.note_root_use(root, block)
+    }
+
     fn list_committed_data_versions(
         &self,
         after: Option<mp_gateway::committed_data::CommittedDataVersion>,
@@ -22,6 +26,14 @@ impl MadaraStorageRead for RocksDBStorage {
         index: Felt,
     ) -> Result<Option<blockifier::execution::syscalls::committed_data::CommittedDataWitness>> {
         self.read_committed_data_witness(root, index)
+    }
+
+    fn get_committed_data_batch(
+        &self,
+        root: Felt,
+        keys: &[Felt],
+    ) -> Result<blockifier::execution::syscalls::committed_data::CommittedDataBatchProof> {
+        self.read_committed_data_batch(root, keys)
     }
 
     fn list_committed_data_roots(&self, after: Option<Felt>) -> Result<Vec<Felt>> {

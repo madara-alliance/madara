@@ -5,6 +5,27 @@ name: Task - Integration Tests (Madara)
 # This workflow runs Madara integration tests from a prebuilt nextest archive
 on:
   workflow_dispatch:
+    inputs:
+      measure-run-id:
+        description: "Successful CI run at this exact commit containing the Madara test archive"
+        required: true
+        type: string
+      entries:
+        description: "Dataset entries (maximum 524288)"
+        default: "16384"
+        type: string
+      updates:
+        description: "Changed values per version"
+        default: "1024"
+        type: string
+      versions:
+        description: "Updates after the initial version"
+        default: "70"
+        type: string
+      retained:
+        description: "Proof versions to retain after simulated settlement"
+        default: "8"
+        type: string
   workflow_call:
     inputs:
       proptest-cases:
@@ -28,6 +49,7 @@ on:
 
 jobs:
   test-madara:
+    if: github.event_name != 'workflow_dispatch'
     permissions:
       pull-requests: write
     runs-on: blacksmith-8vcpu-ubuntu-2204
@@ -140,3 +162,49 @@ jobs:
           else
             echo "No Anvil PID found"
           fi
+
+  measure-committed-data:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: blacksmith-8vcpu-ubuntu-2204
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v5
+      - name: Load env
+        uses: ./.github/actions/load-env
+      - name: Rust setup
+        uses: ./.github/actions/setup-rust
+        with:
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          extra-cache: false
+      - uses: taiki-e/install-action@nextest
+      - name: Verify archive revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MEASURE_RUN_ID: ${{ inputs.measure-run-id }}
+        run: |
+          test "$(gh run view "$MEASURE_RUN_ID" --json headSha --jq .headSha)" = "$GITHUB_SHA"
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: madara-tests-*
+          merge-multiple: true
+          path: target/nextest/
+          run-id: ${{ inputs.measure-run-id }}
+          github-token: ${{ github.token }}
+      - name: Measure storage and cold proofs
+        env:
+          CD_MEASURE_ENTRIES: ${{ inputs.entries }}
+          CD_MEASURE_UPDATES: ${{ inputs.updates }}
+          CD_MEASURE_VERSIONS: ${{ inputs.versions }}
+          CD_MEASURE_RETAINED: ${{ inputs.retained }}
+          CD_MEASURE_REPORT: ${{ github.workspace }}/retention-measurement.json
+        run: |
+          cargo nextest run --archive-file target/nextest/madara-tests.tar.zst \
+            --workspace-remap "$GITHUB_WORKSPACE" --run-ignored only --test-threads 1 \
+            -E 'test(committed_history_measure_storage_and_memory)' --success-output immediate
+      - uses: actions/upload-artifact@v6
+        with:
+          name: committed-data-retention-measurement
+          path: retention-measurement.json
+          if-no-files-found: error

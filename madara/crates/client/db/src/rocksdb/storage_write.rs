@@ -4,6 +4,19 @@
 use super::*;
 
 impl MadaraStorageWrite for RocksDBStorage {
+    fn maintain_committed_data_history(&self, cutoff: Option<u64>, head: u64) -> Result<bool> {
+        self.maintain_history(cutoff, head)
+    }
+
+    fn configure_committed_data(
+        &self,
+        config: crate::committed_data_retention::CommittedDataRetentionConfig,
+    ) -> Result<()> {
+        *self.inner.committed_data_config.write().map_err(|_| anyhow::anyhow!("Committed-data config poisoned"))? =
+            config;
+        Ok(())
+    }
+
     fn write_committed_data_version(
         &self,
         version: mp_gateway::committed_data::CommittedDataVersion,

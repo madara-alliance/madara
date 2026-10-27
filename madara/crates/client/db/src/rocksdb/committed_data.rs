@@ -19,14 +19,14 @@ fn version_key(version: CommittedDataVersion) -> Vec<u8> {
     key
 }
 
-const PREFIX: &[u8] = b"committed_data_mpt/";
+pub(super) const PREFIX: &[u8] = b"committed_data_mpt/";
 const FELT_BYTES: usize = 32;
 const KEY_BYTES: usize = PREFIX.len() + FELT_BYTES + 1 + 4;
-const METADATA_LEVEL: u8 = u8::MAX;
-const METADATA_BYTES: usize = 13;
+pub(super) const METADATA_LEVEL: u8 = u8::MAX;
+pub(super) const METADATA_BYTES: usize = 13;
 
 /// Root metadata retains its original key layout: root, kind 255, and offset zero.
-fn key(root: Felt, kind: u8, page: u32) -> Vec<u8> {
+pub(super) fn metadata_key(root: Felt, kind: u8, page: u32) -> Vec<u8> {
     let mut key = PREFIX.to_vec();
     key.extend_from_slice(&root.to_bytes_be());
     key.push(kind);
@@ -40,7 +40,7 @@ fn canonical_felt(bytes: &[u8]) -> Result<Felt> {
     Ok(value)
 }
 /// Count plus first-import checkpoint. The checkpoint is not a publication or last-use block.
-fn decode_metadata(bytes: &[u8]) -> Result<(usize, Option<u64>)> {
+pub(super) fn decode_metadata(bytes: &[u8]) -> Result<(usize, Option<u64>)> {
     anyhow::ensure!(bytes.len() == METADATA_BYTES + 8, "Invalid committed-data metadata length");
     let count = u32::from_be_bytes(bytes[..4].try_into()?) as usize;
     anyhow::ensure!((1..=MAX_COMMITTED_DATA_VALUES).contains(&count), "Invalid committed-data size");
@@ -53,14 +53,14 @@ fn decode_metadata(bytes: &[u8]) -> Result<(usize, Option<u64>)> {
     Ok((count, checkpoint))
 }
 
-fn persistent_id(metadata: &[u8]) -> Result<u64> {
+pub(super) fn persistent_id(metadata: &[u8]) -> Result<u64> {
     decode_metadata(metadata)?;
     let id = u64::from_be_bytes(metadata[METADATA_BYTES..].try_into()?);
-    anyhow::ensure!(id > 0 && id < u64::MAX, "Invalid persistent root pointer");
+    anyhow::ensure!(id < u64::MAX, "Invalid persistent root pointer");
     Ok(id)
 }
 
-fn count(bytes: &[u8]) -> Result<usize> {
+pub(super) fn count(bytes: &[u8]) -> Result<usize> {
     Ok(decode_metadata(bytes)?.0)
 }
 impl RocksDBStorage {
@@ -105,7 +105,7 @@ impl RocksDBStorage {
     }
 
     /// Data is already durable and immutable. This second fsynced write publishes its label.
-    /// No deletion exists, so a label can never race a data-pruning operation.
+    /// Value archives and metadata survive proof pruning, so labels remain resolvable.
     pub(super) fn store_committed_data_version(&self, version: CommittedDataVersion, initializing: bool) -> Result<()> {
         // Serialize the check with every label write, including replication. Concurrent initial
         // requests cannot both create distinct first roots. Existing-root retries remain harmless.
@@ -142,7 +142,7 @@ impl RocksDBStorage {
             snapshot.iterator_cf(meta::META_COLUMN, rocksdb::ReadOptions::default(), rocksdb::IteratorMode::Start);
         match after {
             Some(root) => iterator.set_mode(rocksdb::IteratorMode::From(
-                &key(root, METADATA_LEVEL, u32::MAX),
+                &metadata_key(root, METADATA_LEVEL, u32::MAX),
                 rocksdb::Direction::Forward,
             )),
             None => iterator.set_mode(rocksdb::IteratorMode::From(PREFIX, rocksdb::Direction::Forward)),
@@ -153,7 +153,7 @@ impl RocksDBStorage {
             anyhow::ensure!(raw.len() == KEY_BYTES, "Invalid committed-data key");
             let root = canonical_felt(&raw[PREFIX.len()..PREFIX.len() + FELT_BYTES])?;
             let metadata = snapshot
-                .get_pinned_cf(&cf, key(root, METADATA_LEVEL, 0))?
+                .get_pinned_cf(&cf, metadata_key(root, METADATA_LEVEL, 0))?
                 .ok_or_else(|| anyhow::anyhow!("Incomplete committed-data dataset"))?;
             count(&metadata)?;
             roots.push(root);
@@ -161,7 +161,7 @@ impl RocksDBStorage {
                 break;
             }
             iterator.set_mode(rocksdb::IteratorMode::From(
-                &key(root, METADATA_LEVEL, u32::MAX),
+                &metadata_key(root, METADATA_LEVEL, u32::MAX),
                 rocksdb::Direction::Forward,
             ));
         }
@@ -173,7 +173,7 @@ impl RocksDBStorage {
         let cf = self.inner.get_column(meta::META_COLUMN);
         self.inner
             .db
-            .get_pinned_cf(&cf, key(root, METADATA_LEVEL, 0))?
+            .get_pinned_cf(&cf, metadata_key(root, METADATA_LEVEL, 0))?
             .map(|bytes| count(&bytes).map(|count| count as u32))
             .transpose()
     }
@@ -186,10 +186,22 @@ impl RocksDBStorage {
         );
         let cf = self.inner.get_column(meta::META_COLUMN);
         let snapshot = rocksdb_snapshot::SnapshotWithDBArc::new(Arc::clone(&self.inner));
-        let Some(metadata) = snapshot.get_pinned_cf(&cf, key(root, METADATA_LEVEL, 0))? else { return Ok(None) };
+        let Some(metadata) = snapshot.get_pinned_cf(&cf, metadata_key(root, METADATA_LEVEL, 0))? else {
+            return Ok(None);
+        };
         let count = count(&metadata)?;
         anyhow::ensure!((start as usize) < count, "Committed-data page outside dataset");
         let id = persistent_id(&metadata)?;
+        if id == 0 {
+            return super::committed_history::with_reconstructed(&snapshot, root, |tree| {
+                let entries = tree.entries();
+                anyhow::ensure!(entries.len() == count, "Historical value count mismatch");
+                Ok(Some((
+                    count as u32,
+                    entries[start as usize..(start as usize + VALUES_PER_PAGE).min(entries.len())].to_vec(),
+                )))
+            });
+        }
         let mut tree = Tree::new(u64::MAX, MAX_COMMITTED_DATA_VALUES as u32, |id| {
             Ok(snapshot.get_pinned_cf(&cf, node_key(id))?.map(|b| b.to_vec()))
         });
@@ -203,13 +215,48 @@ impl RocksDBStorage {
     pub(super) fn read_committed_data_witness(&self, root: Felt, index: Felt) -> Result<Option<CommittedDataWitness>> {
         let cf = self.inner.get_column(meta::META_COLUMN);
         let snapshot = rocksdb_snapshot::SnapshotWithDBArc::new(Arc::clone(&self.inner));
-        let Some(metadata) = snapshot.get_pinned_cf(&cf, key(root, METADATA_LEVEL, 0))? else { return Ok(None) };
+        let Some(metadata) = snapshot.get_pinned_cf(&cf, metadata_key(root, METADATA_LEVEL, 0))? else {
+            return Ok(None);
+        };
         let id = persistent_id(&metadata)?;
+        if id == 0 {
+            return super::committed_history::with_reconstructed(&snapshot, root, |tree| Ok(tree.witness(index)));
+        }
         let mut tree = Tree::new(u64::MAX, MAX_COMMITTED_DATA_VALUES as u32, |id| {
             Ok(snapshot.get_pinned_cf(&cf, node_key(id))?.map(|b| b.to_vec()))
         });
         tree.check_root(id, root, count(&metadata)? as u32)?;
         tree.witness(id, root, index)
+    }
+
+    pub(super) fn read_committed_data_batch(
+        &self,
+        root: Felt,
+        keys: &[Felt],
+    ) -> Result<blockifier::execution::syscalls::committed_data::CommittedDataBatchProof> {
+        use blockifier::execution::syscalls::committed_data::{CommittedDataBatchProof, CommittedDataError};
+        anyhow::ensure!(
+            !keys.is_empty()
+                && keys.len() <= blockifier::execution::syscalls::committed_data::MAX_COMMITTED_DATA_READ_KEYS,
+            "Invalid batch size"
+        );
+        let cf = self.inner.get_column(meta::META_COLUMN);
+        let snapshot = rocksdb_snapshot::SnapshotWithDBArc::new(Arc::clone(&self.inner));
+        let metadata =
+            snapshot.get_pinned_cf(&cf, metadata_key(root, METADATA_LEVEL, 0))?.context("Missing dataset")?;
+        let id = persistent_id(&metadata)?;
+        if id == 0 {
+            return super::committed_history::with_reconstructed(&snapshot, root, |tree| {
+                Ok(CommittedDataBatchProof::from_dataset(tree, keys)?)
+            });
+        }
+        let mut tree = Tree::new(u64::MAX, MAX_COMMITTED_DATA_VALUES as u32, |id| {
+            Ok(snapshot.get_pinned_cf(&cf, node_key(id))?.map(|b| b.to_vec()))
+        });
+        tree.check_root(id, root, count(&metadata)? as u32)?;
+        Ok(CommittedDataBatchProof::new(root, keys, |key| {
+            tree.witness(id, root, key).map_err(|error| CommittedDataError::Provider(error.to_string()))
+        })?)
     }
 
     /// Imports an authenticated full map into the immutable arena.
@@ -222,12 +269,12 @@ impl RocksDBStorage {
         self.store_persistent_patch(None, dataset.root(), dataset.entries().to_vec(), imported_after_block, true)
     }
 
-    // ponytail: one shipping format; missing bases fail instead of rebuilding legacy snapshots.
+    // One persistent format; cold bases reconstruct from the permanent value archive.
     pub(super) fn store_persistent_patch(
         &self,
         base: Option<Felt>,
         root: Felt,
-        mut entries: Vec<(Felt, Felt)>,
+        entries: Vec<(Felt, Felt)>,
         checkpoint: Option<u64>,
         full_import: bool,
     ) -> Result<()> {
@@ -236,12 +283,24 @@ impl RocksDBStorage {
             .committed_data_write
             .lock()
             .map_err(|_| anyhow::anyhow!("Committed-data write lock poisoned"))?;
+        self.store_persistent_patch_locked(base, root, entries, checkpoint, full_import, &mut state)
+    }
+
+    pub(super) fn store_persistent_patch_locked(
+        &self,
+        base: Option<Felt>,
+        root: Felt,
+        mut entries: Vec<(Felt, Felt)>,
+        checkpoint: Option<u64>,
+        full_import: bool,
+        state: &mut crate::persistent_committed_data::NodeCache,
+    ) -> Result<()> {
         let cf = self.inner.get_column(meta::META_COLUMN);
-        let old_metadata = self.inner.db.get_pinned_cf(&cf, key(root, METADATA_LEVEL, 0))?;
+        let old_metadata = self.inner.db.get_pinned_cf(&cf, metadata_key(root, METADATA_LEVEL, 0))?;
         let base_root = base.unwrap_or(root);
-        let base_metadata = self.inner.db.get_pinned_cf(&cf, key(base_root, METADATA_LEVEL, 0))?;
-        let base_id = base_metadata.as_ref().map(|b| persistent_id(b)).transpose()?;
-        anyhow::ensure!(full_import || base_id.is_some(), "Persistent base unavailable");
+        let base_metadata = self.inner.db.get_pinned_cf(&cf, metadata_key(base_root, METADATA_LEVEL, 0))?;
+        let base_id = base_metadata.as_ref().map(|b| persistent_id(b)).transpose()?.filter(|id| *id != 0);
+        anyhow::ensure!(full_import || base_metadata.is_some(), "Persistent base unavailable");
         let first_id = self
             .inner
             .db
@@ -250,8 +309,8 @@ impl RocksDBStorage {
             .transpose()?
             .unwrap_or(1);
         anyhow::ensure!(first_id > 0, "Invalid persistent allocator");
-        // No nodes are deleted in this schema. A missing/rewound allocator must never overwrite
-        // an immutable node that older roots may still reference.
+        // IDs are never reused, including after pruning. A rewound allocator must not
+        // overwrite an immutable node that another root may still reference.
         anyhow::ensure!(
             self.inner.db.get_pinned_cf(&cf, node_key(first_id))?.is_none(),
             "Persistent allocator overlaps existing nodes"
@@ -259,8 +318,20 @@ impl RocksDBStorage {
         let reader =
             |id| -> Result<Option<Vec<u8>>> { Ok(self.inner.db.get_pinned_cf(&cf, node_key(id))?.map(|b| b.to_vec())) };
         // Full imports deliberately bypass the cache so they can repair corrupt disk records.
-        let cache = if full_import { Default::default() } else { std::mem::take(&mut *state) };
+        let mut cache = if full_import { Default::default() } else { std::mem::take(&mut *state) };
+        cache.configure(
+            &*self.inner.committed_data_config.read().map_err(|_| anyhow::anyhow!("Committed-data config poisoned"))?,
+            checkpoint.unwrap_or(0),
+        );
         let mut tree = Tree::with_cache(first_id, MAX_COMMITTED_DATA_VALUES as u32, reader, cache);
+        let base_id = if base_id.is_none() && base_metadata.is_some() && !full_import {
+            let snapshot = rocksdb_snapshot::SnapshotWithDBArc::new(Arc::clone(&self.inner));
+            Some(super::committed_history::with_reconstructed(&snapshot, base_root, |restored| {
+                tree.build(&mut restored.entries().to_vec())
+            })?)
+        } else {
+            base_id
+        };
         let attempt = if let Some(id) = base_id {
             tree.check_root(
                 id,
@@ -286,12 +357,22 @@ impl RocksDBStorage {
         // request first, then discard its staged nodes instead of duplicating that version.
         // Full imports retain their explicit repair path, including damaged descendants.
         if !full_import {
-            if let Some(existing_id) = old_metadata.as_ref().map(|b| persistent_id(b)).transpose()? {
+            if let Some(existing_id) =
+                old_metadata.as_ref().map(|b| persistent_id(b)).transpose()?.filter(|id| *id != 0)
+            {
                 tree.check_root(existing_id, root, count)?;
+                let mut batch = WriteBatch::default();
+                self.stage_root_use(&mut batch, root, checkpoint.unwrap_or(0).saturating_add(1))?;
+                let mut options = WriteOptions::default();
+                options.set_sync(true);
+                if !batch.is_empty() {
+                    self.inner.db.write_opt(batch, &options)?;
+                }
                 *state = tree.into_read_cache();
                 return Ok(());
             }
         }
+        let last_used = checkpoint.unwrap_or(0).saturating_add(1);
         let checkpoint =
             old_metadata.as_ref().map(|b| decode_metadata(b).map(|(_, c)| c)).transpose()?.unwrap_or(checkpoint);
         let mut metadata = Vec::with_capacity(METADATA_BYTES + 8);
@@ -300,11 +381,12 @@ impl RocksDBStorage {
         metadata.extend(checkpoint.unwrap_or(0).to_be_bytes());
         metadata.extend(id.to_be_bytes());
         let mut batch = WriteBatch::default();
-        for (key, value) in tree.records() {
-            batch.put_cf(&cf, key, value);
-        }
+        self.stage_value_history(&mut batch, root, base, &entries, &mut tree, (id, count))?;
+        let old_id = old_metadata.as_ref().map(|b| persistent_id(b)).transpose()?.filter(|id| *id != 0);
+        self.stage_root_reference(&mut batch, root, old_id, id, first_id, &tree.nodes)?;
+        self.stage_root_use(&mut batch, root, last_used)?;
         batch.put_cf(&cf, NEXT_KEY, tree.next_id().to_be_bytes());
-        batch.put_cf(&cf, key(root, METADATA_LEVEL, 0), metadata);
+        batch.put_cf(&cf, metadata_key(root, METADATA_LEVEL, 0), metadata);
         let mut options = WriteOptions::default();
         options.set_sync(true);
         options.disable_wal(false);

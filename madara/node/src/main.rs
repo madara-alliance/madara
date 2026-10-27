@@ -539,6 +539,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let mut app = ServiceMonitor::default()
+        .with(service::CommittedDataHistoryService(Arc::clone(&backend)))?
         .with(service_telemetry)?
         .with(service_mempool)?
         .with(service_l1_sync)?
@@ -602,6 +603,9 @@ async fn main() -> anyhow::Result<()> {
         app.activate(MadaraServiceId::ExternalDb);
     }
 
+    if run_cmd.backend_params.committed_data_proof_retention_secs.is_some() && !warp_update_receiver {
+        app.activate(MadaraServiceId::CommittedDataHistory);
+    }
     let result = app.start().await;
 
     // Critical: Flush database before exit to ensure data persistence (WAL is disabled)

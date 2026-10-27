@@ -67,7 +67,7 @@ fn persistent_updates_match_full_rebuilds_and_keep_every_historical_proof() -> R
 fn committed_cache_retains_current_frontier_not_obsolete_versions() -> Result<()> {
     let mut disk = HashMap::new();
     let mut values: Vec<_> = (0..128u32).map(|k| (Felt::from(k), Felt::from(k))).collect();
-    let mut tree = Tree::new(1, 256, |_| Ok(None));
+    let mut tree = Tree::with_cache(1, 256, |_| Ok(None), NodeCache::default());
     let mut id = tree.build(&mut values)?;
     let mut next = tree.next_id();
     for (i, n) in tree.nodes.iter().enumerate() {
@@ -128,4 +128,35 @@ fn corrupt_records_and_allocation_limits_fail_closed() -> Result<()> {
     let mut tree = Tree::new(u64::MAX, 4, |_| Ok(None));
     assert!(tree.build(&mut entries[..1]).is_err());
     Ok(())
+}
+
+#[test]
+fn committed_node_cache_enforces_bytes_and_recent_blocks() {
+    let mut config = crate::committed_data_retention::CommittedDataRetentionConfig {
+        memory_blocks: 2,
+        cache_bytes: NodeCache::ENTRY_BYTES * 4,
+        ..Default::default()
+    };
+    let mut cache = NodeCache::default();
+    cache.configure(&config, 10);
+    for id in 1..=3 {
+        cache.put(id, Node::new_leaf(Felt::from(id), Felt::ONE), true);
+    }
+    assert_eq!(cache.0.len(), 2); // half the shared budget belongs to the node cache
+    assert!(!cache.0.contains(&1));
+    cache.configure(&config, 11);
+    assert_eq!(cache.0.len(), 2);
+    cache.configure(&config, 12);
+    assert!(cache.0.is_empty());
+    cache.configure(&config, 5); // a reorg cannot move the cache clock backwards
+    assert_eq!(cache.1, 12);
+    config.cache_bytes = 0;
+    cache.configure(&config, 12);
+    cache.put(1, Node::new_leaf(Felt::ONE, Felt::ONE), true);
+    assert!(cache.0.is_empty());
+    config.cache_bytes = 10000;
+    config.memory_blocks = 0;
+    cache.configure(&config, 12);
+    cache.put(1, Node::new_leaf(Felt::ONE, Felt::ONE), true);
+    assert!(cache.0.is_empty());
 }

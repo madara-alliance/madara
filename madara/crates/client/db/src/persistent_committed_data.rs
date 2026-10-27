@@ -10,14 +10,46 @@ use lru::LruCache;
 use starknet_types_core::felt::Felt;
 use std::num::NonZeroUsize;
 
-/// At most 2M nodes across ticks (roughly a few hundred MiB, lazily allocated). This cache is
-/// database-local, is discarded on reopen and never supplies data not already durable.
-pub(crate) struct NodeCache(LruCache<u64, (Node, bool)>);
+/// Bounded decoded-node cache. Block age controls eligibility; a byte estimate caps occupancy.
+/// The estimate includes hash-table/list bookkeeping, but is not a process RSS guarantee.
+pub(crate) struct NodeCache(LruCache<u64, (Node, bool, u64)>, u64, u64, bool);
 impl Default for NodeCache {
     fn default() -> Self {
-        let mut cache = LruCache::unbounded();
-        cache.resize(NonZeroUsize::new(2_097_152).expect("Node-cache capacity is nonzero"));
-        Self(cache)
+        let mut cache = Self(LruCache::unbounded(), 0, u64::MAX, true);
+        cache.configure(&Default::default(), 0);
+        cache
+    }
+}
+impl NodeCache {
+    pub(crate) const ENTRY_BYTES: usize = std::mem::size_of::<Node>() + 128;
+    pub(crate) fn configure(
+        &mut self,
+        config: &crate::committed_data_retention::CommittedDataRetentionConfig,
+        block: u64,
+    ) {
+        self.1 = self.1.max(block);
+        self.2 = config.memory_blocks;
+        self.3 = config.cache_bytes / 2 >= Self::ENTRY_BYTES && config.memory_blocks > 0;
+        self.0
+            .resize(NonZeroUsize::new((config.cache_bytes / 2 / Self::ENTRY_BYTES).max(1)).expect("nonzero capacity"));
+        if !self.3 {
+            self.0.clear();
+        }
+        // Stamps use a monotonic observed head, so LRU order is also block-age order.
+        while self.0.peek_lru().is_some_and(|(_, (_, _, used))| self.1.saturating_sub(*used) >= self.2) {
+            self.0.pop_lru();
+        }
+    }
+    fn disabled() -> Self {
+        Self(LruCache::unbounded(), 0, 0, false)
+    }
+    pub(crate) fn clear(&mut self) {
+        self.0.clear();
+    }
+    fn put(&mut self, id: u64, node: Node, checked: bool) {
+        if self.3 {
+            self.0.put(id, (node, checked, self.1));
+        }
     }
 }
 
@@ -74,7 +106,7 @@ impl Node {
         }
         out
     }
-    fn decode(id: u64, bytes: &[u8]) -> Result<Self> {
+    pub(crate) fn decode(id: u64, bytes: &[u8]) -> Result<Self> {
         fn felt(bytes: &[u8]) -> Result<Felt> {
             let raw: [u8; 32] = bytes.try_into()?;
             let f = Felt::from_bytes_be(&raw);
@@ -124,7 +156,7 @@ pub(crate) struct Tree<F> {
 }
 impl<F: FnMut(u64) -> Result<Option<Vec<u8>>>> Tree<F> {
     pub(crate) fn new(first_id: u64, limit: u32, read: F) -> Self {
-        Self { read, first_id, nodes: Vec::new(), cache: NodeCache::default(), replaced: Vec::new(), limit }
+        Self { read, first_id, nodes: Vec::new(), cache: NodeCache::disabled(), replaced: Vec::new(), limit }
     }
     pub(crate) fn with_cache(first_id: u64, limit: u32, read: F, cache: NodeCache) -> Self {
         Self { read, first_id, nodes: Vec::new(), cache, replaced: Vec::new(), limit }
@@ -140,7 +172,7 @@ impl<F: FnMut(u64) -> Result<Option<Vec<u8>>>> Tree<F> {
             self.cache.0.pop(&id);
         }
         for (i, node) in self.nodes.into_iter().enumerate() {
-            self.cache.0.put(self.first_id + i as u64, (node, true));
+            self.cache.put(self.first_id + i as u64, node, true);
         }
         self.cache
     }
@@ -149,18 +181,19 @@ impl<F: FnMut(u64) -> Result<Option<Vec<u8>>>> Tree<F> {
         if id >= self.first_id {
             return self.nodes.get(usize::try_from(id - self.first_id)?).copied().context("Missing staged node");
         }
-        if let Some((node, _)) = self.cache.0.get(&id) {
+        if let Some((node, _, used)) = self.cache.0.get_mut(&id) {
+            *used = self.cache.1;
             return Ok(*node);
         }
         let bytes = (self.read)(id)?.context("Persistent node unavailable")?;
         let node = Node::decode(id, &bytes)?;
         ensure!(node.count() <= self.limit, "Persistent subtree exceeds bound");
-        self.cache.0.put(id, (node, false));
+        self.cache.put(id, node, false);
         Ok(node)
     }
     fn get(&mut self, id: u64) -> Result<Node> {
         let node = self.raw(id)?;
-        if id >= self.first_id || self.cache.0.get(&id).is_some_and(|(_, checked)| *checked) {
+        if id >= self.first_id || self.cache.0.get(&id).is_some_and(|(_, checked, _)| *checked) {
             return Ok(node);
         }
         if let Node::Branch { bit, left, right, hash, count } = node {
@@ -307,9 +340,6 @@ impl<F: FnMut(u64) -> Result<Option<Vec<u8>>>> Tree<F> {
             }
         }
         Ok(())
-    }
-    pub(crate) fn records(&self) -> impl Iterator<Item = ([u8; 14], Vec<u8>)> + '_ {
-        self.nodes.iter().enumerate().map(|(i, n)| (node_key(self.first_id + i as u64), n.encode()))
     }
     pub(crate) fn next_id(&self) -> u64 {
         self.first_id + self.nodes.len() as u64

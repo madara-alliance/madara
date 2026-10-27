@@ -64,6 +64,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         cairo_native_config: Arc<NativeConfig>,
     ) -> Result<Self> {
         let (reorg_notifications, _) = tokio::sync::broadcast::channel(16);
+        let committed_data_cache = crate::committed_data::SnapshotCache::new(&config.committed_data_retention);
         let mut backend = Self {
             db,
             // db_metrics: DbMetrics::register().context("Registering db metrics")?,
@@ -80,10 +81,11 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             head_projection_write_lock: Mutex::new(()),
             latest_l1_confirmed: tokio::sync::watch::Sender::new(Default::default()),
             reorg_notifications,
-            committed_data_cache: Default::default(),
+            committed_data_cache,
             custom_headers: Mutex::new(Default::default()),
             replay_boundaries: Mutex::new(BTreeMap::new()),
         };
+        backend.db.configure_committed_data(backend.config.committed_data_retention.clone())?;
         backend.init().context("Initializing madara backend")?;
         Ok(backend)
     }

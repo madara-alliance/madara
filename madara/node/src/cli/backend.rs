@@ -95,6 +95,27 @@ pub struct BackendParams {
     #[serde(default)]
     pub use_committed_data: bool,
 
+    /// Proof-node history behind L1-settled height, in seconds. Omit to retain every proof index.
+    /// Historical values are always retained and older proofs are reconstructed on demand.
+    #[arg(long, env = "MADARA_COMMITTED_DATA_PROOF_RETENTION_SECS")]
+    #[serde(default)]
+    pub committed_data_proof_retention_secs: Option<u64>,
+
+    /// Recent block distance retained by the decoded tree-node cache.
+    #[arg(long, env = "MADARA_COMMITTED_DATA_MEMORY_BLOCKS", default_value_t = 7200)]
+    #[serde(default = "default_committed_data_memory_blocks")]
+    pub committed_data_memory_blocks: u64,
+
+    /// Decoded tree-node cache budget in MiB; zero disables caching.
+    #[arg(long, env = "MADARA_COMMITTED_DATA_CACHE_MIB", default_value_t = 256)]
+    #[serde(default = "default_committed_data_cache_mib")]
+    pub committed_data_cache_mib: usize,
+
+    /// Pending dataset backup budget in MiB. Full queues reject new imports without dropping data.
+    #[arg(long, env = "MADARA_COMMITTED_DATA_PENDING_BACKUP_MIB", default_value_t = 512)]
+    #[serde(default = "default_committed_data_pending_backup_mib")]
+    pub committed_data_pending_backup_mib: u64,
+
     /// The path where madara will store the database. You should probably change it.
     #[clap(env = "MADARA_BASE_PATH", long, default_value = "/tmp/madara", value_name = "PATH")]
     pub base_path: PathBuf,
@@ -400,6 +421,12 @@ impl BackendParams {
 
         MadaraBackendConfig {
             use_committed_data: self.use_committed_data,
+            committed_data_retention: mc_db::committed_data_retention::CommittedDataRetentionConfig {
+                proof_retention_secs: self.committed_data_proof_retention_secs,
+                memory_blocks: self.committed_data_memory_blocks,
+                cache_bytes: self.committed_data_cache_mib.saturating_mul(MiB),
+                pending_backup_bytes: self.committed_data_pending_backup_mib.saturating_mul(MiB as u64),
+            },
             flush_every_n_blocks: self.flush_every_n_blocks,
             save_preconfirmed: !self.no_save_preconfirmed,
             unsafe_starting_block: self.unsafe_starting_block,
@@ -463,4 +490,14 @@ mod committed_data_tests {
         let restored = serde_json::from_value::<BackendParams>(old).unwrap().backend_config();
         assert!(!restored.use_committed_data);
     }
+}
+
+fn default_committed_data_memory_blocks() -> u64 {
+    7200
+}
+fn default_committed_data_cache_mib() -> usize {
+    256
+}
+fn default_committed_data_pending_backup_mib() -> u64 {
+    512
 }

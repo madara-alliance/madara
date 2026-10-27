@@ -43,7 +43,7 @@ fn block_context<D: MadaraStorageRead>(
     context.use_committed_data = backend.use_committed_data();
     context.committed_data_witnesses =
         Arc::new(blockifier::execution::syscalls::committed_data::CommittedDataWitnesses::from_provider(
-            backend.committed_data_provider(),
+            backend.committed_data_provider_at(context.block_info().block_number.0),
         ));
     Ok(context.into())
 }
@@ -128,7 +128,7 @@ impl<D: MadaraStorageRead> MadaraBackendExecutionExt<D> for MadaraBackend<D> {
         context.use_committed_data = self.use_committed_data();
         context.committed_data_witnesses =
             Arc::new(blockifier::execution::syscalls::committed_data::CommittedDataWitnesses::from_provider(
-                self.committed_data_provider(),
+                self.committed_data_provider_at(context.block_info().block_number.0),
             ));
         Ok(TransactionExecutor::new(
             CachedState::new(state_adaptor),

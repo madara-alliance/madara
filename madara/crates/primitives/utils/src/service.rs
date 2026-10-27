@@ -380,6 +380,7 @@ pub enum MadaraServiceId {
     Mempool,
     ExternalDb,
     RpcCommittedData,
+    CommittedDataHistory,
 }
 
 impl ServiceId for MadaraServiceId {
@@ -398,6 +399,7 @@ impl ServiceId for MadaraServiceId {
             MadaraServiceId::Mempool => PowerOfTwo::P8,
             MadaraServiceId::ExternalDb => PowerOfTwo::P9,
             MadaraServiceId::RpcCommittedData => PowerOfTwo::P10,
+            MadaraServiceId::CommittedDataHistory => PowerOfTwo::P11,
         }
     }
 }
@@ -420,6 +422,7 @@ impl Display for MadaraServiceId {
                 Self::Mempool => "mempool",
                 Self::ExternalDb => "external db",
                 Self::RpcCommittedData => "rpc committed data",
+                Self::CommittedDataHistory => "committed data history",
             }
         )
     }

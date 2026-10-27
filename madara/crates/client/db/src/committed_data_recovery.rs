@@ -131,7 +131,8 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
         ensure!((1..=MAX_ENTRIES).contains(&entries), "Invalid recovery entry count");
         let worst_case = (entries * 64 + entries.div_ceil(CHUNK_ENTRIES) * 1024 + 65536) as u64;
         ensure!(
-            self.db.recovery_pending_bytes()?.saturating_add(worst_case) <= MAX_PENDING_BYTES,
+            self.db.recovery_pending_bytes()?.saturating_add(worst_case)
+                <= self.config.committed_data_retention.pending_backup_bytes,
             "Committed-data backup backlog full; retry after export"
         );
         Ok(())
@@ -307,6 +308,39 @@ mod tests {
             "Committed-data backup backlog full; retry after export"
         );
         assert!(backend.check_recovery_capacity(None, root, 1).is_ok());
+    }
+
+    #[test]
+    fn configured_backup_budget_checks_preflight_and_atomic_write() {
+        use crate::{MadaraBackendConfig, MadaraStorageWrite};
+        let dir = tempfile::tempdir().unwrap();
+        let config = MadaraBackendConfig {
+            committed_data_retention: crate::committed_data_retention::CommittedDataRetentionConfig {
+                pending_backup_bytes: 128 * 1024,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let backend = MadaraBackend::open_rocksdb(
+            dir.path(),
+            mp_chain_config::ChainConfig::madara_test().into(),
+            config,
+            Default::default(),
+            Default::default(),
+        )
+        .unwrap();
+        assert!(backend.check_recovery_capacity(None, Felt::THREE, 1).is_ok());
+        assert!(backend.check_recovery_capacity(None, Felt::THREE, 4096).is_err());
+        let record = RecoveryRecord::encode(Felt::ONE, None, Felt::THREE, None, vec![(Felt::ONE, Felt::TWO)]).unwrap();
+        crate::test_utils::set_recovery_pending_bytes(&backend, 128 * 1024 - 1);
+        assert!(backend.db.store_recovery_record(&record).is_err());
+        assert_eq!(backend.db.recovery_pending_bytes().unwrap(), 128 * 1024 - 1);
+        assert!(backend.db.get_recovery_record(&record.manifest.id().unwrap()).unwrap().is_none());
+        crate::test_utils::set_recovery_pending_bytes(&backend, 0);
+        let id = backend.db.store_recovery_record(&record).unwrap();
+        assert!(backend.db.recovery_pending_bytes().unwrap() < 128 * 1024);
+        backend.db.mark_recovery_exported(&id).unwrap();
+        assert_eq!(backend.db.recovery_pending_bytes().unwrap(), 0);
     }
 
     #[test]
