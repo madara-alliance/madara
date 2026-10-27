@@ -439,6 +439,17 @@ impl StateUpdateJobHandler {
 
     #[cfg(not(feature = "testing"))]
     async fn should_send_state_update_txn(&self, config: &Arc<Config>, to_batch_num: u64) -> Result<bool, JobError> {
+        self.should_send_state_update_txn_from_chain(config, to_batch_num).await
+    }
+
+    // Keep the real chain check callable from tests even when the `testing` feature forces
+    // transaction submission for other state-update tests.
+    #[cfg(any(test, not(feature = "testing")))]
+    pub(crate) async fn should_send_state_update_txn_from_chain(
+        &self,
+        config: &Arc<Config>,
+        to_batch_num: u64,
+    ) -> Result<bool, JobError> {
         // Get the batch details for the batch to settle
         let to_block_num = match config.layer() {
             Layer::L2 => {

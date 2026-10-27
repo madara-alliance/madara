@@ -137,8 +137,9 @@ impl JobHandlerTrait for SnosJobHandler {
 
         // Keep only PIE generation in the blocking task. If shutdown drops this await, the
         // calculation may finish in the background, but it cannot store artifacts or mutate the job.
+        let runtime = tokio::runtime::Handle::current();
         let snos_output: PieGenerationResult =
-            tokio::task::spawn_blocking(move || tokio::runtime::Handle::current().block_on(generate_pie(input)))
+            tokio::task::spawn_blocking(move || runtime.block_on(generate_pie(input)))
                 .await
                 .map_err(|e| JobError::Other(OtherError::from(format!("SNOS PIE task failed: {e}"))))?
                 .map_err(|e| {
