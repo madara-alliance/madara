@@ -10,7 +10,6 @@ use crate::types::batch::{
 };
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
-use crate::types::jobs::metadata::JobMetadata;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::params::database::DatabaseArgs;
 use crate::utils::metrics_recorder::MetricsRecorder;
@@ -779,62 +778,6 @@ impl DatabaseClient for MongoDbClient {
                 Err(DatabaseError::UpdateFailed(format!("Failed to update job. Identifier: {}", current_job.id)))
             }
         }
-    }
-
-    async fn refresh_job_processing_lease(
-        &self,
-        id: Uuid,
-        version: i32,
-        process_started_at: chrono::DateTime<Utc>,
-    ) -> Result<(), DatabaseError> {
-        let filter = doc! {
-            "id": id,
-            "version": version,
-            "status": bson::to_bson(&JobStatus::LockedForProcessing)?,
-        };
-        let update = doc! {
-            "$set": {
-                // CommonMetadata serializes this field with chrono::serde::ts_seconds_option.
-                "metadata.common.process_started_at": Bson::Int64(process_started_at.timestamp()),
-                "updated_at": Bson::DateTime(Utc::now().round_subsecs(0).into()),
-            }
-        };
-
-        let result = self.get_job_collection().update_one(filter, update).await?;
-        if result.matched_count == 1 {
-            Ok(())
-        } else {
-            Err(DatabaseError::UpdateFailed(format!(
-                "Processing lease is no longer owned for job {id} at version {version}"
-            )))
-        }
-    }
-
-    async fn try_reset_stale_processing_job(
-        &self,
-        current_job: &JobItem,
-        observed_process_started_at: Option<chrono::DateTime<Utc>>,
-        metadata: JobMetadata,
-    ) -> Result<Option<JobItem>, DatabaseError> {
-        let observed_process_started_at =
-            observed_process_started_at.map(|timestamp| Bson::Int64(timestamp.timestamp())).unwrap_or(Bson::Null);
-        let filter = doc! {
-            "id": current_job.id,
-            "version": current_job.version,
-            "status": bson::to_bson(&JobStatus::LockedForProcessing)?,
-            "metadata.common.process_started_at": observed_process_started_at,
-        };
-        let update = doc! {
-            "$set": {
-                "status": bson::to_bson(&JobStatus::Created)?,
-                "metadata": bson::to_bson(&metadata)?,
-                "version": Bson::Int32(current_job.version + 1),
-                "updated_at": Bson::DateTime(Utc::now().round_subsecs(0).into()),
-            }
-        };
-        let options = FindOneAndUpdateOptions::builder().upsert(false).return_document(ReturnDocument::After).build();
-
-        Ok(self.get_job_collection().find_one_and_update(filter, update).with_options(options).await?)
     }
 
     async fn get_latest_job_by_type(
