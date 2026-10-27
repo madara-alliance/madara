@@ -178,6 +178,17 @@ impl RecoveryArchive {
     }
 }
 
+fn decode_recovery_transaction(bytes: &[u8]) -> Result<ValidatedTransaction> {
+    let mut tx: ValidatedTransaction = bincode::DefaultOptions::new()
+        .with_fixint_encoding()
+        .with_limit(16 * 1024 * 1024)
+        .reject_trailing_bytes()
+        .deserialize(bytes)?;
+    // Resubmissions have different admission times. Recovery assigns a fresh time after comparison.
+    tx.arrived_at = TxTimestamp::UNIX_EPOCH;
+    Ok(tx)
+}
+
 /// Stage only explicitly selected backed-up committed-data transactions. Mempool startup
 /// reconciles them against the restored chain, including nonces already executed there.
 /// A fresh local arrival timestamp avoids silently dropping disaster-recovery work by TTL;
@@ -195,19 +206,15 @@ pub async fn restore_transactions(
     for hash in hashes {
         let mut cursor=client.collection().find(doc! {"tx_hash":format!("{}",hash.hex_display()),"chain_id":&chain_id,"committed_data.0":{"$exists":true}}).sort(doc!{"arrived_at":1,"_id":1}).await?;
         let document = cursor.try_next().await?.context("Missing recoverable transaction in Mongo archive")?;
+        let mut tx = decode_recovery_transaction(&document.raw_transaction.bytes)?;
         while let Some(duplicate) = cursor.try_next().await? {
             ensure!(
-                duplicate.raw_transaction.bytes == document.raw_transaction.bytes
+                decode_recovery_transaction(&duplicate.raw_transaction.bytes)? == tx
                     && duplicate.committed_data == document.committed_data,
                 "Conflicting transaction archive records"
             );
         }
         ensure!((1..=4).contains(&document.committed_data.len()), "Invalid recovery dependency count");
-        let mut tx: ValidatedTransaction = bincode::DefaultOptions::new()
-            .with_fixint_encoding()
-            .with_limit(16 * 1024 * 1024)
-            .reject_trailing_bytes()
-            .deserialize(&document.raw_transaction.bytes)?;
         ensure!(
             tx.hash == *hash
                 && tx.transaction.compute_hash(
@@ -231,6 +238,46 @@ mod tests {
     use blockifier::execution::syscalls::committed_data::CommittedDataSet;
     use mp_chain_config::ChainConfig;
     use mp_gateway::committed_data::CommittedDataUpdate;
+    use mp_transactions::{InvokeTransaction, Transaction};
+
+    #[test]
+    fn recovery_comparison_ignores_only_arrival_time() {
+        let sender = mc_db::test_utils::devnet_account_address();
+        let mut original = mc_db::test_utils::validated_transaction(
+            Transaction::Invoke(InvokeTransaction::V3(mc_db::test_utils::invoke_v3(sender, Felt::ONE))),
+            Felt::ONE,
+            sender,
+            None,
+        );
+        original.arrived_at = TxTimestamp(100);
+        let original_bytes = bincode::serialize(&original).unwrap();
+        let expected = decode_recovery_transaction(&original_bytes).unwrap();
+        let mut resubmitted = original.clone();
+        resubmitted.arrived_at = TxTimestamp(200);
+        let resubmitted_bytes = bincode::serialize(&resubmitted).unwrap();
+        assert_ne!(original_bytes, resubmitted_bytes);
+        assert_eq!(expected, decode_recovery_transaction(&resubmitted_bytes).unwrap());
+
+        let mut changed_transaction = resubmitted.clone();
+        changed_transaction.transaction =
+            Transaction::Invoke(InvokeTransaction::V3(mc_db::test_utils::invoke_v3(sender, Felt::TWO)));
+        let mut changed_fee = resubmitted.clone();
+        changed_fee.charge_fee = !changed_fee.charge_fee;
+        let mut changed_l1_fee = resubmitted.clone();
+        changed_l1_fee.paid_fee_on_l1 = Some(1);
+        let mut changed_address = resubmitted.clone();
+        changed_address.contract_address = Felt::ZERO;
+        let mut changed_hash = resubmitted;
+        changed_hash.hash = Felt::TWO;
+        for changed in [changed_transaction, changed_fee, changed_l1_fee, changed_address, changed_hash] {
+            assert_ne!(expected, decode_recovery_transaction(&bincode::serialize(&changed).unwrap()).unwrap());
+        }
+
+        assert!(decode_recovery_transaction(&original_bytes[..original_bytes.len() - 1]).is_err());
+        let mut trailing = original_bytes;
+        trailing.push(0);
+        assert!(decode_recovery_transaction(&trailing).is_err());
+    }
 
     #[tokio::test]
     #[ignore = "requires disposable MongoDB in the isolated recovery worker"]
