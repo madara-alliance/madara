@@ -141,15 +141,21 @@ impl RocksDBStorage {
         if id != 0 {
             let mut refs = References::new(&self.inner, u64::MAX, &[]);
             refs.remove(id)?;
+            let eviction_start = std::time::Instant::now();
             for &deleted in refs.deleted() {
                 cache.remove(deleted);
             }
+            eprintln!("CD_DETAIL prune_evict ms={}", eviction_start.elapsed().as_secs_f64() * 1000.);
+            let batch_start = std::time::Instant::now();
             refs.write(&mut batch);
+            eprintln!("CD_DETAIL prune_batch ms={}", batch_start.elapsed().as_secs_f64() * 1000.);
             metadata[METADATA_BYTES..].copy_from_slice(&0u64.to_be_bytes());
             batch.put_cf(&cf, metadata_key(root, METADATA_LEVEL, 0), metadata);
         }
         batch.delete_cf(&cf, key);
+        let wal_start = std::time::Instant::now();
         self.inner.db.write_opt(batch, &sync_options())?;
+        eprintln!("CD_DETAIL prune_wal ms={}", wal_start.elapsed().as_secs_f64() * 1000.);
         eprintln!(
             "CD_PROFILE prune prelock_ms={} locked_ms={}",
             profile_locked,

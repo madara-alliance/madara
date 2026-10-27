@@ -4,11 +4,52 @@
 //! existing committed-data format. A writer publishes nodes, allocator and root pointer atomically.
 use anyhow::{ensure, Context, Result};
 use blockifier::execution::syscalls::committed_data::{
-    branch, key_bit, leaf, CommittedDataSibling, CommittedDataWitness,
+    branch as protocol_branch, key_bit, leaf as protocol_leaf, CommittedDataSibling, CommittedDataWitness,
 };
 use lru::LruCache;
 use starknet_types_core::felt::Felt;
 use std::num::NonZeroUsize;
+
+// Temporary investigation only; never ship these per-node clocks in PR1261.
+pub(crate) mod profile {
+    use std::{cell::RefCell, time::Instant};
+    thread_local! { static STATS: RefCell<[(u64, u128); 7]> = const { RefCell::new([(0, 0); 7]) }; }
+    pub(super) fn measure<T>(slot: usize, f: impl FnOnce() -> T) -> T {
+        let start = Instant::now();
+        let value = f();
+        let ns = start.elapsed().as_nanos();
+        STATS.with(|s| {
+            let mut s = s.borrow_mut();
+            s[slot].0 += 1;
+            s[slot].1 += ns;
+        });
+        value
+    }
+    pub(super) fn hit() {
+        STATS.with(|s| s.borrow_mut()[6].0 += 1);
+    }
+    pub(crate) fn reset() {
+        STATS.with(|s| *s.borrow_mut() = [(0, 0); 7]);
+    }
+    pub(crate) fn report() {
+        STATS.with(|s| {
+            let s = s.borrow();
+            for (name, (calls, ns)) in
+                ["leaf_hash", "branch_hash", "disk_read", "decode", "first_key", "sort", "cache_hit"]
+                    .iter()
+                    .zip(s.iter())
+            {
+                eprintln!("CD_DETAIL {} calls={} ms={}", name, calls, *ns as f64 / 1e6);
+            }
+        });
+    }
+}
+fn leaf(key: Felt, value: Felt) -> Felt {
+    profile::measure(0, || protocol_leaf(key, value))
+}
+fn branch(bit: u8, left: Felt, right: Felt) -> Felt {
+    profile::measure(1, || protocol_branch(bit, left, right))
+}
 
 /// Bounded decoded-node cache. Block age controls eligibility; a byte estimate caps occupancy.
 /// The estimate includes hash-table/list bookkeeping, but is not a process RSS guarantee.
@@ -192,11 +233,12 @@ impl<F: FnMut(u64) -> Result<Option<Vec<u8>>>> Tree<F> {
             return self.nodes.get(usize::try_from(id - self.first_id)?).copied().context("Missing staged node");
         }
         if let Some((node, _, used)) = self.cache.0.get_mut(&id) {
+            profile::hit();
             *used = self.cache.1;
             return Ok(*node);
         }
-        let bytes = (self.read)(id)?.context("Persistent node unavailable")?;
-        let node = Node::decode(id, &bytes)?;
+        let bytes = profile::measure(2, || (self.read)(id))?.context("Persistent node unavailable")?;
+        let node = profile::measure(3, || Node::decode(id, &bytes))?;
         ensure!(node.count() <= self.limit, "Persistent subtree exceeds bound");
         self.cache.put(id, node, false);
         Ok(node)
@@ -249,7 +291,7 @@ impl<F: FnMut(u64) -> Result<Option<Vec<u8>>>> Tree<F> {
     }
     pub(crate) fn prepare(entries: &mut [(Felt, Felt)], limit: u32) -> Result<()> {
         ensure!(!entries.is_empty() && entries.len() <= limit as usize, "Invalid persistent patch size");
-        entries.sort_unstable_by_key(|e| e.0);
+        profile::measure(5, || entries.sort_unstable_by_key(|e| e.0));
         ensure!(entries.windows(2).all(|p| p[0].0 != p[1].0), "Duplicate persistent key");
         Ok(())
     }
@@ -277,7 +319,7 @@ impl<F: FnMut(u64) -> Result<Option<Vec<u8>>>> Tree<F> {
             return Ok(id);
         }
         let old = self.get(id)?;
-        let first = self.first_key(id)?;
+        let first = profile::measure(4, || self.first_key(id))?;
         let bit = old.bit().max(differing_bit(first, patch[0].0)).max(differing_bit(first, patch[patch.len() - 1].0));
         if bit == -1 {
             let Node::Leaf { value, .. } = old else { anyhow::bail!("Invalid leaf merge") };

@@ -92,12 +92,20 @@ impl<'a> References<'a> {
     pub(super) fn remove(&mut self, id: u64) -> Result<()> {
         let cf = self.db.get_column(meta::META_COLUMN);
         let mut pending = vec![id];
+        let start = std::time::Instant::now();
+        let mut read_ns = 0u128;
+        let mut read_count = 0usize;
+        let mut frontiers = 0usize;
         while !pending.is_empty() {
             // Bound temporary read buffers while amortizing RocksDB lookups across a frontier.
             let ids = pending.split_off(pending.len().saturating_sub(1024));
             let missing: Vec<_> = ids.iter().copied().filter(|id| !self.changes.contains_key(id)).collect();
+            read_count += missing.len();
+            frontiers += 1;
+            let read_start = std::time::Instant::now();
             let values =
                 self.db.db.multi_get_cf(missing.iter().map(|id| (&cf, [REFERENCES, &id.to_be_bytes()].concat())));
+            read_ns += read_start.elapsed().as_nanos();
             for (id, value) in missing.into_iter().zip(values) {
                 let bytes = value?.context("Unregistered proof node")?;
                 self.changes.insert(id, Reference::decode(id, &bytes)?);
@@ -114,6 +122,13 @@ impl<'a> References<'a> {
                 }
             }
         }
+        eprintln!(
+            "CD_DETAIL ref_remove reads={} frontiers={} read_ms={} total_ms={}",
+            read_count,
+            frontiers,
+            read_ns as f64 / 1e6,
+            start.elapsed().as_secs_f64() * 1000.
+        );
         Ok(())
     }
     pub(super) fn deleted(&self) -> &[u64] {

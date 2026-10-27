@@ -304,6 +304,7 @@ impl RocksDBStorage {
         state: &mut crate::persistent_committed_data::NodeCache,
     ) -> Result<()> {
         let profile_start = std::time::Instant::now();
+        crate::persistent_committed_data::profile::reset();
         let cf = self.inner.get_column(meta::META_COLUMN);
         let old_metadata = self.inner.db.get_pinned_cf(&cf, metadata_key(root, METADATA_LEVEL, 0))?;
         let base_root = base.unwrap_or(root);
@@ -361,6 +362,7 @@ impl RocksDBStorage {
             Err(error) => return Err(error),
         };
         let (actual_root, count) = tree.root(id)?;
+        crate::persistent_committed_data::profile::report();
         let profile_tree = profile_start.elapsed().as_secs_f64() * 1000.;
         anyhow::ensure!(actual_root == root, "Committed-data root does not match updated dataset");
         // A full retry can reuse an existing tree, but must still supply every entry. Otherwise
