@@ -466,6 +466,16 @@ impl BackendParams {
     }
 }
 
+fn default_committed_data_memory_blocks() -> u64 {
+    7200
+}
+fn default_committed_data_cache_mib() -> usize {
+    256
+}
+fn default_committed_data_pending_backup_mib() -> u64 {
+    512
+}
+
 #[cfg(test)]
 mod committed_data_tests {
     use super::*;
@@ -490,14 +500,4 @@ mod committed_data_tests {
         let restored = serde_json::from_value::<BackendParams>(old).unwrap().backend_config();
         assert!(!restored.use_committed_data);
     }
-}
-
-fn default_committed_data_memory_blocks() -> u64 {
-    7200
-}
-fn default_committed_data_cache_mib() -> usize {
-    256
-}
-fn default_committed_data_pending_backup_mib() -> u64 {
-    512
 }
