@@ -67,9 +67,12 @@ async fn mongo_recovery_restores_bases_and_rejects_corruption() {
     archive.chunks.update_one(doc! {"_id":hash}, doc! {"$set":{"payload":binary(vec![0,1,2])}}).await.unwrap();
     assert!(archive.download(&next).await.is_err());
     assert!(archive.upload(&next_record).await.is_err());
+    // Repair the earlier corruption so only the missing parent can reject this upload.
+    archive.chunks.delete_one(doc! {"_id":hash}).await.unwrap();
+    archive.upload(&next_record).await.unwrap();
     // A manifest cannot complete while its exact parent is missing.
     archive.manifests.delete_one(doc! {"_id":&base}).await.unwrap();
-    assert!(archive.upload(&next_record).await.is_err());
+    assert_eq!(archive.upload(&next_record).await.unwrap_err().to_string(), "Backup base is incomplete");
     // A corrupt completion marker must not authorize deleting the remaining local payload.
     archive
         .manifests

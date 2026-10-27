@@ -41,6 +41,7 @@ fn signed_two_call_tx(backend: &MadaraBackend, account: &DevnetPredeployedContra
 struct RecordingSubmitter {
     attempts: AtomicUsize,
     reject: bool,
+    calls: std::sync::Mutex<Vec<(serde_json::Value, Vec<String>)>>,
 }
 
 #[async_trait]
@@ -50,8 +51,7 @@ impl SubmitTransaction for RecordingSubmitter {
         transaction: BroadcastedTxn,
         dependencies: Vec<String>,
     ) -> Result<Felt, SubmitTransactionError> {
-        assert!(!dependencies.is_empty());
-        assert!(dependencies.iter().all(|id| id.len() == 64));
+        self.calls.lock().unwrap().push((serde_json::to_value(&transaction).unwrap(), dependencies));
         match transaction {
             BroadcastedTxn::Invoke(tx) => Ok(self.submit_invoke_transaction(tx).await?.transaction_hash),
             _ => Err(SubmitTransactionError::Unsupported),
@@ -91,7 +91,8 @@ impl SubmitTransaction for RecordingSubmitter {
 async fn combined_rpc_imports_before_invoke_and_does_not_submit_after_import_failure() {
     use blockifier::execution::syscalls::committed_data::CommittedDataSet;
     let (backend, mut starknet, keys) = crate::test_utils::rpc_test_setup_with_execution().await;
-    let submitter = Arc::new(RecordingSubmitter { attempts: AtomicUsize::new(0), reject: false });
+    let submitter =
+        Arc::new(RecordingSubmitter { attempts: AtomicUsize::new(0), reject: false, calls: Default::default() });
     starknet.transaction_submitter = submitter.clone();
     let account = keys.0.first().unwrap();
     let tx = signed_two_call_tx(&backend, account);
@@ -130,11 +131,23 @@ async fn combined_rpc_imports_before_invoke_and_does_not_submit_after_import_fai
 
     let (response, _) = module.raw_json_request(&call(funding_root, &tx), 1).await.unwrap();
     let response: serde_json::Value = serde_json::from_str(&response).unwrap();
-    assert_eq!(response["result"]["transaction_hash"], serde_json::json!(Felt::THREE));
     assert_eq!(response["result"], serde_json::json!({"transaction_hash": Felt::THREE}));
     // No receipt was inserted: admission must return without waiting for a block.
     assert!(backend.view_on_latest().find_transaction_by_hash(&Felt::THREE).unwrap().is_none());
     assert_eq!(submitter.attempts.load(Ordering::SeqCst), 1);
+    let update = CommittedDataUpdate { application_id: Felt::ONE, dataset_id: Felt::TWO, base_root: None };
+    assert_eq!(
+        *submitter.calls.lock().unwrap(),
+        vec![(
+            serde_json::to_value(&tx).unwrap(),
+            vec![
+                backend.recovery_reference(Some(update), root).unwrap(),
+                backend
+                    .recovery_reference(Some(CommittedDataUpdate { base_root: Some(root), ..update }), funding_root)
+                    .unwrap(),
+            ]
+        )]
+    );
     assert!(backend.committed_data_witness(root, Felt::ZERO).unwrap().unwrap().verify());
     assert!(backend.committed_data_witness(funding_root, Felt::ZERO).unwrap().unwrap().verify());
 }
@@ -145,7 +158,8 @@ async fn rejected_submission_leaves_only_an_unused_durable_dataset() {
     let (backend, mut starknet, keys) = crate::test_utils::rpc_test_setup_with_execution().await;
     starknet.ctx.service_remove(MadaraServiceId::L2Sync);
     starknet.committed_data_transaction_submission = true;
-    let submitter = Arc::new(RecordingSubmitter { attempts: AtomicUsize::new(0), reject: true });
+    let submitter =
+        Arc::new(RecordingSubmitter { attempts: AtomicUsize::new(0), reject: true, calls: Default::default() });
     starknet.transaction_submitter = submitter.clone();
     let tx = signed_two_call_tx(&backend, keys.0.first().unwrap());
     let values: Vec<_> = vec![(Felt::ZERO, Felt::from(99_u32))];
@@ -296,3 +310,5 @@ async fn committed_data_update_rpc_authenticates_namespace_base_and_expected_roo
     assert!(response.get("error").is_none(), "{response}");
     assert_eq!(backend.db.list_committed_data_versions(None).unwrap().len(), 1);
 }
+
+mod admission;

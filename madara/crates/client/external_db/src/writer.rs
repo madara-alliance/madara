@@ -1238,3 +1238,6 @@ mod tests {
         assert_eq!(backoff.next_delay(), Duration::from_millis(100));
     }
 }
+
+#[cfg(test)]
+mod recovery_tests;

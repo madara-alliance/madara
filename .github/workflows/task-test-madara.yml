@@ -127,7 +127,7 @@ jobs:
             --archive-file target/nextest/madara-tests.tar.zst \
             --workspace-remap "$GITHUB_WORKSPACE" \
             --run-ignored only \
-            -E 'package(mc-external-db) & (test(mongo_recovery_restores_bases_and_rejects_corruption) | test(mongo_duplicate_retry_requires_matching_recovery_data))' \
+            -E 'package(mc-external-db) & (test(mongo_recovery_restores_bases_and_rejects_corruption) | test(mongo_duplicate_retry_requires_matching_recovery_data) | test(mongo_transaction_recovery_))' \
             --no-fail-fast
 
       - name: Kill Anvil

@@ -250,8 +250,10 @@ async fn committed_data_reimport_repairs_malformed_nodes() {
     assert!(backend.committed_data_witness(root, Felt::ZERO).unwrap().unwrap().verify());
 }
 
-#[test]
-fn committed_data_import_rejects_a_second_request_before_blocking_work_starts() {
+#[rstest::rstest]
+#[case::waiting(false)]
+#[case::cancelled(true)]
+fn committed_data_import_holds_capacity_until_blocking_work_finishes(#[case] cancel: bool) {
     tokio::runtime::Builder::new_current_thread().enable_all().max_blocking_threads(1).build().unwrap().block_on(
         async {
             let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
@@ -263,10 +265,13 @@ fn committed_data_import_rejects_a_second_request_before_blocking_work_starts() 
                 wait.recv_timeout(std::time::Duration::from_secs(10)).unwrap();
             });
             ready.await.unwrap();
-            let first = backend.import_committed_data_snapshot(dataset.root(), dataset.entries().to_vec());
-            tokio::pin!(first);
+            let mut first =
+                Box::pin(backend.import_committed_data_snapshot(dataset.root(), dataset.entries().to_vec()));
             assert!(futures::poll!(&mut first).is_pending());
-            // The first import is queued, not running. The second must fail without joining it.
+            if cancel {
+                drop(first);
+            }
+            // Cancellation of the caller must not release capacity owned by queued blocking work.
             let second = tokio::time::timeout(
                 std::time::Duration::from_secs(1),
                 backend.import_committed_data_snapshot(dataset.root(), dataset.entries().to_vec()),
@@ -274,7 +279,10 @@ fn committed_data_import_rejects_a_second_request_before_blocking_work_starts() 
             .await;
             release.send(()).unwrap();
             blocker.await.unwrap();
-            first.await.unwrap();
+            // A barrier behind the queued import observes completion even when its caller was dropped.
+            tokio::task::spawn_blocking(|| ()).await.unwrap();
+            assert!(backend.committed_data_witness(dataset.root(), Felt::ZERO).unwrap().unwrap().verify());
+            backend.import_committed_data_snapshot(dataset.root(), dataset.entries().to_vec()).await.unwrap();
             assert!(second
                 .expect("busy import must not wait for a blocking worker")
                 .unwrap_err()

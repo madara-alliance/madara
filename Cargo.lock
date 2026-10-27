@@ -9056,6 +9056,7 @@ dependencies = [
  "mc-devnet",
  "mc-e2e-tests",
  "mc-exec",
+ "mc-mempool",
  "mongodb",
  "mp-block",
  "mp-chain-config",
