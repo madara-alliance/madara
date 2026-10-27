@@ -226,17 +226,31 @@ async fn committed_data_public_traces_survive_proof_pruning(#[case] replica: boo
     let signature = account.secret.sign(&hash).unwrap();
     tx.signature = vec![signature.r, signature.s].into();
     let transaction = validated(tx).transaction;
-    mc_db::test_utils::add_test_block(
-        &backend,
-        1,
-        vec![mp_block::TransactionWithReceipt {
-            transaction,
-            receipt: mp_receipt::TransactionReceipt::Invoke(mp_receipt::InvokeTransactionReceipt {
-                transaction_hash: hash,
-                ..Default::default()
-            }),
-        }],
-    );
+    let transactions = vec![mp_block::TransactionWithReceipt {
+        transaction,
+        receipt: mp_receipt::TransactionReceipt::Invoke(mp_receipt::InvokeTransactionReceipt {
+            transaction_hash: hash,
+            ..Default::default()
+        }),
+    }];
+    // A real fee transfer needs a nonzero sequencer recipient; the generic test block uses zero.
+    backend
+        .write_access()
+        .add_full_block_with_classes(
+            &mp_block::FullBlockWithoutCommitments {
+                header: mp_block::header::PreconfirmedHeader {
+                    block_number: 1,
+                    sequencer_address: Felt::from(0xbabaau32),
+                    ..Default::default()
+                },
+                transactions,
+                state_diff: Default::default(),
+                events: vec![],
+            },
+            &[],
+            false,
+        )
+        .unwrap();
     mc_db::test_utils::add_test_block(&backend, 2, vec![]);
     backend.set_latest_l1_confirmed(Some(2)).unwrap();
     let provider = Arc::new(crate::test_utils::TestTransactionProvider);
@@ -249,18 +263,15 @@ async fn committed_data_public_traces_survive_proof_pruning(#[case] replica: boo
         mp_utils::service::ServiceContext::new_for_testing(),
     );
     let before = serde_json::to_value(rpc.trace_transaction(hash).await.unwrap()).unwrap();
-    // Require the syscall's successful return, not merely a trace containing a reverted invoke.
-    fn has_return(value: &serde_json::Value) -> bool {
-        match value {
-            serde_json::Value::Object(fields) => {
-                fields.get("result") == Some(&serde_json::json!([Felt::from(424242u32)]))
-                    || fields.values().any(has_return)
-            }
-            serde_json::Value::Array(values) => values.iter().any(has_return),
-            _ => false,
-        }
-    }
-    assert!(has_return(&before), "{before}");
+    // The account returns Array<Span<felt252>>: one call, one returned felt, then the value.
+    // The reserved reader is intercepted by the syscall handler, so it has no nested contract call.
+    assert_eq!(before["execute_invocation"]["is_reverted"], false, "{before}");
+    assert_eq!(
+        before["execute_invocation"]["result"],
+        serde_json::json!([Felt::ONE, Felt::ONE, Felt::from(424242u32)]),
+        "{before}"
+    );
+    assert_eq!(before["fee_transfer_invocation"]["is_reverted"], false, "{before}");
     let block_id = mp_rpc::v0_10_0::BlockId::Number(1);
     let block_before =
         serde_json::to_value(rpc.trace_block_transactions(block_id.clone(), None).await.unwrap()).unwrap();
