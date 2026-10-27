@@ -33,6 +33,15 @@ impl MadaraStorageWrite for RocksDBStorage {
         self.store_committed_data_dataset(dataset, imported_after_block)
     }
 
+    fn import_committed_data_values(
+        &self,
+        root: Felt,
+        entries: Vec<(Felt, Felt)>,
+        checkpoint: Option<u64>,
+    ) -> Result<()> {
+        self.store_persistent_patch(None, root, entries, checkpoint, true)
+    }
+
     fn patch_committed_data_dataset(
         &self,
         base: Felt,

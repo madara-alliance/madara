@@ -462,3 +462,29 @@ fn committed_snapshot_cache_enforces_byte_budget_and_block_age() {
     cache.insert(tree.clone(), 10).unwrap();
     assert!(cache.get(tree.root(), 10).unwrap().is_none());
 }
+
+#[tokio::test]
+async fn committed_data_initialization_authenticates_the_complete_map_before_writing() {
+    let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+    let namespace = CommittedDataUpdate { application_id: Felt::ONE, dataset_id: Felt::TWO, base_root: None };
+    let values = vec![(Felt::ONE, Felt::MAX), (Felt::TWO, Felt::ZERO)];
+    let root = CommittedDataSet::new(values.clone()).unwrap().root();
+    for invalid in [vec![], vec![values[0]; 2], vec![values[0]]] {
+        assert!(backend.update_committed_data(namespace, root, invalid).await.is_err());
+        assert!(backend.db.get_committed_data_count(root).unwrap().is_none());
+    }
+    backend.update_committed_data(namespace, root, values.clone()).await.unwrap();
+    // On retry, an unchanged subset must not be accepted as a complete map merely because
+    // merging it into the existing root produces that same root.
+    let error = backend.update_committed_data(namespace, root, vec![values[0]]).await.unwrap_err();
+    assert!(error.to_string().contains("Incomplete committed-data full import"));
+    let mut reversed = values.clone();
+    reversed.reverse();
+    backend.update_committed_data(namespace, root, reversed).await.unwrap();
+    assert_eq!(backend.db.list_committed_data_versions(None).unwrap().len(), 1);
+    for (key, value) in values {
+        let proof = backend.committed_data_witness(root, key).unwrap().unwrap();
+        assert_eq!(proof.value, value);
+        assert!(proof.verify());
+    }
+}

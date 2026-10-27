@@ -104,8 +104,10 @@ fn deserialize<T: serde::de::DeserializeOwned>(bytes: impl AsRef<[u8]>) -> Resul
 pub(crate) struct RocksDBStorageInner {
     db: DB,
     global_opts: RocksDBOptions,
-    // Serializes first-import metadata and repairs across cloned storage handles.
+    // Serializes proof-node allocation, root publication, repair and pruning across cloned handles.
     committed_data_write: std::sync::Mutex<crate::persistent_committed_data::NodeCache>,
+    // Namespace initialization and outbox accounting do not mutate the proof-node arena.
+    committed_data_records_write: std::sync::Mutex<()>,
     committed_data_reconstruction: std::sync::Mutex<()>,
     committed_data_config: std::sync::RwLock<crate::committed_data_retention::CommittedDataRetentionConfig>,
     writeopts: WriteOptions,

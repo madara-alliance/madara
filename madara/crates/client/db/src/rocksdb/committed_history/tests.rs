@@ -374,3 +374,42 @@ fn committed_history_dictionary_key_additions_forks_and_corruption() {
         assert_eq!(backend.db.get_committed_data_page(expected.root(), 0).unwrap().unwrap().1, expected.entries());
     }
 }
+
+#[test]
+fn committed_data_catalog_and_outbox_do_not_wait_for_proof_pruning() {
+    use crate::committed_data_recovery::RecoveryRecord;
+    use mp_gateway::committed_data::CommittedDataVersion;
+    let directory = tempfile::tempdir().unwrap();
+    let backend = open(directory.path());
+    let tree = dataset(10);
+    let root = tree.root();
+    backend.db.write_committed_data_dataset(&tree, None).unwrap();
+    let record =
+        RecoveryRecord::encode(backend.chain_config().chain_id.to_felt(), None, root, None, tree.entries().to_vec())
+            .unwrap();
+    let version = CommittedDataVersion { application_id: Felt::ONE, dataset_id: Felt::TWO, root };
+    std::thread::scope(|scope| {
+        let pruning = backend.db.inner.committed_data_write.lock().unwrap();
+        let (send, receive) = std::sync::mpsc::channel();
+        let db = &backend.db;
+        let writer = scope.spawn(move || {
+            let result = (|| -> Result<()> {
+                db.write_committed_data_version(version, true)?;
+                let id = db.store_recovery_record(&record)?;
+                anyhow::ensure!(db.recovery_pending_bytes()? > 0);
+                db.mark_recovery_exported(&id)?;
+                anyhow::ensure!(db.recovery_pending_bytes()? == 0);
+                anyhow::ensure!(db.get_recovery_manifest(&id)?.is_some());
+                Ok(())
+            })();
+            send.send(result).unwrap();
+        });
+        let result = receive.recv_timeout(std::time::Duration::from_secs(5));
+        // Release before joining so a regression fails instead of deadlocking the test.
+        drop(pruning);
+        writer.join().unwrap();
+        result.expect("Catalog and outbox writes must complete while the proof arena is locked").unwrap();
+    });
+    assert!(backend.db.has_committed_data_version(version).unwrap());
+    assert_dataset(&backend.db, &tree);
+}

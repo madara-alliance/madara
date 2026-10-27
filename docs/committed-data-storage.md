@@ -12,6 +12,8 @@ Witnesses contain `root`, `key`, `value`, and bottom-up `siblings: [{bit, hash},
 
 Imports recompute the root before writing. Tree nodes and metadata are written in one RocksDB batch with a synchronous write-ahead log. Acknowledgement means local durability. Re-import repairs authenticated tree nodes and preserves the first-import checkpoint.
 
+Namespaced initialization authenticates the complete input directly in the persistent tree, avoiding a second full-tree construction. Full-map retries still require every entry. Namespace publication and recovery-outbox accounting use a separate short write lock from proof-node mutation and pruning; all retain their synchronous durability guarantees.
+
 New versions share immutable Patricia nodes in the metadata column family. A root points to an arena with monotonically allocated IDs; unchanged subtrees keep their IDs across ticks. An update visits the union of changed paths and publishes new nodes, allocator and root metadata in a single WAL-synced batch. IDs are internal storage offsets, never commitment or client protocol fields.
 
 - Node key: `cdm/n/` followed by an 8-byte big-endian ID; allocator: `cdm/next`.
@@ -49,7 +51,7 @@ Older proofs remain available without an age cutoff. Madara reconstructs the can
 An old-proof rebuild is temporary and is dropped before its read returns, including on error. It is not inserted into a reusable tree cache or persisted for a later sweep. One rebuild per backend bounds concurrent reconstruction; repeated old reads may repeat the work. Dropping a tree releases its allocations, but the allocator may retain pages, so process RSS need not fall immediately. A recent execution that deliberately reuses an old root is different: its restored durable index follows the normal last-use retention cutoff.
 
 - `--committed-data-memory-blocks 7200`: cached objects expire after this many observed blocks; zero disables reuse. At a five-second block time, 7200 blocks is ten hours.
-- `--committed-data-cache-mib 256`: estimated reusable-cache ceiling, split equally between decoded Patricia nodes and the existing two-full-import cache. Both portions also obey the block window. Zero disables caching. It is **not** a process RSS limit.
+- `--committed-data-cache-mib 256`: estimated reusable-cache ceiling, split equally between decoded Patricia nodes and the existing two-snapshot-import cache. Namespaced imports use the persistent nodes rather than retaining a second full-tree snapshot. Both portions also obey the block window. Zero disables caching. It is **not** a process RSS limit.
 - `--committed-data-pending-backup-mib 512`: serialized pending dataset upload budget. Exhaustion applies backpressure; it never discards pending records. This queue is on disk, not a 512 MiB RAM reservation.
 
 Equivalent environment variables are `MADARA_COMMITTED_DATA_PROOF_RETENTION_SECS`, `MADARA_COMMITTED_DATA_MEMORY_BLOCKS`, `MADARA_COMMITTED_DATA_CACHE_MIB`, and `MADARA_COMMITTED_DATA_PENDING_BACKUP_MIB`.

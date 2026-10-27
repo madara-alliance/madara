@@ -305,6 +305,17 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
         anyhow::bail!("Committed-data storage is unsupported by this backend")
     }
 
+    /// Authenticate and persist a complete value map in the persistent tree, without building
+    /// a second in-memory snapshot. Reject missing/duplicate entries and a mismatched root.
+    fn import_committed_data_values(
+        &self,
+        _root: Felt,
+        _entries: Vec<(Felt, Felt)>,
+        _checkpoint: Option<u64>,
+    ) -> Result<()> {
+        anyhow::bail!("Committed-data storage is unsupported by this backend")
+    }
+
     /// Apply authenticated upserts using persistent subtree sharing; missing bases fail closed.
     fn patch_committed_data_dataset(
         &self,
