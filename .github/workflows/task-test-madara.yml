@@ -26,6 +26,10 @@ on:
         description: "Proof versions to retain after simulated settlement"
         default: "8"
         type: string
+      price-values:
+        description: "Use synthetic price values matching captured price-width deciles"
+        default: false
+        type: boolean
   workflow_call:
     inputs:
       proptest-cases:
@@ -198,6 +202,7 @@ jobs:
           CD_MEASURE_UPDATES: ${{ inputs.updates }}
           CD_MEASURE_VERSIONS: ${{ inputs.versions }}
           CD_MEASURE_RETAINED: ${{ inputs.retained }}
+          CD_MEASURE_PRICE_VALUES: ${{ inputs.price-values }}
           CD_MEASURE_REPORT: ${{ github.workspace }}/retention-measurement.json
         run: |
           cargo nextest run --archive-file target/nextest/madara-tests.tar.zst \

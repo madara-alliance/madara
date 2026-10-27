@@ -44,6 +44,31 @@ fn value(key: usize, tick: usize) -> Felt {
     Felt::from_bytes_be(&bytes)
 }
 
+fn price(key: usize, tick: usize, previous: Option<Felt>) -> Felt {
+    let bytes = value(key, tick).to_bytes_be();
+    let random = u64::from_be_bytes(bytes[24..].try_into().unwrap());
+    let amount = if let Some(previous) = previous {
+        let previous = u64::from_be_bytes(previous.to_bytes_be()[24..].try_into().unwrap());
+        let change = 1 + random % (previous / 65536).max(1);
+        if random & 1 == 0 {
+            previous + change
+        } else {
+            previous.saturating_sub(change).max(1)
+        }
+    } else {
+        // Mid-decile widths from 6,230,266 captured Oracle prices, not the private price records.
+        let bits = [23, 27, 29, 30, 32, 33, 35, 36, 38, 41][key % 10];
+        (1u64 << (bits - 1)) | (random & ((1u64 << (bits - 1)) - 1))
+    };
+    Felt::from(amount)
+}
+
+fn compact(db: &RocksDBStorage) {
+    let cf = db.inner.get_column(meta::META_COLUMN);
+    db.inner.db.flush_cf(&cf).unwrap();
+    db.inner.db.compact_range_cf(&cf, None::<&[u8]>, None::<&[u8]>);
+}
+
 #[test]
 #[ignore = "Opt-in real storage/RSS measurement; parameterized workload, not a capacity SLA"]
 fn committed_history_measure_storage_and_memory() {
@@ -51,6 +76,7 @@ fn committed_history_measure_storage_and_memory() {
     let updates = parameter("CD_MEASURE_UPDATES", 1024);
     let versions = parameter("CD_MEASURE_VERSIONS", 70);
     let retained = parameter("CD_MEASURE_RETAINED", 8);
+    let price_values = std::env::var("CD_MEASURE_PRICE_VALUES").is_ok_and(|value| value == "true");
     assert!(entries > 0 && entries <= MAX_COMMITTED_DATA_VALUES);
     assert!(updates > 0 && updates <= entries && retained > 0 && retained < versions && versions <= 1000);
     let dir = tempfile::tempdir().unwrap();
@@ -67,7 +93,9 @@ fn committed_history_measure_storage_and_memory() {
     let db = &backend.db;
     assert!(db.maintain_history(None, 0).unwrap()); // Empty legacy scan.
     let baseline = footprint(db);
-    let mut values: Vec<_> = (0..entries).map(|key| (value(key, usize::MAX), value(key, 0))).collect();
+    let mut values: Vec<_> = (0..entries)
+        .map(|key| (value(key, usize::MAX), if price_values { price(key, 0, None) } else { value(key, 0) }))
+        .collect();
     let tree = CommittedDataSet::new(values.clone()).unwrap();
     let mut root = tree.root();
     let started = Instant::now();
@@ -81,7 +109,7 @@ fn committed_history_measure_storage_and_memory() {
         let patch: Vec<_> = (0..updates)
             .map(|i| {
                 let key = (tick * updates + i) % entries;
-                values[key].1 = value(key, tick);
+                values[key].1 = if price_values { price(key, tick, Some(values[key].1)) } else { value(key, tick) };
                 values[key]
             })
             .collect();
@@ -93,6 +121,8 @@ fn committed_history_measure_storage_and_memory() {
         root = next;
         roots.push(root);
     }
+    let before_compaction = footprint(db);
+    compact(db);
     let before = footprint(db);
     let target = roots[versions - retained - 1];
     let keys: Vec<_> = values.iter().take(32).map(|(key, _)| *key).collect();
@@ -116,15 +146,31 @@ fn committed_history_measure_storage_and_memory() {
         before["logical_rows_and_bytes"]["permanent_values"],
         after_delete["logical_rows_and_bytes"]["permanent_values"]
     );
-    let cf = db.inner.get_column(meta::META_COLUMN);
-    db.inner.db.compact_range_cf(&cf, None::<&[u8]>, None::<&[u8]>);
+    compact(db);
     let after_compaction = footprint(db);
+    let latest = db.get_committed_data_batch(root, &keys).unwrap();
+    let mut remaining = 0;
+    while db.maintain_history(Some(u64::MAX), 0).unwrap() {
+        remaining += 1;
+    }
+    assert_eq!(remaining, retained);
+    assert_eq!(db.get_committed_data_batch(root, &keys).unwrap(), latest);
+    compact(db);
+    let values_only = footprint(db);
+    assert!(values_only["logical_rows_and_bytes"].get("proof_nodes").is_none());
+    assert!(values_only["logical_rows_and_bytes"].get("reference_edges").is_none());
+    assert_eq!(
+        before["logical_rows_and_bytes"]["permanent_values"],
+        values_only["logical_rows_and_bytes"]["permanent_values"]
+    );
     let report = serde_json::json!({"entries": entries, "updates_per_version": updates, "versions": versions + 1,
-        "retained_versions": retained, "cache_budget_bytes": cache_bytes, "baseline": baseline, "initial": initial,
+        "retained_versions": retained, "price_values": price_values, "cache_budget_bytes": cache_bytes,
+        "baseline": baseline, "initial": initial, "before_prune_uncompacted": before_compaction,
         "before_prune": before, "after_delete": after_delete, "after_compaction": after_compaction,
+        "values_only_after_compaction": values_only,
         "initial_import_ms": initial_ms, "incremental_import_ms": import_ms, "prune_total_ms": prune_ms,
         "retained_batch_ms": warm_ms, "reconstructed_batch_ms": cold_ms,
-        "limitations": "Single process functional workload. RSS includes independent reference construction and allocator retention. Live SST bytes exclude WAL and obsolete files. No throughput or production capacity claim."});
+        "limitations": "Synthetic single-process functional workload. Price mode uses captured price-width deciles and synthetic bounded movements, not captured transactions. RSS includes independent reference construction and allocator retention. Live SST bytes exclude WAL and obsolete files. No throughput or production capacity claim."});
     println!("{}", serde_json::to_string_pretty(&report).unwrap());
     if let Ok(path) = std::env::var("CD_MEASURE_REPORT") {
         std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
