@@ -139,6 +139,16 @@ mod tests {
         Ok(())
     }
     #[test]
+    fn dictionary_gaps_and_signed_deltas_have_fixed_encoding() -> Result<()> {
+        // Independent hand calculation: gaps 1/2, zigzag(+1)+1=3, zigzag(-1)+1=2.
+        let bytes = encode([(0, Felt::from(100), Felt::from(101)), (2, Felt::from(200), Felt::from(199))]);
+        assert_eq!(bytes, [1, 3, 2, 2]);
+        let mut values = [Felt::from(100), Felt::MAX, Felt::from(200)];
+        assert_eq!(apply(&bytes, &mut values)?, 2);
+        assert_eq!(values, [Felt::from(101), Felt::MAX, Felt::from(199)]);
+        Ok(())
+    }
+    #[test]
     fn changing_prices_and_wide_values_roundtrip() -> Result<()> {
         let mut old = Felt::from(1_000_000u64);
         let mut x = 17u64;

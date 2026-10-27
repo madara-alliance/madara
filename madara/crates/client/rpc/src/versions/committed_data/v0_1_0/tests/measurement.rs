@@ -62,7 +62,8 @@ async fn committed_data_measure_signed_rpc_imports() {
         }
         let update = CommittedDataUpdate { application_id: Felt::ONE, dataset_id: Felt::TWO, base_root };
         let signature =
-            starknet_core::crypto::ecdsa_sign(&Felt::ONE, &update_message_hash(chain, update, root, entries as u32)).unwrap();
+            starknet_core::crypto::ecdsa_sign(&Felt::ONE, &update_message_hash(chain, update, root, entries as u32))
+                .unwrap();
         let request = serde_json::json!({"jsonrpc":"2.0","id":tick,
             "method":"madara_V0_1_0_updateCommittedDataSet",
             "params":[update, root, values, [ImportSignature { public_key, r: signature.r, s: signature.s }]]})
@@ -74,7 +75,8 @@ async fn committed_data_measure_signed_rpc_imports() {
         assert!(response.get("error").is_none(), "{response}");
         assert_eq!(response.get("result"), Some(&serde_json::Value::Null));
         let journal = backend.recovery_reference(Some(update), root).unwrap();
-        backend.db.mark_recovery_exported(&journal).unwrap(); // Simulated asynchronous export completion.
+        // Simulated asynchronous export completion.
+        backend.db.mark_recovery_exported(&journal).unwrap();
         // Record the simulated execution height before allowing retention to reclaim old roots.
         backend.db.note_committed_data_use(root, tick as u64 + 1).unwrap();
         if tick >= retained {

@@ -3,7 +3,7 @@ use super::*;
 use crate::committed_data_recovery::digest;
 use crate::persistent_committed_data::Tree;
 use sha2::{Digest, Sha256};
-use std::{collections::HashSet, io::Read};
+use std::io::Read;
 
 pub(super) const HISTORY: &[u8] = b"cdh/v1/";
 pub(super) const HISTORY_HASH: &[u8] = b"cdh/hash/";
@@ -14,10 +14,6 @@ pub(super) struct ValueHistory {
     pub(super) base: Option<Felt>,
     pub(super) depth: u32,
     count: u32,
-    pub(super) record: CompactValues,
-}
-#[derive(serde::Serialize, serde::Deserialize)]
-pub(super) struct CompactValues {
     root: Felt,
     dictionary: [u8; 32],
     pub(super) data: Vec<u8>,
@@ -31,7 +27,7 @@ fn read_history(snapshot: &SnapshotWithDBArc, root: Felt) -> Result<ValueHistory
     let hash = snapshot.get_pinned_cf(&cf, root_key(HISTORY_HASH, root))?.context("Missing historical checksum")?;
     anyhow::ensure!(hash.as_ref() == digest(&bytes).as_bytes(), "Historical archive checksum mismatch");
     let history: ValueHistory = deserialize(bytes)?;
-    anyhow::ensure!(history.record.root == root, "Historical root identity mismatch");
+    anyhow::ensure!(history.root == root, "Historical root identity mismatch");
     anyhow::ensure!((1..=MAX_COMMITTED_DATA_VALUES).contains(&(history.count as usize)), "Invalid historical count");
     Ok(history)
 }
@@ -51,7 +47,7 @@ pub(super) fn history_chain(snapshot: &SnapshotWithDBArc, root: Felt) -> Result<
     let mut records = Vec::new();
     let mut expected_depth = None;
     let mut count = 0;
-    let mut dictionaries = HashSet::new();
+    let mut dictionary_id = None;
     while let Some(current) = next {
         anyhow::ensure!(records.len() <= MAX_DELTAS as usize, "Historical value chain exceeds bound");
         let history = read_history(snapshot, current)?;
@@ -63,8 +59,15 @@ pub(super) fn history_chain(snapshot: &SnapshotWithDBArc, root: Felt) -> Result<
             "Invalid historical depth"
         );
         anyhow::ensure!(history.base.is_some() == (history.depth > 0), "Invalid historical base");
-        if dictionaries.insert((history.record.dictionary, history.count)) {
-            dictionary(snapshot, &history.record.dictionary, history.count)?;
+        match dictionary_id {
+            None => {
+                dictionary(snapshot, &history.dictionary, history.count)?;
+                dictionary_id = Some(history.dictionary);
+            }
+            Some(id) => anyhow::ensure!(
+                id == history.dictionary && history.count == count,
+                "Historical dictionary changed within delta chain"
+            ),
         }
         expected_depth = history.depth.checked_sub(1);
         next = history.base;
@@ -79,21 +82,20 @@ pub(super) fn reconstruct(snapshot: &SnapshotWithDBArc, root: Felt) -> Result<Co
     let mut dictionary_id = None;
     for current in records.into_iter().rev() {
         let history = read_history(snapshot, current)?;
-        let record = history.record;
         if history.base.is_none() {
-            keys = dictionary(snapshot, &record.dictionary, history.count)?;
+            keys = dictionary(snapshot, &history.dictionary, history.count)?;
             values = vec![Felt::ZERO; keys.len()];
-            dictionary_id = Some(record.dictionary);
+            dictionary_id = Some(history.dictionary);
         } else {
             anyhow::ensure!(
-                dictionary_id == Some(record.dictionary) && values.len() == history.count as usize,
+                dictionary_id == Some(history.dictionary) && values.len() == history.count as usize,
                 "Historical dictionary changed within delta chain"
             );
         }
         // Each entry needs at most a three-byte index gap and a 34-byte absolute felt.
         let limit = history.count as u64 * 37;
         let mut raw = Vec::new();
-        zstd::stream::read::Decoder::new(record.data.as_slice())?.take(limit + 1).read_to_end(&mut raw)?;
+        zstd::stream::read::Decoder::new(history.data.as_slice())?.take(limit + 1).read_to_end(&mut raw)?;
         anyhow::ensure!(raw.len() as u64 <= limit, "Historical values exceed decode bound");
         let applied = codec::apply(&raw, &mut values)?;
         anyhow::ensure!(history.base.is_some() || applied == values.len(), "Incomplete historical checkpoint");
@@ -120,48 +122,46 @@ impl RocksDBStorage {
         }
         let cf = self.inner.get_column(meta::META_COLUMN);
         let snapshot = SnapshotWithDBArc::new(Arc::clone(&self.inner));
-        let parent = base
-            .filter(|base| *base != root)
-            .map(|base| -> Result<_> {
-                if exists(self, base)? {
-                    Ok(Some(read_history(&snapshot, base)?))
-                } else {
-                    Ok(None)
-                }
-            })
-            .transpose()?
-            .flatten();
+        let parent =
+            base.filter(|base| *base != root).map(|base| -> Result<_> { read_history(&snapshot, base) }).transpose()?;
         let parent = parent.filter(|p| p.depth < MAX_DELTAS && p.count == count);
-        let (base, depth, dictionary_id, raw) = if let Some(ValueHistory { depth, record, .. }) = parent {
-            let keys = dictionary(&snapshot, &record.dictionary, count)?;
-            let changes: Vec<_> = tree
-                .changes
-                .iter()
-                .map(|&(key, old, new)| {
-                    keys.binary_search(&key)
-                        .map(|index| (index, old, new))
-                        .map_err(|_| anyhow::anyhow!("Changed key missing from dictionary"))
-                })
-                .collect::<Result<_>>()?;
-            (base, depth + 1, record.dictionary, codec::encode(changes))
-        } else {
-            // A changed key set or depth limit starts a self-contained checkpoint.
-            let mut values = Vec::with_capacity(count as usize);
-            tree.page(id, 0, count, &mut values)?;
-            let keys: Vec<u8> = values.iter().flat_map(|(key, _)| key.to_bytes_be()).collect();
-            let hash: [u8; 32] = Sha256::digest(&keys).into();
-            let key = named(DICTIONARY, &hash);
-            if let Some(existing) = self.inner.db.get_pinned_cf(&cf, &key)? {
-                anyhow::ensure!(existing.as_ref() == keys, "Historical dictionary identity mismatch");
+        let (base, depth, dictionary_id, raw) =
+            if let Some(ValueHistory { depth, dictionary: dictionary_id, .. }) = parent {
+                let keys = dictionary(&snapshot, &dictionary_id, count)?;
+                let changes: Vec<_> = tree
+                    .changes
+                    .iter()
+                    .map(|&(key, old, new)| {
+                        keys.binary_search(&key)
+                            .map(|index| (index, old, new))
+                            .map_err(|_| anyhow::anyhow!("Changed key missing from dictionary"))
+                    })
+                    .collect::<Result<_>>()?;
+                (base, depth + 1, dictionary_id, codec::encode(changes))
             } else {
-                batch.put_cf(&cf, key, keys);
-            }
-            let raw = codec::encode(values.iter().enumerate().map(|(i, (_, value))| (i, Felt::ZERO, *value)));
-            (None, 0, hash, raw)
+                // A changed key set or depth limit starts a self-contained checkpoint.
+                let mut values = Vec::with_capacity(count as usize);
+                tree.page(id, 0, count, &mut values)?;
+                let keys: Vec<u8> = values.iter().flat_map(|(key, _)| key.to_bytes_be()).collect();
+                let hash: [u8; 32] = Sha256::digest(&keys).into();
+                let key = named(DICTIONARY, &hash);
+                if let Some(existing) = self.inner.db.get_pinned_cf(&cf, &key)? {
+                    anyhow::ensure!(existing.as_ref() == keys, "Historical dictionary identity mismatch");
+                } else {
+                    batch.put_cf(&cf, key, keys);
+                }
+                let raw = codec::encode(values.iter().enumerate().map(|(i, (_, value))| (i, Felt::ZERO, *value)));
+                (None, 0, hash, raw)
+            };
+        let history = ValueHistory {
+            base,
+            depth,
+            count,
+            root,
+            dictionary: dictionary_id,
+            data: zstd::stream::encode_all(raw.as_slice(), 3)?,
         };
-        let record =
-            CompactValues { root, dictionary: dictionary_id, data: zstd::stream::encode_all(raw.as_slice(), 3)? };
-        let bytes = serialize(&ValueHistory { base, depth, count, record })?;
+        let bytes = serialize(&history)?;
         batch.put_cf(&cf, root_key(HISTORY_HASH, root), digest(&bytes));
         batch.put_cf(&cf, root_key(HISTORY, root), bytes);
         Ok(())

@@ -170,7 +170,7 @@ fn committed_history_archive_corruption_blocks_deletion() {
     let key = root_key(HISTORY, root);
     let original = db.inner.db.get_cf(&cf, &key).unwrap().unwrap();
     let mut history: ValueHistory = deserialize(&original).unwrap();
-    history.record.data[0] ^= 1;
+    history.data[0] ^= 1;
     db.inner.db.put_cf(&cf, &key, serialize(&history).unwrap()).unwrap();
     let nodes = rows(db, b"cdm/n/");
     assert!(db.maintain_history(Some(100)).is_err());
