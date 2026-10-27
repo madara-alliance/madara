@@ -233,7 +233,11 @@ impl JobService {
             .database()
             .update_job(
                 job,
-                JobItemUpdates::new().update_status(JobStatus::Failed).update_metadata(job_metadata).build(),
+                JobItemUpdates::new()
+                    .update_status(JobStatus::Failed)
+                    .update_external_id(job.external_id.clone())
+                    .update_metadata(job_metadata)
+                    .build(),
             )
             .await
         {

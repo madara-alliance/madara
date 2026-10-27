@@ -527,41 +527,9 @@ impl JobHandlerService {
             }
         };
 
-        // Update job status and metadata
-        let durable_transition = config
-            .database()
-            .update_job(
-                &job,
-                JobItemUpdates::new()
-                    .update_status(JobStatus::PendingVerification)
-                    .update_metadata(job.metadata.clone())
-                    .update_external_id(external_id.clone().into())
-                    .build(),
-            )
-            .await
-            .map_err(|e| {
-                error!(job_id = ?id, error = ?e, "Failed to update job status");
-                JobError::from(e)
-            });
-        lease.stop(id).await;
-        durable_transition?;
-
-        info!(
-            job_id = ?id,
-            job_type = ?job.job_type,
-            external_id = ?external_id,
-            from_status = ?JobStatus::LockedForProcessing,
-            "Updating status of {:?} job {} to {}", job.job_type, job.internal_id, JobStatus::PendingVerification
-        );
-
-        // Update job status tracking metrics for PendingVerification
-        MetricsRecorder::record_job_status(&job, &JobStatus::PendingVerification);
-
-        // Record transition metrics for entering verification
-        MetricsRecorder::record_verification_started(&job);
-
-        // Add to the verification queue
-        JobService::add_job_to_verify_queue(
+        // Keep the job LockedForProcessing until the verification message is durably accepted.
+        job.external_id = external_id.clone().into();
+        if let Err(error) = JobService::add_job_to_verify_queue(
             config.clone(),
             job.id,
             &job.job_type,
@@ -572,10 +540,54 @@ impl JobHandlerService {
             )),
         )
         .await
-        .map_err(|e| {
-            error!(job_id = ?id, error = ?e, "Failed to add job to verification queue");
-            e
-        })?;
+        {
+            error!(job_id = ?id, error = ?error, "Failed to add job to verification queue after SQS retries");
+            MetricsRecorder::record_job_state_transition(
+                JobStatus::LockedForProcessing,
+                JobStatus::Failed,
+                &job.job_type,
+            );
+            let result = JobService::move_job_to_failed(
+                &job,
+                config.clone(),
+                format!("Failed to queue processed job for verification after SQS retries: {}", error),
+            )
+            .await;
+            lease.stop(id).await;
+            result?;
+            workload.finish_error();
+            return Ok(());
+        }
+
+        // Publish succeeded; now expose the job to verification consumers.
+        let durable_transition = config
+            .database()
+            .update_job(
+                &job,
+                JobItemUpdates::new()
+                    .update_status(JobStatus::PendingVerification)
+                    .update_metadata(job.metadata.clone())
+                    .update_external_id(job.external_id.clone())
+                    .build(),
+            )
+            .await
+            .map_err(|e| {
+                error!(job_id = ?id, error = ?e, "Failed to update job status");
+                JobError::from(e)
+            });
+        lease.stop(id).await;
+        let job = durable_transition?;
+
+        info!(
+            job_id = ?id,
+            job_type = ?job.job_type,
+            external_id = ?external_id,
+            from_status = ?JobStatus::LockedForProcessing,
+            "Updating status of {:?} job {} to {}", job.job_type, job.internal_id, JobStatus::PendingVerification
+        );
+
+        MetricsRecorder::record_job_status(&job, &JobStatus::PendingVerification);
+        MetricsRecorder::record_verification_started(&job);
 
         let attributes = vec![
             KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
