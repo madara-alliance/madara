@@ -689,6 +689,10 @@ impl SettlementClient for EthereumSettlementClient {
         let nonce = self.provider.get_transaction_count(self.wallet_address).await?.to_string().parse()?;
         Ok(nonce)
     }
+
+    async fn get_confirmed_nonce(&self) -> Result<u64> {
+        self.get_nonce().await
+    }
 }
 
 impl EthereumSettlementClient {

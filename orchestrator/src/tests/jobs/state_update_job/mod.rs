@@ -102,6 +102,10 @@ impl SettlementClient for PendingFirstStateUpdateClient {
     async fn get_nonce(&self) -> color_eyre::Result<u64> {
         Ok(self.nonce + self.submissions.load(Ordering::SeqCst) as u64)
     }
+
+    async fn get_confirmed_nonce(&self) -> color_eyre::Result<u64> {
+        Ok(self.nonce)
+    }
 }
 
 // ==================== Mock Tests (Unit tests) ===========================
@@ -293,6 +297,23 @@ async fn settled_batch_reconciliation_skips_state_update_submission() {
         StateUpdateJobHandler.should_send_state_update_txn_from_chain(&services.config, batch_index).await;
 
     assert!(!should_submit.unwrap(), "an already-settled batch must not be submitted again");
+}
+
+#[rstest]
+#[case(42, 42)] // Pending attempt still owns this nonce.
+#[case(43, 43)] // A mined revert consumed the old nonce.
+#[tokio::test]
+async fn state_update_nonce_reuses_only_unconsumed_attempts(#[case] confirmed_nonce: u64, #[case] expected: u64) {
+    let mut settlement_client = MockSettlementClient::new();
+    settlement_client.expect_get_confirmed_nonce().times(1).returning(move || Ok(confirmed_nonce));
+    settlement_client
+        .expect_get_nonce()
+        .times(if confirmed_nonce > 42 { 1 } else { 0 })
+        .returning(move || Ok(confirmed_nonce));
+
+    let services = TestConfigBuilder::new().configure_settlement_client(settlement_client.into()).build().await;
+    let nonce = StateUpdateJobHandler::nonce_for_state_update(&services.config, Some(42)).await.unwrap();
+    assert_eq!(nonce, expected);
 }
 
 /// A shutdown after broadcast preserves the pinned nonce even if the provider's next nonce has

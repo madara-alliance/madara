@@ -17,7 +17,7 @@ use lazy_static::lazy_static;
 use mockall::automock;
 use mockall::predicate::*;
 use orchestrator_settlement_client_interface::{SettlementClient, SettlementVerificationStatus, StateUpdateTxResult};
-use starknet::accounts::{ConnectedAccount, ExecutionEncoding, SingleOwnerAccount};
+use starknet::accounts::{Account, ConnectedAccount, ExecutionEncoding, SingleOwnerAccount};
 use starknet::core::types::{BlockId, BlockTag, Felt, FunctionCall, TransactionExecutionStatus};
 use starknet::core::utils::get_selector_from_name;
 use starknet::providers::jsonrpc::HttpTransport;
@@ -279,5 +279,10 @@ impl SettlementClient for StarknetSettlementClient {
         let nonce = self.account.get_nonce().await?;
         let converted_value = u64_from_felt(nonce).wrap_err("Failed to convert to u64")?;
         Ok(converted_value)
+    }
+
+    async fn get_confirmed_nonce(&self) -> Result<u64> {
+        let nonce = self.account.provider().get_nonce(BlockId::Tag(BlockTag::Latest), self.account.address()).await?;
+        u64_from_felt(nonce).wrap_err("Failed to convert confirmed nonce to u64")
     }
 }

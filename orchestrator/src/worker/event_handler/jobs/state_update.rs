@@ -122,12 +122,9 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             state_metadata.inflight_tx_nonce = None;
             job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
         } else {
-            // Reuse the nonce of an interrupted attempt. A transaction may have reached the
-            // mempool even when shutdown dropped the send/finality future before it returned.
-            let nonce = match state_metadata.inflight_tx_nonce {
-                Some(nonce) => nonce,
-                None => config.settlement_client().get_nonce().await.map_err(|e| JobError::Other(OtherError(e)))?,
-            };
+            // Reuse a pending transaction's nonce after shutdown, but advance when a mined
+            // transaction consumed it without settling this batch (for example, a revert).
+            let nonce = Self::nonce_for_state_update(&config, state_metadata.inflight_tx_nonce).await?;
 
             // Get the artifacts for the block/batch
             let snos_output =
@@ -146,7 +143,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                 Layer::L3 => fetch_blob_data(config.clone(), &state_metadata.blob_data_path).await?,
             };
 
-            if state_metadata.inflight_tx_nonce.is_none() {
+            if state_metadata.inflight_tx_nonce != Some(nonce) {
                 // Record the nonce before the first possible broadcast. The next worker can
                 // replace the same pending transaction instead of creating one with a new nonce.
                 state_metadata.inflight_tx_nonce = Some(nonce);
@@ -273,6 +270,28 @@ impl JobHandlerTrait for StateUpdateJobHandler {
 }
 
 impl StateUpdateJobHandler {
+    pub(crate) async fn nonce_for_state_update(
+        config: &Arc<Config>,
+        inflight_nonce: Option<u64>,
+    ) -> Result<u64, JobError> {
+        if let Some(inflight_nonce) = inflight_nonce {
+            let confirmed_nonce =
+                config.settlement_client().get_confirmed_nonce().await.map_err(|e| JobError::Other(OtherError(e)))?;
+            if confirmed_nonce <= inflight_nonce {
+                return Ok(inflight_nonce);
+            }
+            info!(
+                inflight_nonce,
+                confirmed_nonce, "Previous state-update nonce was consumed without settling this batch"
+            );
+            let next_nonce =
+                config.settlement_client().get_nonce().await.map_err(|e| JobError::Other(OtherError(e)))?;
+            return Ok(next_nonce.max(confirmed_nonce));
+        }
+
+        config.settlement_client().get_nonce().await.map_err(|e| JobError::Other(OtherError(e)))
+    }
+
     fn state_update_tx_error(error: &JobError) -> Option<&StateUpdateTxError> {
         match error {
             JobError::Other(other) => other.0.downcast_ref::<StateUpdateTxError>(),

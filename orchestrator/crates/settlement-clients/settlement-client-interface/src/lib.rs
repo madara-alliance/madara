@@ -90,4 +90,7 @@ pub trait SettlementClient: Send + Sync {
 
     /// Should retrieve the latest transaction count to be used as nonce.
     async fn get_nonce(&self) -> Result<u64>;
+
+    /// Returns the nonce after transactions included on chain, excluding pending transactions.
+    async fn get_confirmed_nonce(&self) -> Result<u64>;
 }

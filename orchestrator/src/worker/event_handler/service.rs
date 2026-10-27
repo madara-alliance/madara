@@ -1209,8 +1209,10 @@ mod shutdown_tests {
         let original_job = build_job_item(JobType::SnosRun, JobStatus::Created, 1);
         let original_metadata = original_job.metadata.clone();
         let expected_metadata = original_metadata.clone();
+        let lock_started_at = Utc::now();
         let mut fetched_job = original_job.clone();
         fetched_job.status = JobStatus::LockedForProcessing;
+        fetched_job.metadata.common.process_started_at = Some(lock_started_at);
 
         let mut database = MockDatabaseClient::new();
         database.expect_get_job_by_id().times(2).returning(move |_| Ok(Some(fetched_job.clone())));
@@ -1227,7 +1229,7 @@ mod shutdown_tests {
         locked_job.status = JobStatus::LockedForProcessing;
         locked_job.metadata.common.process_attempt_no = 1;
         locked_job.metadata.common.process_retry_attempt_no = 1;
-        locked_job.metadata.common.process_started_at = Some(Utc::now());
+        locked_job.metadata.common.process_started_at = Some(lock_started_at);
 
         let error = JobHandlerService::restore_job_after_shutdown(
             &mut locked_job,
