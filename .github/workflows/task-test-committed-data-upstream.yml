@@ -48,6 +48,9 @@ jobs:
           cache-key: committed-data-upstream-${{ runner.os }}-rust-1.92.0
       - uses: ./.github/actions/setup-cairo-native
       - uses: ./.github/actions/setup-python-cairo
+      - name: Independent Cairo union and billing constraints
+        working-directory: upstream-sequencer
+        run: python scripts/test_committed_data_union.py
       - name: VM and native transaction rejection regressions
         working-directory: upstream-sequencer
         env:
