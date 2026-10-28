@@ -291,6 +291,7 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     fn remove_mempool_transactions(&self, tx_hashes: impl IntoIterator<Item = Felt>) -> Result<()>;
     fn write_mempool_transaction(&self, tx: &ValidatedTransaction) -> Result<()>;
     fn write_rejected_mempool_transaction(&self, tx_hash: &Felt, rejection: &RejectedMempoolTransaction) -> Result<()>;
+    fn reject_saved_mempool_transactions(&self, rejected: &[(Felt, RejectedMempoolTransaction)]) -> Result<()>;
     fn write_external_outbox(&self, tx: &ValidatedTransaction) -> Result<ExternalOutboxId>;
     fn delete_external_outbox(&self, id: ExternalOutboxId) -> Result<()>;
 

@@ -275,6 +275,14 @@ impl MadaraStorageWrite for RocksDBStorage {
             .write_rejected_mempool_transaction(tx_hash, rejection)
             .with_context(|| format!("Writing rejected mempool transaction for tx_hash={tx_hash:#x}"))
     }
+    fn reject_saved_mempool_transactions(
+        &self,
+        rejected: &[(Felt, crate::storage::RejectedMempoolTransaction)],
+    ) -> Result<()> {
+        self.inner
+            .reject_saved_mempool_transactions(rejected)
+            .context("Atomically rejecting saved mempool transactions")
+    }
     fn write_external_outbox(&self, tx: &ValidatedTransaction) -> Result<external_outbox::ExternalOutboxId> {
         let tx_hash = tx.hash;
         tracing::debug!("Writing external outbox transaction for tx_hash={tx_hash:#x}");

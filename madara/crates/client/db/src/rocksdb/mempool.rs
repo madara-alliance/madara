@@ -60,6 +60,26 @@ impl RocksDBStorageInner {
         )
     }
 
+    pub(super) fn reject_saved_mempool_transactions(
+        &self,
+        rejected: &[(Felt, crate::storage::RejectedMempoolTransaction)],
+    ) -> Result<()> {
+        let saved_col = self.get_column(MEMPOOL_TRANSACTIONS_COLUMN);
+        let rejected_col = self.get_column(MEMPOOL_REJECTED_TRANSACTIONS_COLUMN);
+        let mut batch = WriteBatchWithTransaction::default();
+        for (tx_hash, rejection) in rejected {
+            let key = super::serialize(tx_hash)?;
+            batch.put_cf(&rejected_col, &key, super::serialize(rejection)?);
+            batch.delete_cf(&saved_col, key);
+        }
+        self.db.write_opt(batch, &self.writeopts)?;
+        self.prune_rejected_mempool_transactions(
+            unix_timestamp_seconds(),
+            REJECTED_MEMPOOL_RETENTION_SECONDS,
+            MAX_REJECTED_MEMPOOL_TRANSACTIONS,
+        )
+    }
+
     fn prune_rejected_mempool_transactions(&self, now: u64, max_age_seconds: u64, max_entries: usize) -> Result<()> {
         let col = self.get_column(MEMPOOL_REJECTED_TRANSACTIONS_COLUMN);
         let cutoff = now.saturating_sub(max_age_seconds);
@@ -168,5 +188,30 @@ mod tests {
             .unwrap();
 
         assert_eq!(backend.get_rejected_mempool_transaction(&hash).unwrap(), None);
+    }
+
+    #[test]
+    fn oversized_rejection_batch_removes_every_saved_transaction_before_pruning() {
+        let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+        let saved_col = backend.db.inner.get_column(MEMPOOL_TRANSACTIONS_COLUMN);
+        let rejected_col = backend.db.inner.get_column(MEMPOOL_REJECTED_TRANSACTIONS_COLUMN);
+        let rejected: Vec<_> = (0..=MAX_REJECTED_MEMPOOL_TRANSACTIONS)
+            .map(|value| {
+                let hash = Felt::from(value as u64);
+                backend.db.inner.db.put_cf(&saved_col, super::super::serialize(&hash).unwrap(), []).unwrap();
+                (hash, RejectedMempoolTransaction::new("too large for proof"))
+            })
+            .collect();
+
+        backend.db.inner.reject_saved_mempool_transactions(&rejected).unwrap();
+
+        for (hash, _) in &rejected {
+            assert!(backend.db.inner.db.get_cf(&saved_col, super::super::serialize(hash).unwrap()).unwrap().is_none());
+        }
+        let retained =
+            DBIterator::new_cf(&backend.db.inner.db, &rejected_col, ReadOptions::default(), IteratorMode::Start)
+                .into_iter_keys(|_| ())
+                .count();
+        assert_eq!(retained, MAX_REJECTED_MEMPOOL_TRANSACTIONS);
     }
 }

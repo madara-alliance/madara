@@ -187,6 +187,12 @@ impl<D: MadaraStorage> MadaraBackend<D> {
     ) -> Result<()> {
         self.db.write_rejected_mempool_transaction(tx_hash, rejection)
     }
+    pub fn reject_saved_mempool_transactions(
+        &self,
+        rejected: &[(Felt, crate::storage::RejectedMempoolTransaction)],
+    ) -> Result<()> {
+        self.db.reject_saved_mempool_transactions(rejected)
+    }
     /// Appends one validated transaction to the durable external outbox.
     /// The returned identifier is used to acknowledge and delete the entry later.
     pub fn write_external_outbox(&self, tx: &ValidatedTransaction) -> Result<ExternalOutboxId> {
