@@ -14,13 +14,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: committed-data-upstream-${{ github.ref }}
+  group: committed-data-upstream-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: true
 
 jobs:
   committed-data-upstream:
     runs-on: blacksmith-8vcpu-ubuntu-2204
-    timeout-minutes: 90
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/load-env
@@ -58,4 +58,35 @@ jobs:
         working-directory: upstream-sequencer
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/target
-        run: cargo +1.92.0 test --locked --release -p starknet_os_flow_tests committed_data -- --nocapture
+        run: |
+          cargo +1.92.0 test --locked --release -p starknet_os_flow_tests committed_data -- --nocapture
+          cargo +1.92.0 test --locked --release -p apollo_starknet_os_program test_program_hashes -- --nocapture
+
+      - name: Export exact full-flow test runner for external snapshot validation
+        if: ${{ !cancelled() }}
+        working-directory: upstream-sequencer
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target
+        run: |
+          cargo +1.92.0 test --locked --release -p starknet_os_flow_tests --no-run --message-format=json > runner-build.jsonl
+          python3 - <<'PYTHON'
+          import json, pathlib, shutil, subprocess
+          output = pathlib.Path("../committed-data-runner")
+          output.mkdir(exist_ok=True)
+          executables = []
+          for line in pathlib.Path("runner-build.jsonl").read_text().splitlines():
+              item = json.loads(line)
+              if item.get("executable") and item.get("target", {}).get("name") == "starknet_os_flow_tests":
+                  executables.append(item["executable"])
+          assert len(executables) == 1, executables
+          shutil.copy2(executables[0], output / "flow-tests")
+          (output / "sequencer-revision.txt").write_text(subprocess.check_output(["git", "rev-parse", "HEAD"], text=True))
+          (output / "dynamic-libraries.txt").write_text(subprocess.check_output(["ldd", executables[0]], text=True))
+          PYTHON
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: committed-data-flow-runner
+          path: committed-data-runner/
+          retention-days: 7
+          if-no-files-found: error

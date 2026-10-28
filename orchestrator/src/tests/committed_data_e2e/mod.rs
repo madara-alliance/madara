@@ -180,13 +180,7 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
         ("single", &tree, vec![values[0].0], false, SUCCESS_GAS_LIMIT),
         ("caught_out_of_gas", &deep, vec![Felt::ZERO], true, 4_000_000),
         ("depth_252_out_of_gas", &deep, vec![Felt::ZERO], false, OUT_OF_GAS_LIMIT),
-        (
-            "batch_1024_out_of_gas",
-            &tree,
-            values.iter().take(1024).map(|entry| entry.0).collect(),
-            true,
-            OUT_OF_GAS_LIMIT,
-        ),
+        ("batch_1024_out_of_gas", &tree, values.iter().take(1024).map(|entry| entry.0).collect(), true, 4_000_000),
         ("caught_success", &tree, vec![values[0].0], true, SUCCESS_GAS_LIMIT),
         ("paid_read_then_revert", &tree, vec![values[0].0], true, SUCCESS_GAS_LIMIT),
         ("batch_100", &tree, values.iter().take(100).map(|entry| entry.0).collect(), true, SUCCESS_GAS_LIMIT),
@@ -199,7 +193,18 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
             let proof = CommittedDataBatchProof::from_dataset(dataset, &keys)?;
             let mut calldata = vec![dataset.root(), Felt::from(keys.len())];
             calldata.extend(&keys);
-            ("get_values", calldata, committed_data::batch_gas(keys.len(), proof.unique_leaves(), proof.branches))
+            (
+                "get_values",
+                calldata,
+                committed_data::resources_gas(
+                    &(&committed_data::shared_request_resources(keys.len())
+                        + &committed_data::batch_os_resources(
+                            proof.unique_leaves(),
+                            proof.unique_leaves(),
+                            proof.branches,
+                        )),
+                ),
+            )
         } else {
             (
                 "get_value",
@@ -319,7 +324,10 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
         .with_context(|| format!("{name}: SNOS replay of Madara block {block}"))?;
         result.output.cairo_pie.run_validity_checks()?;
         let observation = json!({"case":name,"entries":dataset.entries().len(),"keys":keys.len(),
-            "scheduled_special_call_gas_per_attempt":scheduled_gas,
+            "scheduled_cold_special_call_gas":scheduled_gas,
+            "scheduled_special_call_gas_by_attempt": (0..attempts).map(|attempt| if batch && attempt > 0 {
+                committed_data::resources_gas(&committed_data::shared_request_resources(keys.len()))
+            } else {scheduled_gas}).collect::<Vec<_>>(),
             "special_call_attempts":attempts,"receipt":receipt,"trace":trace,"bouncer_weights":weights,
             "os_transactions":result.output.txs_trace,"os_resources":result.output.cairo_pie.execution_resources});
         save(name, &observation)?;
