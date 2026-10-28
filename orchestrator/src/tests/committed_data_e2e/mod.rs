@@ -35,6 +35,59 @@ const SECRET: &str = "0x077e56c6dc32d40a67f6f7e6625c8dc5e570abe49c0a24e9202e4ae9
 const READ_ADDRESS: &str = "0x6c5f4559c7041984537bc078c71443fdc58b2e1bab302b341ec12b3d2cec44";
 const SUCCESS_GAS_LIMIT: u64 = 1_000_000_000;
 const OUT_OF_GAS_LIMIT: u64 = 1_000_000;
+const L1_GAS_LIMIT: u64 = 100_000;
+const L1_GAS_PRICE_BOUND: u128 = 1_000_000_000_000_000;
+const L2_GAS_PRICE_BOUND: u128 = 1_000_000_000;
+const STRK_TOKEN: &str = "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
+
+type DevnetAccount = SingleOwnerAccount<Arc<JsonRpcClient<HttpTransport>>, LocalWallet>;
+
+/// Declare pinned Sierra source and deploy through the real UDC, preserving the state proofs
+/// needed by SNOS. No test-only storage injection or replacement of a deployed class is used.
+async fn deploy_fixture(
+    source: &Node,
+    account: &DevnetAccount,
+    fixture: FeatureContract,
+    constructor: Vec<Felt>,
+    salt: u64,
+) -> Result<Felt> {
+    let class: SierraClass = serde_json::from_str(&fixture.get_raw_sierra().context("Sierra fixture missing")?)?;
+    let class = Arc::new(class.flatten()?);
+    let compiled_hash =
+        fixture.get_compiled_class_hash(&starknet_api::contract_class::compiled_class_hash::HashVersion::V2).0;
+    let declared = account.declare_v3(class.clone(), compiled_hash).send().await?;
+    ensure!(source.receipt(declared.transaction_hash).await?["execution_status"] == "SUCCEEDED", "declare reverted");
+    let factory = ContractFactory::new_with_udc(class.class_hash(), account, UdcSelector::Legacy);
+    let deployment = factory.deploy_v3(constructor, Felt::from(salt), false);
+    let address = deployment.deployed_address();
+    let deployed = deployment.send().await?;
+    ensure!(source.receipt(deployed.transaction_hash).await?["execution_status"] == "SUCCEEDED", "deploy reverted");
+    Ok(address)
+}
+
+/// The pinned test account uses a single-call ABI and dummy validation. It isolates Sierra-gas
+/// accounting from the older devnet account's inherited VM-step accounting. These invokes test
+/// billing/replay, not signature authorization; the signed devnet case covers normal admission.
+async fn invoke_sierra_fixture(source: &Node, account: Felt, call: Call, gas_limit: u64) -> Result<Felt> {
+    let nonce = rpc(&source.rpc, "starknet_getNonce", json!(["pre_confirmed", account])).await?;
+    let mut calldata = vec![call.to, call.selector, Felt::from(call.calldata.len())];
+    calldata.extend(call.calldata);
+    let bounds = |amount: u64, price: u128| json!({"max_amount":format!("{amount:#x}"),"max_price_per_unit":format!("{price:#x}")});
+    let result = rpc(
+        &source.rpc,
+        "starknet_addInvokeTransaction",
+        json!([{"type":"INVOKE","version":"0x3","sender_address":account,
+            "calldata":calldata,"signature":[],"nonce":nonce,
+            "resource_bounds":{
+                "l1_gas":bounds(L1_GAS_LIMIT,L1_GAS_PRICE_BOUND),
+                "l1_data_gas":bounds(L1_GAS_LIMIT,L1_GAS_PRICE_BOUND),
+                "l2_gas":bounds(gas_limit,L2_GAS_PRICE_BOUND)},
+            "tip":"0x0","paymaster_data":[],"account_deployment_data":[],
+            "nonce_data_availability_mode":"L1","fee_data_availability_mode":"L1"}]),
+    )
+    .await?;
+    Ok(serde_json::from_value(result["transaction_hash"].clone())?)
+}
 
 /// Persist raw receipts, traces and OS counters so a passing test is not mistaken for a fee
 /// calibration. Complete PIE validation establishes execution consistency, not SHARP settlement.
@@ -104,27 +157,31 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
     ensure!(deep.witness(Felt::ZERO).unwrap().siblings.len() == 252, "max-depth fixture drift");
     // Use the same caught-error contract as Blockifier's VM/native parity regression. The
     // fixture is compiled from the pinned Sequencer source, rather than copied stale bytecode.
-    let fixture = FeatureContract::TestContract(CairoVersion::Cairo1(RunnableCairo1::Casm));
-    let class: SierraClass = serde_json::from_str(&fixture.get_raw_sierra().context("Sierra fixture missing")?)?;
-    let class = Arc::new(class.flatten()?);
-    let compiled_hash =
-        fixture.get_compiled_class_hash(&starknet_api::contract_class::compiled_class_hash::HashVersion::V2).0;
-    let declared = account.declare_v3(class.clone(), compiled_hash).send().await?;
-    ensure!(
-        source.receipt(declared.transaction_hash).await?["execution_status"] == "SUCCEEDED",
-        "fixture declaration reverted"
-    );
-    let factory = ContractFactory::new_with_udc(class.class_hash(), &account, UdcSelector::Legacy);
-    let deployment = factory.deploy_v3(vec![Felt::ZERO, Felt::ZERO], Felt::from(1261), false);
-    let catcher = deployment.deployed_address();
-    let deployed = deployment.send().await?;
-    ensure!(
-        source.receipt(deployed.transaction_hash).await?["execution_status"] == "SUCCEEDED",
-        "fixture deployment reverted"
-    );
+    let cairo_version = CairoVersion::Cairo1(RunnableCairo1::Casm);
+    let catcher = deploy_fixture(
+        &source,
+        &account,
+        FeatureContract::TestContract(cairo_version),
+        vec![Felt::ZERO, Felt::ZERO],
+        1261,
+    )
+    .await?;
+    let sierra_account =
+        deploy_fixture(&source, &account, FeatureContract::AccountWithoutValidations(cairo_version), vec![], 1262)
+            .await?;
+    let funding = account
+        .execute_v3(vec![Call {
+            to: Felt::from_hex(STRK_TOKEN)?,
+            selector: get_selector_from_name("transfer")?,
+            calldata: vec![sierra_account, Felt::from(1_000_000_000_000_000_000_000_u128), Felt::ZERO],
+        }])
+        .send()
+        .await?;
+    ensure!(source.receipt(funding.transaction_hash).await?["execution_status"] == "SUCCEEDED", "funding reverted");
     let mut observations = Vec::new();
     let mut accepted = Vec::new();
     for (name, dataset, keys, batch, gas_limit) in [
+        ("vm_single", &tree, vec![values[0].0], false, SUCCESS_GAS_LIMIT),
         ("single", &tree, vec![values[0].0], false, SUCCESS_GAS_LIMIT),
         ("caught_out_of_gas", &deep, vec![Felt::ZERO], true, 4_000_000),
         ("batch_100", &tree, values.iter().take(100).map(|entry| entry.0).collect(), true, SUCCESS_GAS_LIMIT),
@@ -154,21 +211,28 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
         } else {
             Felt::from_hex(READ_ADDRESS)?
         };
-        let submitted = account
-            .execute_v3(vec![Call { to: address, selector: get_selector_from_name(selector)?, calldata }])
-            .l1_gas(100_000)
-            .l1_gas_price(1_000_000_000_000_000)
-            .l1_data_gas(100_000)
-            .l1_data_gas_price(1_000_000_000_000_000)
-            .l2_gas(gas_limit)
-            .l2_gas_price(1_000_000_000)
-            .send()
-            .await?;
-        let receipt = source.receipt(submitted.transaction_hash).await?;
+        let call = Call { to: address, selector: get_selector_from_name(selector)?, calldata };
+        let transaction_hash = if name == "vm_single" {
+            account
+                .execute_v3(vec![call])
+                .l1_gas(L1_GAS_LIMIT)
+                .l1_gas_price(L1_GAS_PRICE_BOUND)
+                .l1_data_gas(L1_GAS_LIMIT)
+                .l1_data_gas_price(L1_GAS_PRICE_BOUND)
+                .l2_gas(gas_limit)
+                .l2_gas_price(L2_GAS_PRICE_BOUND)
+                .send()
+                .await?
+                .transaction_hash
+        } else {
+            invoke_sierra_fixture(&source, sierra_account, call, gas_limit).await?
+        };
+        let receipt = source.receipt(transaction_hash).await?;
+        save(&format!("{name}_receipt"), &receipt)?;
         let expected = if gas_limit == OUT_OF_GAS_LIMIT { "REVERTED" } else { "SUCCEEDED" };
         ensure!(receipt["execution_status"] == expected, "{name}: unexpected receipt {receipt}");
         let block = receipt["block_number"].as_u64().context("confirmed block missing")?;
-        let trace = rpc(&source.rpc, "starknet_traceTransaction", json!([submitted.transaction_hash])).await?;
+        let trace = rpc(&source.rpc, "starknet_traceTransaction", json!([transaction_hash])).await?;
         let weights: Value = reqwest::get(format!("{}get_block_bouncer_weights?blockNumber={block}", source.feeder))
             .await?
             .error_for_status()?
@@ -197,7 +261,7 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
             "os_transactions":result.output.txs_trace,"os_resources":result.output.cairo_pie.execution_resources});
         save(name, &observation)?;
         observations.push(observation);
-        accepted.push((submitted.transaction_hash, block));
+        accepted.push((transaction_hash, block));
     }
     save("madara_after_execution", &source.footprint()?)?;
     let replica = Node::start(Some(&source)).await?;
