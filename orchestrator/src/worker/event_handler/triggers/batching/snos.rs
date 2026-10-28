@@ -326,6 +326,7 @@ impl NonEmptySnosState {
     ///
     /// Returns `SnosBatchCheckResult::CanAdd(combined_weights)` if all checks pass,
     /// or a specific reason why the block cannot be added.
+    #[cfg(test)]
     pub fn check_block_sync(
         &self,
         block_weights: BouncerWeights,
