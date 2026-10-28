@@ -4,7 +4,7 @@ use crate::rocksdb::rocksdb_snapshot::SnapshotWithDBArc;
 use crate::rocksdb::state::{CONTRACT_CLASS_HASH_COLUMN, CONTRACT_NONCE_COLUMN};
 use crate::rocksdb::trie::{
     BONSAI_CLASS_LOG_COLUMN, BONSAI_CONTRACT_FLAT_COLUMN, BONSAI_CONTRACT_LOG_COLUMN,
-    BONSAI_CONTRACT_STORAGE_LOG_COLUMN,
+    BONSAI_CONTRACT_STORAGE_LOG_COLUMN, BONSAI_CONTRACT_TRIE_COLUMN,
 };
 use crate::rocksdb::RocksDBStorage;
 use crate::MadaraBackend;
