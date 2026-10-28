@@ -1,5 +1,113 @@
 use super::*;
 
+#[rstest::rstest]
+#[case::sequential(true)]
+#[case::concurrent(false)]
+#[tokio::test]
+async fn oversized_invoke_is_terminal_and_does_not_block_healthy_or_replacement_work(
+    #[case] disable_concurrency: bool,
+) {
+    use mc_mempool::TransactionStatus as MempoolTransactionStatus;
+    use mc_submit_tx::TransactionLookup;
+    use mp_chain_config::BlockProductionConfig;
+
+    let mut genesis = ChainGenesisDescription::base_config().unwrap();
+    let contracts = genesis.add_devnet_contracts(2).unwrap();
+    let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig {
+        block_time: Duration::from_secs(30000),
+        no_empty_blocks: true,
+        block_production_concurrency: BlockProductionConfig {
+            batch_size: 3,
+            max_txs_per_account_per_batch: 2,
+            disable_concurrency,
+            ..Default::default()
+        },
+        bouncer_config: BouncerConfig { max_snos_full_output_cells: 100, ..BouncerConfig::max() },
+        ..ChainConfig::madara_devnet()
+    }));
+    backend.set_l1_gas_quote_for_testing();
+    genesis.build_and_store(&backend).await.unwrap();
+    let mempool = Arc::new(Mempool::new(backend.clone(), MempoolConfig::default()));
+    let tx_validator =
+        Arc::new(TransactionValidator::new(mempool.clone(), backend.clone(), TransactionValidatorConfig::default()));
+
+    let erc20 = Felt::from_hex_unchecked("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d");
+    let oversized_calls = (0..20).fold(Multicall::default(), |calls, recipient| {
+        calls.with(Call {
+            to: erc20,
+            selector: Selector::from("transfer"),
+            calldata: vec![Felt::from(10_000 + recipient), Felt::ONE, Felt::ZERO],
+        })
+    });
+    let oversized_hash = tx_validator
+        .submit_invoke_transaction(make_invoke_tx(&contracts.0[0], oversized_calls, &backend, Felt::ZERO).into())
+        .await
+        .unwrap()
+        .transaction_hash;
+    let successor_hash = tx_validator
+        .submit_invoke_transaction(make_invoke_tx(&contracts.0[0], Multicall::default(), &backend, Felt::ONE).into())
+        .await
+        .unwrap()
+        .transaction_hash;
+    let healthy_hash = tx_validator
+        .submit_invoke_transaction(make_invoke_tx(&contracts.0[1], Multicall::default(), &backend, Felt::ZERO).into())
+        .await
+        .unwrap()
+        .transaction_hash;
+
+    let mut producer = BlockProductionTask::new(
+        backend.clone(),
+        mempool.clone(),
+        Arc::new(BlockProductionMetrics::register()),
+        Arc::new(L1ClientMock::new()),
+        false,
+        false,
+        false,
+    );
+    let mut notifications = producer.subscribe_state_notifications();
+    let task = AbortOnDrop::spawn(async move { producer.run(ServiceContext::new_for_testing()).await.unwrap() });
+    tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            if matches!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted)
+                && matches!(
+                    mempool.get_transaction_status(&oversized_hash).unwrap(),
+                    Some(MempoolTransactionStatus::Rejected { .. })
+                )
+                && mempool.find_transaction_by_hash(&healthy_hash).unwrap().is_some()
+            {
+                break;
+            }
+        }
+    })
+    .await
+    .unwrap();
+    drop(task);
+
+    let feeder_status = mempool.feeder_transaction_status(oversized_hash).await.unwrap().unwrap();
+    assert_eq!(feeder_status.tx_status, mp_gateway::feeder::TransactionStatus::Rejected);
+    assert!(feeder_status.tx_failure_reason.is_some());
+    assert!(mempool.is_transaction_in_mempool(&successor_hash));
+
+    assert!(!backend
+        .get_saved_mempool_transactions()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()
+        .iter()
+        .any(|tx| tx.hash == oversized_hash));
+    let restarted = Arc::new(Mempool::new(backend.clone(), MempoolConfig::default()));
+    assert!(matches!(
+        restarted.get_transaction_status(&oversized_hash).unwrap(),
+        Some(MempoolTransactionStatus::Rejected { .. })
+    ));
+
+    let restarted_validator =
+        TransactionValidator::new(restarted, backend.clone(), TransactionValidatorConfig::default());
+    restarted_validator
+        .submit_invoke_transaction(make_invoke_tx(&contracts.0[0], Multicall::default(), &backend, Felt::ZERO).into())
+        .await
+        .expect("same-nonce replacement should remain admissible after terminal rejection");
+}
+
 #[tokio::test]
 async fn devnet_snos_limit_rolls_five_transactions_across_blocks() {
     use mp_chain_config::BlockProductionConfig;

@@ -37,6 +37,7 @@ async fn subscribe_transaction_status_full_flow_v0_10_2() {
         .expect("Failed subscription");
 
     for (snapshot, expected) in [
+        (crate::TxStatusSnapshot::Rejected, mp_rpc::v0_10_2::TxnStatus::Rejected),
         (crate::TxStatusSnapshot::Received, mp_rpc::v0_10_2::TxnStatus::Received),
         (crate::TxStatusSnapshot::Candidate, mp_rpc::v0_10_2::TxnStatus::Candidate),
         (crate::TxStatusSnapshot::PreConfirmed, mp_rpc::v0_10_2::TxnStatus::PreConfirmed),

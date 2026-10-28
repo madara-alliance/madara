@@ -24,6 +24,17 @@ use std::{
 };
 use tokio::{sync::mpsc, time::Instant};
 
+pub(crate) fn release_rejected_l1_reservation(
+    consumed: &mut HashSet<u64>,
+    transaction: &blockifier::transaction::transaction_execution::Transaction,
+) {
+    if let Some(nonce) = transaction.l1_handler_tx_nonce() {
+        if let Ok(nonce) = nonce.to_felt().try_into() {
+            consumed.remove(&nonce);
+        }
+    }
+}
+
 struct ExecutorStateExecuting {
     exec_ctx: BlockExecutionContext,
     /// Note: We have a special StateAdaptor here. This is because saving the block to the database can actually lag a
@@ -516,6 +527,7 @@ impl ExecutorThread {
                     }
                 }
                 Err(error) => {
+                    release_rejected_l1_reservation(&mut execution_state.consumed_l1_to_l2_nonces, transaction);
                     tracing::error!(
                         "Rejected transaction {:#x} for unexpected error: {error:#}",
                         transaction.tx_hash().to_felt()

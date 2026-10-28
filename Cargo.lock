@@ -8802,6 +8802,7 @@ dependencies = [
  "mp-chain-config",
  "mp-class",
  "mp-convert",
+ "mp-gateway",
  "mp-receipt",
  "mp-rpc",
  "mp-state-update",

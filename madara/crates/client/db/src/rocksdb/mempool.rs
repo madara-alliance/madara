@@ -8,8 +8,31 @@ use rocksdb::{IteratorMode, ReadOptions};
 
 /// <txn_hash 32 bytes> => bincode(txn)
 pub const MEMPOOL_TRANSACTIONS_COLUMN: Column = Column::new("mempool_transactions").set_point_lookup();
+pub const MEMPOOL_REJECTED_TRANSACTIONS_COLUMN: Column =
+    Column::new("mempool_rejected_transactions").set_point_lookup();
 
 impl RocksDBStorageInner {
+    pub(super) fn get_rejected_mempool_transaction(
+        &self,
+        tx_hash: &Felt,
+    ) -> Result<Option<crate::storage::RejectedMempoolTransaction>> {
+        let col = self.get_column(MEMPOOL_REJECTED_TRANSACTIONS_COLUMN);
+        self.db
+            .get_pinned_cf(&col, super::serialize(tx_hash)?)?
+            .map(|value| super::deserialize(value.as_ref()).map_err(Into::into))
+            .transpose()
+    }
+
+    pub(super) fn write_rejected_mempool_transaction(
+        &self,
+        tx_hash: &Felt,
+        rejection: &crate::storage::RejectedMempoolTransaction,
+    ) -> Result<()> {
+        let col = self.get_column(MEMPOOL_REJECTED_TRANSACTIONS_COLUMN);
+        self.db.put_cf(&col, super::serialize(tx_hash)?, super::serialize(rejection)?)?;
+        Ok(())
+    }
+
     #[tracing::instrument(skip(self), fields(module = "MempoolDB"))]
     pub(super) fn get_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_ {
         DBIterator::new_cf(

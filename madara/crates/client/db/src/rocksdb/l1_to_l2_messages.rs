@@ -18,6 +18,8 @@ pub const L1_TO_L2_L1_TXN_HASH_BY_NONCE: Column = Column::new("l1_to_l2_l1_txn_h
 pub const L1_TO_L2_TXN_HASH_BY_NONCE: Column = Column::new("l1_to_l2_txn_hash_by_nonce").set_point_lookup();
 /// <core_contract_nonce 8 bytes> => l1 block number (u64 be)
 pub const L1_TO_L2_L1_BLOCK_BY_NONCE: Column = Column::new("l1_to_l2_l1_block_by_nonce").set_point_lookup();
+pub const L1_TO_L2_PROOF_REJECTION_BY_NONCE: Column =
+    Column::new("l1_to_l2_proof_rejection_by_nonce").set_point_lookup();
 
 /// <l1_tx_hash 32 bytes> + <core_contract_nonce 8 bytes> => <l2_tx_hash 32 bytes> | empty
 ///
@@ -30,6 +32,26 @@ pub const L1_TO_L2_L2_TXN_HASH_BY_L1_TXN_HASH_AND_NONCE: Column =
     Column::new("l1_to_l2_l2_txn_hash_by_l1_txn_hash_and_nonce").with_prefix_extractor_len(32);
 
 impl RocksDBStorageInner {
+    pub(super) fn get_l1_message_proof_rejection(&self, nonce: u64) -> Result<Option<String>> {
+        let col = self.get_column(L1_TO_L2_PROOF_REJECTION_BY_NONCE);
+        self.db
+            .get_pinned_cf(&col, nonce.to_be_bytes())?
+            .map(|value| super::deserialize(value.as_ref()).map_err(Into::into))
+            .transpose()
+    }
+
+    pub(super) fn write_l1_message_proof_rejection(&self, nonce: u64, reason: &str) -> Result<()> {
+        let col = self.get_column(L1_TO_L2_PROOF_REJECTION_BY_NONCE);
+        self.db.put_cf(&col, nonce.to_be_bytes(), super::serialize(&reason.to_owned())?)?;
+        Ok(())
+    }
+
+    pub(super) fn clear_l1_message_proof_rejection(&self, nonce: u64) -> Result<()> {
+        let col = self.get_column(L1_TO_L2_PROOF_REJECTION_BY_NONCE);
+        self.db.delete_cf(&col, nonce.to_be_bytes())?;
+        Ok(())
+    }
+
     /// Also removed the given txns from the pending column.
     pub(super) fn messages_to_l2_write_transactions<'a>(
         &self,
@@ -222,7 +244,11 @@ impl RocksDBStorageInner {
     /// If the message does not exist, this does nothing.
     pub(super) fn remove_pending_message_to_l2(&self, core_contract_nonce: u64) -> Result<()> {
         let pending_cf = self.get_column(L1_TO_L2_PENDING_MESSAGE_BY_NONCE);
-        self.db.delete_cf_opt(&pending_cf, core_contract_nonce.to_be_bytes(), &self.writeopts)?;
+        let rejection_cf = self.get_column(L1_TO_L2_PROOF_REJECTION_BY_NONCE);
+        let mut batch = WriteBatchWithTransaction::default();
+        batch.delete_cf(&pending_cf, core_contract_nonce.to_be_bytes());
+        batch.delete_cf(&rejection_cf, core_contract_nonce.to_be_bytes());
+        self.db.write_opt(batch, &self.writeopts)?;
         Ok(())
     }
 

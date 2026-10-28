@@ -47,6 +47,11 @@ pub enum L1ToL2MessageIndexEntry {
     Consumed(Felt),
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub struct RejectedMempoolTransaction {
+    pub reason: String,
+}
+
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 pub struct StorageTxIndex {
     pub block_number: u64,
@@ -172,6 +177,7 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
     fn get_l1_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<mp_convert::L1TransactionHash>>;
     fn get_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<Felt>>;
     fn get_l1_handler_l1_block_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<u64>>;
+    fn get_l1_message_proof_rejection(&self, core_contract_nonce: u64) -> Result<Option<String>>;
     fn get_messages_to_l2_by_l1_tx_hash(
         &self,
         l1_tx_hash: &mp_convert::L1TransactionHash,
@@ -185,6 +191,7 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
     // Mempool
 
     fn get_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_;
+    fn get_rejected_mempool_transaction(&self, tx_hash: &Felt) -> Result<Option<RejectedMempoolTransaction>>;
     fn get_external_outbox_transactions(&self, limit: usize) -> impl Iterator<Item = Result<ExternalOutboxEntry>> + '_;
     /// Return an approximate count of entries in the external outbox.
     ///
@@ -236,6 +243,8 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
 
     fn write_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64, txn_hash: &Felt) -> Result<()>;
     fn write_l1_handler_l1_block_by_nonce(&self, core_contract_nonce: u64, l1_block_n: u64) -> Result<()>;
+    fn write_l1_message_proof_rejection(&self, core_contract_nonce: u64, reason: &str) -> Result<()>;
+    fn clear_l1_message_proof_rejection(&self, core_contract_nonce: u64) -> Result<()>;
     fn write_pending_message_to_l2(&self, msg: &L1HandlerTransactionWithFee) -> Result<()>;
     fn remove_pending_message_to_l2(&self, core_contract_nonce: u64) -> Result<()>;
     fn write_l1_txn_hash_by_nonce(
@@ -264,6 +273,7 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
 
     fn remove_mempool_transactions(&self, tx_hashes: impl IntoIterator<Item = Felt>) -> Result<()>;
     fn write_mempool_transaction(&self, tx: &ValidatedTransaction) -> Result<()>;
+    fn write_rejected_mempool_transaction(&self, tx_hash: &Felt, rejection: &RejectedMempoolTransaction) -> Result<()>;
     fn write_external_outbox(&self, tx: &ValidatedTransaction) -> Result<ExternalOutboxId>;
     fn delete_external_outbox(&self, id: ExternalOutboxId) -> Result<()>;
 

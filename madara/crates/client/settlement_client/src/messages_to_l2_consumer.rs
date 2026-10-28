@@ -46,6 +46,18 @@ impl MessagesToL2Consumer {
                 .context("Getting next pending message to l2")?
             {
                 self.next_nonce = msg.tx.nonce + 1;
+                if let Some(reason) = self
+                    .backend
+                    .get_l1_message_proof_rejection(msg.tx.nonce)
+                    .context("Getting L1 message proof quarantine")?
+                {
+                    tracing::warn!(
+                        l1_message_nonce = msg.tx.nonce,
+                        reason,
+                        "Skipping quarantined L1 handler; clear the quarantine before an operator-controlled retry"
+                    );
+                    continue;
+                }
                 match check_message_to_l2_validity(
                     &self.l1_read,
                     &self.backend,
@@ -198,5 +210,44 @@ mod tests {
             let mut fut = Box::pin(consumer.consume_next_or_wait());
             assert!(fut.as_mut().now_or_never().is_none()); // waiting.
         }
+    }
+
+    #[test]
+    fn unacknowledged_message_is_retried_after_consumer_restart() {
+        let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+        backend.write_pending_message_to_l2(&l1_handler_tx(4)).unwrap();
+
+        for _ in 0..2 {
+            let mut mock = MockSettlementLayerProvider::new();
+            mock.expect_get_client_type().returning(|| ClientType::Starknet);
+            mock_l1_handler_tx(&mut mock, 4, true, false);
+            let mut consumer =
+                MessagesToL2Consumer::new(backend.clone(), Arc::new(mock), Arc::new(Notify::new()), false);
+
+            assert_eq!(consumer.consume_next_or_wait().now_or_never().unwrap().unwrap(), l1_handler_tx(4));
+        }
+    }
+
+    #[test]
+    fn quarantined_message_is_skipped_until_operator_clears_it() {
+        let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+        backend.write_pending_message_to_l2(&l1_handler_tx(4)).unwrap();
+        backend.write_pending_message_to_l2(&l1_handler_tx(5)).unwrap();
+        backend.write_l1_message_proof_rejection(4, "too large for proof").unwrap();
+
+        let mut mock = MockSettlementLayerProvider::new();
+        mock.expect_get_client_type().returning(|| ClientType::Starknet);
+        mock_l1_handler_tx(&mut mock, 5, true, false);
+        let mut consumer = MessagesToL2Consumer::new(backend.clone(), Arc::new(mock), Arc::new(Notify::new()), false);
+        assert_eq!(consumer.consume_next_or_wait().now_or_never().unwrap().unwrap(), l1_handler_tx(5));
+        assert!(backend.get_pending_message_to_l2(4).unwrap().is_some());
+        assert!(backend.get_l1_handler_txn_hash_by_nonce(4).unwrap().is_none());
+
+        backend.clear_l1_message_proof_rejection(4).unwrap();
+        let mut retry_mock = MockSettlementLayerProvider::new();
+        retry_mock.expect_get_client_type().returning(|| ClientType::Starknet);
+        mock_l1_handler_tx(&mut retry_mock, 4, true, false);
+        let mut restarted = MessagesToL2Consumer::new(backend, Arc::new(retry_mock), Arc::new(Notify::new()), false);
+        assert_eq!(restarted.consume_next_or_wait().now_or_never().unwrap().unwrap(), l1_handler_tx(4));
     }
 }

@@ -17,6 +17,23 @@ fn is_future_nonce_error(error: &TransactionExecutorError) -> bool {
     )
 }
 
+fn proof_size_rejection(error: &TransactionExecutorError) -> Option<String> {
+    matches!(
+        error,
+        TransactionExecutorError::TransactionExecutionError(
+            TransactionExecutionError::TransactionTooLargeForProof { .. }
+        )
+    )
+    .then(|| error.to_string())
+}
+
+#[derive(Default)]
+pub(crate) struct AppendBatchResult {
+    pub deferred: Vec<ValidatedTransaction>,
+    pub rejected_mempool: Vec<(Felt, String)>,
+    pub rejected_l1: Vec<(u64, String)>,
+}
+
 impl CurrentBlockState {
     /// Classifies against the whole parent chain, including blocks awaiting finalization.
     fn classify_class_update(&mut self, address: Felt, class_hash: Felt) -> anyhow::Result<ClassUpdateItem> {
@@ -101,10 +118,11 @@ impl CurrentBlockState {
 
     /// Converts one executor batch into durable preconfirmed transactions and appends them.
     ///
-    /// Rejected executions are omitted, while consumed L1 nonces remain recorded even on revert.
-    pub async fn append_batch(&mut self, mut batch: BatchExecutionResult) -> anyhow::Result<Vec<ValidatedTransaction>> {
+    /// Rejected executions are omitted and returned for terminal bookkeeping. Included L1
+    /// handlers remain consumed even on revert; rejected handlers remain pending and quarantined.
+    pub async fn append_batch(&mut self, mut batch: BatchExecutionResult) -> anyhow::Result<AppendBatchResult> {
         let mut executed = vec![];
-        let mut deferred = vec![];
+        let mut result = AppendBatchResult::default();
 
         for ((blockifier_exec_result, blockifier_tx), mut additional_info) in
             batch.blockifier_results.into_iter().zip(batch.executed_txs.txs).zip(batch.executed_txs.additional_info)
@@ -113,7 +131,7 @@ impl CurrentBlockState {
             // successors remain valid pending work, not permanently rejected txs.
             if additional_info.from_mempool && blockifier_exec_result.as_ref().is_err_and(is_future_nonce_error) {
                 if let blockifier::transaction::transaction_execution::Transaction::Account(tx) = blockifier_tx {
-                    deferred.push(ValidatedTransaction::from_starknet_api(
+                    result.deferred.push(ValidatedTransaction::from_starknet_api(
                         tx.tx,
                         additional_info.arrived_at,
                         additional_info.declared_class,
@@ -122,13 +140,27 @@ impl CurrentBlockState {
                 }
                 continue;
             }
-            if let Some(core_contract_nonce) = blockifier_tx.l1_handler_tx_nonce() {
-                // Even when the l1 handler tx is reverted, we mark the nonce as consumed.
-                self.consumed_core_contract_nonces
-                    .insert(core_contract_nonce.to_felt().try_into().context("Invalid nonce while appending batch")?);
+            if additional_info.from_mempool {
+                if let Err(error) = &blockifier_exec_result {
+                    if let Some(reason) = proof_size_rejection(error) {
+                        result.rejected_mempool.push((blockifier_tx.tx_hash().to_felt(), reason));
+                    }
+                }
+            } else if let (Some(nonce), Err(error)) = (blockifier_tx.l1_handler_tx_nonce(), &blockifier_exec_result) {
+                if let Some(reason) = proof_size_rejection(error) {
+                    result
+                        .rejected_l1
+                        .push((nonce.to_felt().try_into().context("Invalid rejected L1 message nonce")?, reason));
+                }
             }
 
             if let Ok((execution_info, state_diff)) = blockifier_exec_result {
+                if let Some(core_contract_nonce) = blockifier_tx.l1_handler_tx_nonce() {
+                    // Successful and reverted L1 handlers are included; rejected handlers remain pending.
+                    self.consumed_core_contract_nonces.insert(
+                        core_contract_nonce.to_felt().try_into().context("Invalid nonce while appending batch")?,
+                    );
+                }
                 let declared_class = additional_info.declared_class.take().filter(|_| !execution_info.is_reverted());
 
                 let receipt = from_blockifier_execution_info(&execution_info, &blockifier_tx);
@@ -194,7 +226,7 @@ impl CurrentBlockState {
         self.persist_executed_transactions(executed).await?;
         let stats = mem::take(&mut batch.stats);
         self.log_batch_stats(&stats);
-        Ok(deferred)
+        Ok(result)
     }
 }
 
@@ -206,6 +238,45 @@ mod tests {
     use mp_chain_config::ChainConfig;
     use mp_receipt::{InvokeTransactionReceipt, TransactionReceipt};
     use mp_transactions::{InvokeTransaction, InvokeTransactionV0, Transaction};
+
+    #[tokio::test]
+    async fn rejected_l1_handler_remains_unconsumed_for_durable_retry() {
+        use crate::util::AdditionalTxInfo;
+        use mp_chain_config::StarknetVersion;
+        use mp_convert::ToFelt;
+        use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee};
+
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        backend.write_access().new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader::default())).unwrap();
+        let (tx, declared_class) = L1HandlerTransactionWithFee::new(
+            L1HandlerTransaction { nonce: 55, contract_address: Felt::TWO, ..Default::default() },
+            1,
+        )
+        .into_blockifier(backend.chain_config().chain_id.to_felt(), StarknetVersion::LATEST)
+        .unwrap();
+        let batch = BatchExecutionResult {
+            executed_txs: [(
+                tx,
+                AdditionalTxInfo { arrived_at: Default::default(), declared_class, from_mempool: false },
+            )]
+            .into_iter()
+            .collect(),
+            blockifier_results: vec![Err(TransactionExecutionError::TransactionTooLargeForProof {
+                max_output_cells: 49_000,
+                predicted_output_cells: 49_001,
+            }
+            .into())],
+            stats: Default::default(),
+            emitted_at: Instant::now(),
+        };
+        let mut current = CurrentBlockState::new(backend, 0);
+
+        let result = current.append_batch(batch).await.unwrap();
+
+        assert!(current.consumed_core_contract_nonces.is_empty());
+        assert_eq!(result.rejected_l1.len(), 1);
+        assert_eq!(result.rejected_l1[0].0, 55);
+    }
 
     #[rstest::rstest]
     #[case::future_mempool(true, 1, 2, true)]
@@ -252,8 +323,8 @@ mod tests {
             emitted_at: Instant::now(),
         };
         let mut current = CurrentBlockState::new(backend.clone(), 0);
-        let deferred = current.append_batch(batch).await.unwrap();
-        assert_eq!(deferred, if requeue { vec![original] } else { vec![] });
+        let result = current.append_batch(batch).await.unwrap();
+        assert_eq!(result.deferred, if requeue { vec![original] } else { vec![] });
         assert_eq!(backend.block_view_on_preconfirmed(0).unwrap().num_executed_transactions(), 0);
     }
 

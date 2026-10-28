@@ -54,6 +54,17 @@ fn make_l1_handler_tx(
     (tx, AdditionalTxInfo { declared_class, arrived_at: Default::default(), from_mempool: false })
 }
 
+#[test]
+fn rejected_l1_handler_releases_executor_nonce_reservation() {
+    let backend = MadaraBackend::open_for_testing(Arc::new(mp_chain_config::ChainConfig::madara_test()));
+    let (tx, _) = make_l1_handler_tx(&backend, Felt::TWO, 55, Felt::ONE, Felt::ONE, Felt::ONE);
+    let mut consumed = std::collections::HashSet::from([55]);
+
+    thread::release_rejected_l1_reservation(&mut consumed, &tx);
+
+    assert!(consumed.is_empty());
+}
+
 #[rstest::rstest]
 #[case::rejected_predecessor(true)]
 #[case::reverted_predecessor(false)]
@@ -123,7 +134,7 @@ async fn contiguous_nonce_execution_preserves_successors(#[case] reject: bool) {
         assert!(result.blockifier_results[1].is_ok(), "revert must consume the predecessor nonce");
     }
     let mut current = CurrentBlockState::new(setup.backend.clone(), block_n);
-    let deferred = current.append_batch(result).await.unwrap();
+    let deferred = current.append_batch(result).await.unwrap().deferred;
     if reject {
         assert_eq!(deferred, vec![successor]);
         for tx in deferred {
@@ -139,7 +150,7 @@ async fn contiguous_nonce_execution_preserves_successors(#[case] reject: bool) {
             panic!("expected retry results")
         };
         assert!(result.blockifier_results.iter().all(Result::is_ok));
-        assert!(current.append_batch(result).await.unwrap().is_empty());
+        assert!(current.append_batch(result).await.unwrap().deferred.is_empty());
     } else {
         assert!(deferred.is_empty());
     }

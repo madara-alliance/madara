@@ -21,6 +21,10 @@ impl MadaraReadRpcApiV0_1_0Server for Starknet {
         Ok(bouncer_weights)
     }
 
+    async fn get_l1_message_proof_rejection(&self, nonce: u64) -> RpcResult<Option<String>> {
+        self.backend.get_l1_message_proof_rejection(nonce).map_err(StarknetRpcApiError::from).map_err(Into::into)
+    }
+
     async fn get_mempool_txn_hashes(&self, params: Option<GetMempoolTxnsParams>) -> RpcResult<Vec<MempoolTxnHashInfo>> {
         let params = params.unwrap_or_default();
         let mempool = self.mempool.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?;

@@ -135,11 +135,21 @@ impl BlockProductionTask {
             .map(|(tx, _)| tx.tx_hash().to_felt())
             .collect();
         // Persist the successful prefix before resolving nonces for re-admission.
-        let deferred = state.append_batch(batch).await?;
-        let deferred_hashes: HashSet<_> = deferred.iter().map(|tx| tx.hash).collect();
-        consumed_hashes.retain(|hash| !deferred_hashes.contains(hash));
+        let append = state.append_batch(batch).await?;
+        let deferred_hashes: HashSet<_> = append.deferred.iter().map(|tx| tx.hash).collect();
+        let rejected_hashes: HashSet<_> = append.rejected_mempool.iter().map(|(hash, _)| *hash).collect();
+        consumed_hashes.retain(|hash| !deferred_hashes.contains(hash) && !rejected_hashes.contains(hash));
         self.mempool.finish_consumed_transactions(&consumed_hashes).await;
-        for tx in deferred {
+        self.mempool.finish_rejected_transactions(&append.rejected_mempool).await?;
+        for (nonce, reason) in &append.rejected_l1 {
+            self.backend.write_l1_message_proof_rejection(*nonce, reason)?;
+            tracing::error!(
+                l1_message_nonce = *nonce,
+                reason,
+                "Quarantined L1 handler that exceeds the SNOS proof-output limit"
+            );
+        }
+        for tx in append.deferred {
             let hash = tx.hash;
             if let Err(error) = self.mempool.requeue_tx(tx).await {
                 // Normal TTL, nonce and replacement policies still apply.

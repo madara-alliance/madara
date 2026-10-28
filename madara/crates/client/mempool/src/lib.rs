@@ -283,6 +283,10 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                 }
             };
             let tx_hash = tx.hash;
+            if self.backend.get_rejected_mempool_transaction(&tx_hash)?.is_some() {
+                self.remove_saved_txs_by_hashes([tx_hash]);
+                continue;
+            }
             if let Err(err) = self.add_tx(tx, InsertionMode::Reload).await {
                 match err {
                     MempoolInsertionError::InnerMempool(TxInsertionError::NonceTooLow { .. }) => {
@@ -395,6 +399,26 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         }
     }
 
+    /// Makes executor rejection terminal before releasing the consumed reservation.
+    /// The rejection row is written first, so a crash cannot reload the saved transaction.
+    pub async fn finish_rejected_transactions(&self, rejected: &[(Felt, String)]) -> anyhow::Result<()> {
+        for (hash, reason) in rejected {
+            self.backend.write_rejected_mempool_transaction(
+                hash,
+                &mc_db::RejectedMempoolTransaction { reason: reason.clone() },
+            )?;
+        }
+        self.backend.remove_saved_mempool_transactions(rejected.iter().map(|(hash, _)| *hash))?;
+
+        let mut lock = self.inner.write().await;
+        for (hash, reason) in rejected {
+            lock.release_consumed(hash);
+            self.preconfirmed_transactions_statuses.remove(hash);
+            self.watch_transaction_status.publish(hash, Some(TransactionStatus::Rejected { reason: reason.clone() }));
+        }
+        Ok(())
+    }
+
     /// Resolve a recreated account against execution, which can run ahead of the externally visible head.
     /// The caller holds the mempool write lock so an account cannot drain between lookup and insertion.
     fn account_nonce_for_insertion(
@@ -429,6 +453,9 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
     async fn add_tx(&self, tx: ValidatedTransaction, mode: InsertionMode) -> Result<(), MempoolInsertionError> {
         let is_new_tx = mode == InsertionMode::New;
         tracing::debug!("Accepting transaction tx_hash={:#x} is_new_tx={is_new_tx}", tx.hash);
+        if is_new_tx && self.backend.get_rejected_mempool_transaction(&tx.hash)?.is_some() {
+            return Err(TxInsertionError::DuplicateTxn.into());
+        }
 
         let mut outbox_id = None;
         if is_new_tx && self.external_outbox.enabled {
@@ -965,6 +992,33 @@ pub(crate) mod tests {
             backend.get_saved_mempool_transactions().collect::<Result<Vec<_>, _>>().unwrap().is_empty(),
             "removed txs must also be cleared from persisted mempool storage"
         );
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
+    #[tokio::test]
+    async fn durable_rejection_wins_over_a_saved_transaction_after_restart(
+        #[future] backend: Arc<mc_db::MadaraBackend>,
+        tx_account: ValidatedTransaction,
+    ) {
+        let backend = backend.await;
+        backend.write_saved_mempool_transaction(&tx_account).unwrap();
+        backend
+            .write_rejected_mempool_transaction(
+                &tx_account.hash,
+                &mc_db::RejectedMempoolTransaction { reason: "too large for proof".into() },
+            )
+            .unwrap();
+
+        let mempool = Mempool::new(backend.clone(), MempoolConfig::default());
+        mempool.load_txs_from_db().await.unwrap();
+
+        assert!(mempool.is_empty().await);
+        assert!(backend.get_saved_mempool_transactions().next().is_none());
+        assert!(matches!(
+            mempool.get_transaction_status(&tx_account.hash).unwrap(),
+            Some(TransactionStatus::Rejected { .. })
+        ));
     }
 
     #[rstest::rstest]

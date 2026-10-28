@@ -273,6 +273,8 @@ pub struct TxnReceiptWithBlockInfo {
 /// The finality status of the transaction, including the case the txn is still in the mempool or failed validation during the block construction phase
 #[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Clone, Debug)]
 pub enum TxnStatus {
+    #[serde(rename = "REJECTED")]
+    Rejected,
     #[serde(rename = "RECEIVED")]
     Received,
     #[serde(rename = "CANDIDATE")]
@@ -330,7 +332,7 @@ pub struct TxnFinalityAndExecutionStatus {
     #[serde(default)]
     pub execution_status: Option<TxnExecutionStatus>,
     pub finality_status: TxnStatus,
-    /// The failure reason, only appears if execution_status is REVERTED.
+    /// The failure reason for reverted execution or block-construction rejection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failure_reason: Option<String>,
 }

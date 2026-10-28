@@ -360,6 +360,20 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .map_err(StarknetRpcApiError::from)?)
     }
 
+    async fn retry_l1_message(&self, nonce: u64) -> RpcResult<Option<String>> {
+        if !self.rpc_unsafe_enabled {
+            return Err(StarknetRpcApiError::ErrUnexpectedError {
+                error: "This method requires the --rpc-unsafe flag to be enabled".to_string().into(),
+            }
+            .into());
+        }
+        let reason = self.backend.get_l1_message_proof_rejection(nonce).map_err(StarknetRpcApiError::from)?;
+        if reason.is_some() {
+            self.backend.clear_l1_message_proof_rejection(nonce).map_err(StarknetRpcApiError::from)?;
+        }
+        Ok(reason)
+    }
+
     async fn set_block_header(&self, custom_block_headers: CustomHeader) -> RpcResult<()> {
         // Check if unsafe RPC methods are enabled
         if !self.rpc_unsafe_enabled {
