@@ -32,6 +32,27 @@ fn ensure_block_fits_output_limit(
     Ok(())
 }
 
+fn close_batch_before_oversized_block(
+    state: &mut NonEmptySnosState,
+    block_num: u64,
+    output_cells: usize,
+    max_output_cells: usize,
+) -> bool {
+    if output_cells <= max_output_cells {
+        return false;
+    }
+
+    warn!(
+        block_num,
+        output_cells,
+        max_output_cells,
+        snos_batch_index = state.batch.index,
+        "Oversized block cannot join an SNOS batch; closing the preceding valid batch"
+    );
+    state.close();
+    true
+}
+
 pub enum SnosState {
     Empty(EmptySnosState),
     NonEmpty(NonEmptySnosState),
@@ -43,6 +64,15 @@ pub struct EmptySnosState {
 
 pub struct NonEmptySnosState {
     pub batch: SnosBatch,
+}
+
+struct SnosBlockCandidate {
+    block_num: u64,
+    weights: BouncerWeights,
+    version: StarknetVersion,
+    aggregator_batch_index: Option<u64>,
+    output_cells: usize,
+    max_output_cells: usize,
 }
 
 pub struct SnosStateHandler {
@@ -231,18 +261,22 @@ impl SnosHandler {
             block_weights.message_segment_length,
         )
         .await?;
-        ensure_block_fits_output_limit(block_num, block_output_cells, max_output_cells)?;
+        if close_batch_before_oversized_block(&mut state, block_num, block_output_cells, max_output_cells) {
+            return Ok(BlockProcessingResult::NotBatched(SnosState::NonEmpty(state)));
+        }
         // Get the starknet version of the current block
         let block_version = get_block_version(block_num, self.config.madara_rpc_client()).await?;
 
         match state
             .checked_add_block_with_limits(
-                block_num,
-                block_weights,
-                block_version,
-                aggregator_batch_index,
-                block_output_cells,
-                max_output_cells,
+                SnosBlockCandidate {
+                    block_num,
+                    weights: block_weights,
+                    version: block_version,
+                    aggregator_batch_index,
+                    output_cells: block_output_cells,
+                    max_output_cells,
+                },
                 &self.limits,
             )
             .await?
@@ -436,16 +470,19 @@ impl NonEmptySnosState {
         }
     }
 
-    pub async fn checked_add_block_with_limits(
+    async fn checked_add_block_with_limits(
         &self,
-        block_num: u64,
-        block_weights: BouncerWeights,
-        block_version: StarknetVersion,
-        block_aggregator_batch_index: Option<u64>,
-        block_output_cells: usize,
-        max_output_cells: usize,
+        candidate: SnosBlockCandidate,
         batch_limits: &SnosBatchLimits,
     ) -> Result<Option<Self>, JobError> {
+        let SnosBlockCandidate {
+            block_num,
+            weights: block_weights,
+            version: block_version,
+            aggregator_batch_index: block_aggregator_batch_index,
+            output_cells: block_output_cells,
+            max_output_cells,
+        } = candidate;
         let check_result = self.check_block_sync_with_output(
             block_weights,
             block_version,
@@ -1134,6 +1171,24 @@ mod tests {
     fn oversized_first_block_is_rejected_instead_of_opening_an_invalid_batch() {
         assert!(ensure_block_fits_output_limit(7, 49_001, 49_000).is_err());
         assert!(ensure_block_fits_output_limit(7, 49_000, 49_000).is_ok());
+    }
+
+    #[test]
+    fn oversized_next_block_closes_and_preserves_the_preceding_batch() {
+        let batch = create_test_snos_batch(
+            2,
+            SnosBatchStatus::Open,
+            StarknetVersion::V0_13_2,
+            create_test_weights(100, 100),
+            None,
+            Utc::now(),
+        );
+        let mut state = NonEmptySnosState::new(batch);
+
+        assert!(close_batch_before_oversized_block(&mut state, 2, 49_001, 49_000));
+        assert!(state.batch.status.is_closed());
+        assert_eq!(state.batch.end_block, 1);
+        assert_eq!(state.batch.num_blocks, 2);
     }
 
     mod close_tests {
