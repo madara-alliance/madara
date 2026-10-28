@@ -1,0 +1,61 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/github-workflow.json
+name: Task - Committed Data Upstream Regression
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - .github/workflows/task-test-committed-data-upstream.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: committed-data-upstream-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  committed-data-upstream:
+    runs-on: blacksmith-8vcpu-ubuntu-2204
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/load-env
+      - name: Read exact Sequencer revision
+        id: revision
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          manifest = Path("Cargo.toml").read_text()
+          revisions = set(re.findall(r'git = "https://github.com/karnotxyz/sequencer", rev = "([0-9a-f]{40})"', manifest))
+          assert len(revisions) == 1, "expected one coherent Sequencer revision"
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"sha={revisions.pop()}\n")
+          PY
+      - uses: actions/checkout@v5
+        with:
+          repository: karnotxyz/sequencer
+          ref: ${{ steps.revision.outputs.sha }}
+          path: upstream-sequencer
+      - uses: ./.github/actions/setup-rust
+        with:
+          rust-version: 1.92.0
+          cache-key: committed-data-upstream-${{ runner.os }}-rust-1.92.0
+      - uses: ./.github/actions/setup-cairo-native
+      - uses: ./.github/actions/setup-python-cairo
+      - name: VM and native transaction rejection regressions
+        working-directory: upstream-sequencer
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target
+        run: cargo +1.92.0 test --locked --release -p blockifier --features testing,cairo_native committed_data -- --nocapture
+      - name: Cairo proof constraints and full OS regressions
+        if: ${{ !cancelled() }}
+        working-directory: upstream-sequencer
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target
+        run: cargo +1.92.0 test --locked --release -p starknet_os_flow_tests committed_data -- --nocapture

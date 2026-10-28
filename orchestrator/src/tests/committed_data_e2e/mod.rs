@@ -68,25 +68,19 @@ async fn deploy_fixture(
 /// The pinned test account uses a single-call ABI and dummy validation. It isolates Sierra-gas
 /// accounting from the older devnet account's inherited VM-step accounting. These invokes test
 /// billing/replay, not signature authorization; the signed devnet case covers normal admission.
-async fn invoke_sierra_fixture(source: &Node, account: Felt, call: Call, gas_limit: u64) -> Result<Felt> {
+async fn sierra_fixture_transaction(source: &Node, account: Felt, call: Call, gas_limit: u64) -> Result<Value> {
     let nonce = rpc(&source.rpc, "starknet_getNonce", json!(["pre_confirmed", account])).await?;
     let mut calldata = vec![call.to, call.selector, Felt::from(call.calldata.len())];
     calldata.extend(call.calldata);
     let bounds = |amount: u64, price: u128| json!({"max_amount":format!("{amount:#x}"),"max_price_per_unit":format!("{price:#x}")});
-    let result = rpc(
-        &source.rpc,
-        "starknet_addInvokeTransaction",
-        json!([{"type":"INVOKE","version":"0x3","sender_address":account,
-            "calldata":calldata,"signature":[],"nonce":nonce,
-            "resource_bounds":{
-                "l1_gas":bounds(L1_GAS_LIMIT,L1_GAS_PRICE_BOUND),
-                "l1_data_gas":bounds(L1_GAS_LIMIT,L1_GAS_PRICE_BOUND),
-                "l2_gas":bounds(gas_limit,L2_GAS_PRICE_BOUND)},
-            "tip":"0x0","paymaster_data":[],"account_deployment_data":[],
-            "nonce_data_availability_mode":"L1","fee_data_availability_mode":"L1"}]),
-    )
-    .await?;
-    Ok(serde_json::from_value(result["transaction_hash"].clone())?)
+    Ok(json!({"type":"INVOKE","version":"0x3","sender_address":account,
+        "calldata":calldata,"signature":[],"nonce":nonce,
+        "resource_bounds":{
+            "l1_gas":bounds(L1_GAS_LIMIT,L1_GAS_PRICE_BOUND),
+            "l1_data_gas":bounds(L1_GAS_LIMIT,L1_GAS_PRICE_BOUND),
+            "l2_gas":bounds(gas_limit,L2_GAS_PRICE_BOUND)},
+        "tip":"0x0","paymaster_data":[],"account_deployment_data":[],
+        "nonce_data_availability_mode":"L1","fee_data_availability_mode":"L1"}))
 }
 
 /// Persist raw receipts, traces and OS counters so a passing test is not mistaken for a fee
@@ -180,16 +174,26 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
     ensure!(source.receipt(funding.transaction_hash).await?["execution_status"] == "SUCCEEDED", "funding reverted");
     let mut observations = Vec::new();
     let mut accepted = Vec::new();
+    let mut rejected = Vec::new();
     for (name, dataset, keys, batch, gas_limit) in [
         ("vm_single", &tree, vec![values[0].0], false, SUCCESS_GAS_LIMIT),
         ("single", &tree, vec![values[0].0], false, SUCCESS_GAS_LIMIT),
         ("caught_out_of_gas", &deep, vec![Felt::ZERO], true, 4_000_000),
+        ("depth_252_out_of_gas", &deep, vec![Felt::ZERO], false, OUT_OF_GAS_LIMIT),
+        (
+            "batch_1024_out_of_gas",
+            &tree,
+            values.iter().take(1024).map(|entry| entry.0).collect(),
+            true,
+            OUT_OF_GAS_LIMIT,
+        ),
+        ("caught_success", &tree, vec![values[0].0], true, SUCCESS_GAS_LIMIT),
+        ("paid_read_then_revert", &tree, vec![values[0].0], true, SUCCESS_GAS_LIMIT),
         ("batch_100", &tree, values.iter().take(100).map(|entry| entry.0).collect(), true, SUCCESS_GAS_LIMIT),
         ("batch_150", &tree, values.iter().take(150).map(|entry| entry.0).collect(), true, SUCCESS_GAS_LIMIT),
         ("batch_1024", &tree, values.iter().take(1024).map(|entry| entry.0).collect(), true, SUCCESS_GAS_LIMIT),
         ("duplicate_1024", &tree, vec![values[0].0; 1024], true, SUCCESS_GAS_LIMIT),
         ("depth_252", &deep, vec![Felt::ZERO], false, SUCCESS_GAS_LIMIT),
-        ("depth_252_out_of_gas", &deep, vec![Felt::ZERO], false, OUT_OF_GAS_LIMIT),
     ] {
         let (mut selector, mut calldata, scheduled_gas) = if batch {
             let proof = CommittedDataBatchProof::from_dataset(dataset, &keys)?;
@@ -203,15 +207,73 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
                 committed_data::read_gas(dataset.witness(keys[0]).unwrap().siblings.len()),
             )
         };
-        let address = if name == "caught_out_of_gas" {
+        let catching = matches!(name, "caught_out_of_gas" | "caught_success" | "paid_read_then_revert");
+        let attempts = if name == "paid_read_then_revert" {
+            1
+        } else if catching {
+            3
+        } else {
+            1
+        };
+        let address = if catching {
             selector = "test_committed_data_catch";
-            // root, Span length, key, expect_error, three independent caught calls.
-            calldata = vec![dataset.root(), Felt::ONE, Felt::ZERO, Felt::ONE, Felt::from(3)];
+            // A successful read with expect_error=true deliberately panics after paying for it.
+            calldata = vec![dataset.root(), Felt::from(keys.len())];
+            calldata.extend(&keys);
+            calldata.extend([Felt::from(u8::from(name != "caught_success")), Felt::from(attempts)]);
             catcher
         } else {
             Felt::from_hex(READ_ADDRESS)?
         };
         let call = Call { to: address, selector: get_selector_from_name(selector)?, calldata };
+        let transaction = if name == "vm_single" {
+            None
+        } else {
+            Some(sierra_fixture_transaction(&source, sierra_account, call.clone(), gas_limit).await?)
+        };
+        if name.ends_with("out_of_gas") {
+            let transaction = transaction.unwrap();
+            let nonce = rpc(&source.rpc, "starknet_getNonce", json!(["latest", sierra_account])).await?;
+            let simulation =
+                rpc(&source.rpc, "starknet_simulateTransactions", json!(["pre_confirmed", [transaction.clone()], []]))
+                    .await
+                    .unwrap_err();
+            ensure!(
+                format!("{simulation:#}").contains("Insufficient gas for committed-data verification"),
+                "{name}: wrong simulation error: {simulation:#}"
+            );
+            // Normal submission may admit to the mempool before execution rejects the transaction.
+            // Close blocks, then prove no receipt or nonce change was committed. Subsequent valid
+            // calls reuse this nonce, so a stuck invalid mempool entry cannot make this test pass.
+            let submission = rpc(&source.rpc, "starknet_addInvokeTransaction", json!([transaction])).await;
+            if let Ok(result) = &submission {
+                for _ in 0..2 {
+                    rpc(&source.admin, "madara_closeBlock", json!([])).await?;
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                }
+                ensure!(
+                    rpc(&source.rpc, "starknet_getTransactionReceipt", json!([result["transaction_hash"]]))
+                        .await
+                        .is_err(),
+                    "{name}: unpaid transaction acquired a receipt"
+                );
+            } else if let Err(error) = &submission {
+                ensure!(
+                    format!("{error:#}").contains("Insufficient gas for committed-data verification"),
+                    "{name}: unrelated submission failure: {error:#}"
+                );
+            }
+            ensure!(
+                rpc(&source.rpc, "starknet_getNonce", json!(["latest", sierra_account])).await? == nonce,
+                "{name}: rejection changed nonce"
+            );
+            save(
+                &format!("{name}_rejected"),
+                &json!({"case":name,"simulation_error":format!("{simulation:#}"),"submission":format!("{submission:?}"),"nonce_unchanged":true,"canonical_receipt":false}),
+            )?;
+            rejected.push(name);
+            continue;
+        }
         let transaction_hash = if name == "vm_single" {
             account
                 .execute_v3(vec![call])
@@ -225,11 +287,12 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
                 .await?
                 .transaction_hash
         } else {
-            invoke_sierra_fixture(&source, sierra_account, call, gas_limit).await?
+            let result = rpc(&source.rpc, "starknet_addInvokeTransaction", json!([transaction.unwrap()])).await?;
+            serde_json::from_value(result["transaction_hash"].clone())?
         };
         let receipt = source.receipt(transaction_hash).await?;
         save(&format!("{name}_receipt"), &receipt)?;
-        let expected = if gas_limit == OUT_OF_GAS_LIMIT { "REVERTED" } else { "SUCCEEDED" };
+        let expected = if name == "paid_read_then_revert" { "REVERTED" } else { "SUCCEEDED" };
         ensure!(receipt["execution_status"] == expected, "{name}: unexpected receipt {receipt}");
         let block = receipt["block_number"].as_u64().context("confirmed block missing")?;
         let trace = rpc(&source.rpc, "starknet_traceTransaction", json!([transaction_hash])).await?;
@@ -257,7 +320,7 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
         result.output.cairo_pie.run_validity_checks()?;
         let observation = json!({"case":name,"entries":dataset.entries().len(),"keys":keys.len(),
             "scheduled_special_call_gas_per_attempt":scheduled_gas,
-            "special_call_attempts":if name == "caught_out_of_gas" { 3 } else { 1 },"receipt":receipt,"trace":trace,"bouncer_weights":weights,
+            "special_call_attempts":attempts,"receipt":receipt,"trace":trace,"bouncer_weights":weights,
             "os_transactions":result.output.txs_trace,"os_resources":result.output.cairo_pie.execution_resources});
         save(name, &observation)?;
         observations.push(observation);
@@ -310,7 +373,7 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
     ensure!(!witness.is_null(), "revert deleted immutable dataset");
     save(
         "summary",
-        &json!({"scenarios":observations.len(),"fullnode_traces_equal":true,"feature_disabled_reader_syncs":true,"revert_and_restart":true,
+        &json!({"snos_scenarios":observations.len(),"rejected_unpaid_scenarios":rejected,"fullnode_traces_equal":true,"feature_disabled_reader_syncs":true,"revert_and_restart":true,
         "dataset_survives_revert":true,"snos_pies_valid":true,"proof_or_settlement_submitted":false}),
     )?;
     Ok(())

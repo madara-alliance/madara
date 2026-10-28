@@ -108,7 +108,8 @@ impl From<TransactionExecutionError> for SubmitTransactionError {
             E::CommittedDataAvailability(err) => SubmitTransactionError::Internal(err.into()),
             err @ E::ContractClassVersionMismatch { .. } => rejected(InvalidContractClassVersion, format!("{err:#}")),
             err @ E::DeclareTransactionError { .. } => rejected(ClassAlreadyDeclared, format!("{err:#}")),
-            err @ (E::ExecutionError { .. }
+            err @ (E::CommittedDataInsufficientGas { .. }
+            | E::ExecutionError { .. }
             | E::ValidateTransactionError { .. }
             | E::ContractConstructorExecutionFailed { .. }
             | E::PanicInValidate { .. }
@@ -539,6 +540,15 @@ impl TransactionLookup for TransactionValidator {
 mod committed_data_tests {
     use super::*;
     use blockifier::execution::syscalls::committed_data::CommittedDataError;
+
+    #[test]
+    fn committed_data_budget_failure_is_rejected_user_input() {
+        let error = SubmitTransactionError::from(TransactionExecutionError::CommittedDataInsufficientGas {
+            required: 100,
+            remaining: 99,
+        });
+        assert!(matches!(error, SubmitTransactionError::Rejected(_)));
+    }
 
     #[test]
     fn committed_data_unavailability_is_an_internal_submission_failure() {

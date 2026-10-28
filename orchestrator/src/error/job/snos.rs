@@ -287,6 +287,10 @@ mod tests {
 
     #[test]
     fn committed_data_retries_availability_but_not_invalid_witnesses_or_limits() {
+        assert!(!is_retryable_transaction_execution_error(&TransactionExecutionError::CommittedDataInsufficientGas {
+            required: 100,
+            remaining: 99,
+        }));
         use blockifier::execution::syscalls::committed_data::CommittedDataError;
 
         for cause in [CommittedDataError::Unavailable, CommittedDataError::Provider("unreachable".into())] {
