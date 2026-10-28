@@ -7,6 +7,14 @@
 use super::*;
 use anyhow::ensure;
 
+fn ensure_complete_replay(prepared: usize, replayed: usize, persisted: usize) -> anyhow::Result<()> {
+    ensure!(
+        prepared == persisted && replayed == persisted,
+        "Incomplete preconfirmed replay: prepared {prepared} transaction(s), replayed {replayed}, expected {persisted}"
+    );
+    Ok(())
+}
+
 impl BlockProductionTask {
     /// Rebuilds a Blockifier transaction using the saved fee policy and persisted L1 fee.
     /// Missing declared classes are loaded from the recovery parent state.
@@ -116,6 +124,7 @@ impl BlockProductionTask {
         >],
         executed_txs: &[PreconfirmedExecutedTransaction],
     ) -> anyhow::Result<()> {
+        ensure_complete_replay(blockifier_txs.len(), execution_results.len(), executed_txs.len())?;
         for (index, (result, preconfirmed_tx)) in execution_results.iter().zip(executed_txs).enumerate() {
             let (execution_info, _) = result.as_ref().map_err(|error| {
                 tracing::warn!("Transaction execution error during re-execution: {error:?}");
@@ -277,15 +286,16 @@ impl BlockProductionTask {
 
     /// Resolves the execution configuration that originally produced persisted preconfirmed blocks.
     ///
-    /// Older databases without a saved config deliberately fall back to current node settings.
+    /// Older databases without a saved config predate SNOS admission enforcement, so recovery
+    /// deliberately leaves that limit unbounded rather than applying a newly configured limit.
     fn preconfirmed_recovery_config(&self) -> anyhow::Result<(Option<Arc<mp_chain_config::ChainConfig>>, bool)> {
         match self.backend.get_runtime_exec_config().context("Getting runtime execution config")? {
             Some(config) => Ok((Some(Arc::new(config.chain_config)), config.no_charge_fee)),
             None => {
-                tracing::warn!(
-                    "No saved runtime execution config found, using current configs (backward compatibility)"
-                );
-                Ok((None, self.no_charge_fee))
+                tracing::warn!("No saved runtime execution config found; disabling SNOS admission during recovery");
+                let mut legacy_config = self.backend.chain_config().as_ref().clone();
+                legacy_config.bouncer_config.max_snos_full_output_cells = usize::MAX;
+                Ok((Some(Arc::new(legacy_config)), self.no_charge_fee))
             }
         }
     }
@@ -367,5 +377,18 @@ impl BlockProductionTask {
         self.save_current_runtime_exec_config()
             .context("Updating runtime execution config after startup preconfirmed recovery")?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ensure_complete_replay;
+
+    #[test]
+    fn incomplete_replay_is_rejected_before_receipt_comparison() {
+        assert!(ensure_complete_replay(2, 0, 2).is_err());
+        assert!(ensure_complete_replay(2, 1, 2).is_err());
+        assert!(ensure_complete_replay(1, 1, 2).is_err());
+        assert!(ensure_complete_replay(2, 2, 2).is_ok());
     }
 }
