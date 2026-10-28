@@ -27,7 +27,7 @@ use starknet_types_core::{
     felt::Felt,
     hash::{Poseidon, StarkHash},
 };
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 // Public, deterministic Madara devnet fixtures; never use funded external accounts here.
 const ACCOUNT: &str = "0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d";
@@ -264,37 +264,17 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
         accepted.push((transaction_hash, block));
     }
     save("madara_after_execution", &source.footprint()?)?;
-    let replica = Node::start(Some(&source)).await?;
+    let mut replica = Node::start(Some(&source)).await?;
     let target = accepted.last().unwrap().1;
-    for _ in 0..180 {
-        if rpc(&replica.rpc, "starknet_blockNumber", json!([]))
-            .await
-            .ok()
-            .and_then(|tip| tip.as_u64())
-            .is_some_and(|tip| tip >= target)
-        {
-            break;
-        }
-        tokio::time::sleep(Duration::from_secs(1)).await;
-    }
+    replica.wait_for_block(target).await?;
     for (hash, _) in &accepted {
         let original = rpc(&source.rpc, "starknet_traceTransaction", json!([hash])).await?;
         let replicated = rpc(&replica.rpc, "starknet_traceTransaction", json!([hash])).await?;
         ensure!(comparable_trace(original) == comparable_trace(replicated), "replicated historical trace differs");
     }
     save("fullnode_after_trace", &replica.footprint()?)?;
-    let legacy_reader = Node::start_with_data(Some(&source), false).await?;
-    for _ in 0..180 {
-        if rpc(&legacy_reader.rpc, "starknet_blockNumber", json!([]))
-            .await
-            .ok()
-            .and_then(|tip| tip.as_u64())
-            .is_some_and(|tip| tip >= target)
-        {
-            break;
-        }
-        tokio::time::sleep(Duration::from_secs(1)).await;
-    }
+    let mut legacy_reader = Node::start_with_data(Some(&source), false).await?;
+    legacy_reader.wait_for_block(target).await?;
     let legacy_tip = rpc(&legacy_reader.rpc, "starknet_blockNumber", json!([])).await?;
     ensure!(legacy_tip.as_u64().is_some_and(|tip| tip >= target), "feature-disabled block sync stalled");
     let legacy_receipt = rpc(&legacy_reader.rpc, "starknet_getTransactionReceipt", json!([accepted[0].0])).await?;

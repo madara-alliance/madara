@@ -2,8 +2,9 @@
 //! the Starknet mainnet. This allows you to produce your own local state and experiment on it. It
 //! is also very useful in setting up a sample chain for running tests.
 //!
-//! PS: Important point to note here that we are not updating the tries here, hence SNOS won't work
-//! as we won't have storage proofs of the declaration and other transactions here!!!
+//! Genesis installs its initial state directly rather than executing declaration/deployment
+//! transactions. The normal backend writer materializes its tries, so subsequent blocks can
+//! obtain the preceding-state proofs required by SNOS.
 //!
 //! Below is a list of the core responsibilities of the Madara devnet.
 //!
@@ -250,9 +251,13 @@ impl ChainGenesisDescription {
 
         let classes: Vec<_> = classes.into_iter().map(|class| class.convert()).collect::<Result<_, _>>()?;
 
-        backend
-            .write_access()
-            .add_full_block_with_classes(&block, &classes, /* pre_v0_13_2_hash_override */ true)?;
+        let writer = backend.write_access();
+        // Genesis installs state directly and executes no transactions, so its execution
+        // bouncer is empty. Additional-data readers nevertheless request a record for every
+        // confirmed block, including zero. Write it before publishing the genesis header so
+        // a newly bootstrapping full node cannot observe a confirmed block without weights.
+        writer.write_bouncer_weights(0, &blockifier::bouncer::BouncerWeights::default())?;
+        writer.add_full_block_with_classes(&block, &classes, /* pre_v0_13_2_hash_override */ true)?;
         Ok(())
     }
 }
@@ -285,6 +290,18 @@ mod tests {
     use starknet_core::types::contract::SierraClass;
     use std::sync::Arc;
     use std::time::Duration;
+
+    /// Additional-data sync starts at genesis on an empty full-node database. The feeder's
+    /// block view must return the empty execution record instead of failing that first fetch.
+    #[tokio::test]
+    async fn genesis_bouncer_weights_are_available_for_additional_data_sync() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_devnet()));
+        ChainGenesisDescription::base_config().unwrap().build_and_store(&backend).await.unwrap();
+        assert_eq!(
+            backend.block_view_on_confirmed(0).unwrap().get_bouncer_weights().unwrap(),
+            blockifier::bouncer::BouncerWeights::default()
+        );
+    }
 
     struct DevnetForTesting {
         backend: Arc<MadaraBackend>,

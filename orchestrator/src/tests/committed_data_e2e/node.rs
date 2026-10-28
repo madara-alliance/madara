@@ -171,6 +171,25 @@ impl Node {
         anyhow::bail!("transaction confirmation deadline exceeded")
     }
 
+    /// Fail immediately if sync terminates, preserving its saved log as the diagnostic source.
+    /// A deadline alone would hide a process failure behind minutes of connection retries.
+    pub async fn wait_for_block(&mut self, target: u64) -> Result<()> {
+        for _ in 0..180 {
+            let status = self.child.try_wait()?;
+            ensure!(status.is_none(), "Madara exited before block {target}: {status:?}; see saved node log");
+            if rpc(&self.rpc, "starknet_blockNumber", json!([]))
+                .await
+                .ok()
+                .and_then(|tip| tip.as_u64())
+                .is_some_and(|tip| tip >= target)
+            {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+        anyhow::bail!("full-node sync did not reach block {target}")
+    }
+
     /// Sample the child process, not the test runner (which also constructs reference trees and
     /// executes SNOS). On Linux VmHWM is peak RSS since this child started; a restart resets it.
     /// Disk bytes include every file currently in the isolated directory, including WAL/logs.
