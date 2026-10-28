@@ -22,9 +22,8 @@ ENV CHEF_TAR=cargo-chef-x86_64-unknown-linux-gnu.tar.gz
 
 ENV RUSTC_WRAPPER=/bin/sccache
 
-# Enable the x86-64 features used by RocksDB's accelerated CRC and vectorized paths.
-# Keep this overridable for builders targeting a different CPU baseline.
-ARG MADARA_RUSTFLAGS="-C target-cpu=x86-64-v3 -C target-feature=+pclmulqdq"
+# Keep published images portable; specialized builders can opt into a newer CPU baseline.
+ARG MADARA_RUSTFLAGS=""
 ENV RUSTFLAGS="${MADARA_RUSTFLAGS}"
 
 ENV WGET="-O- --timeout=10 --waitretry=3 --retry-connrefused --progress=dot:mega"

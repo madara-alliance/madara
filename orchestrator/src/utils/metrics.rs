@@ -247,12 +247,21 @@ impl Metrics for OrchestratorMetrics {
             "s".to_string(),
         );
 
-        let snos_cairo_steps = register_histogram_metric_instrument(
-            &orchestrator_meter,
-            "snos_cairo_steps".to_string(),
-            "Cairo steps executed per SNOS job".to_string(),
-            "steps".to_string(),
-        );
+        let snos_cairo_steps = orchestrator_meter
+            .f64_histogram("snos_cairo_steps")
+            .with_description("Cairo steps executed per SNOS job")
+            .with_unit("steps")
+            .with_boundaries(vec![
+                1_000_000.0,
+                5_000_000.0,
+                10_000_000.0,
+                25_000_000.0,
+                50_000_000.0,
+                100_000_000.0,
+                250_000_000.0,
+                500_000_000.0,
+            ])
+            .build();
 
         let snos_rpc_calls_per_job = register_histogram_metric_instrument(
             &orchestrator_meter,
