@@ -126,7 +126,7 @@ blockifier = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLL
 ] }
 starknet_api = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLLO-0.14.2-RC.7-fix" }
 # Reuse the pinned execution fixture for real-node caught-syscall regression coverage.
-blockifier_test_utils = { git = "https://github.com/karnotxyz/sequencer", rev = "6a77a75468155227a8362a7e7d74cdc9c53374a9" }
+blockifier_test_utils = { git = "https://github.com/karnotxyz/sequencer", rev = "a5f681b98ea91033ea3e5c52fe47ace4f7f82d0f" }
 cairo-lang-starknet-classes = "=2.17.0-rc.4"
 cairo-lang-utils = "=2.17.0-rc.4"
 casm-classes-v2 = { package = "cairo-lang-starknet-classes", version = "=2.17.0-rc.4" }
@@ -326,7 +326,7 @@ strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-generate-pie = { git = "https://github.com/karnotxyz/snos", rev = "0bbbac196cde16641aa06bb827b29eee49bfd429" }
+generate-pie = { git = "https://github.com/karnotxyz/snos", rev = "16994ca6cd0d86f371e9dff03b7f581fae14a153" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
@@ -336,8 +336,8 @@ orchestrator-ethereum-settlement-client = { path = "orchestrator/crates/settleme
 orchestrator-starknet-settlement-client = { path = "orchestrator/crates/settlement-clients/starknet" }
 orchestrator-utils = { path = "orchestrator/crates/utils" }
 orchestrator-aggregator-runner = { path = "orchestrator/crates/aggregator-runner" }
-apollo_starknet_os_program = { git = "https://github.com/karnotxyz/sequencer", rev = "6a77a75468155227a8362a7e7d74cdc9c53374a9" }
-starknet_os = { git = "https://github.com/karnotxyz/sequencer", rev = "6a77a75468155227a8362a7e7d74cdc9c53374a9" }
+apollo_starknet_os_program = { git = "https://github.com/karnotxyz/sequencer", rev = "a5f681b98ea91033ea3e5c52fe47ace4f7f82d0f" }
+starknet_os = { git = "https://github.com/karnotxyz/sequencer", rev = "a5f681b98ea91033ea3e5c52fe47ace4f7f82d0f" }
 orchestrator-prover-client-interface = { path = "orchestrator/crates/prover-clients/prover-client-interface" }
 orchestrator-gps-fact-checker = { path = "orchestrator/crates/prover-clients/gps-fact-checker" }
 orchestrator-sharp-service = { path = "orchestrator/crates/prover-clients/sharp-service" }
@@ -359,9 +359,9 @@ rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", rev = "75f1
 librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", rev = "75f13c78fdf970b0afd2f21f52caf3317341341c" }
 
 [patch."https://github.com/starkware-libs/sequencer"]
-apollo_infra_utils = { git = "https://github.com/karnotxyz/sequencer", rev = "6a77a75468155227a8362a7e7d74cdc9c53374a9" }
-apollo_proc_macros = { git = "https://github.com/karnotxyz/sequencer", rev = "6a77a75468155227a8362a7e7d74cdc9c53374a9" }
-apollo_sizeof = { git = "https://github.com/karnotxyz/sequencer", rev = "6a77a75468155227a8362a7e7d74cdc9c53374a9" }
-apollo_sizeof_macros = { git = "https://github.com/karnotxyz/sequencer", rev = "6a77a75468155227a8362a7e7d74cdc9c53374a9" }
-blockifier = { git = "https://github.com/karnotxyz/sequencer", rev = "6a77a75468155227a8362a7e7d74cdc9c53374a9" }
-starknet_api = { git = "https://github.com/karnotxyz/sequencer", rev = "6a77a75468155227a8362a7e7d74cdc9c53374a9" }
+apollo_infra_utils = { git = "https://github.com/karnotxyz/sequencer", rev = "a5f681b98ea91033ea3e5c52fe47ace4f7f82d0f" }
+apollo_proc_macros = { git = "https://github.com/karnotxyz/sequencer", rev = "a5f681b98ea91033ea3e5c52fe47ace4f7f82d0f" }
+apollo_sizeof = { git = "https://github.com/karnotxyz/sequencer", rev = "a5f681b98ea91033ea3e5c52fe47ace4f7f82d0f" }
+apollo_sizeof_macros = { git = "https://github.com/karnotxyz/sequencer", rev = "a5f681b98ea91033ea3e5c52fe47ace4f7f82d0f" }
+blockifier = { git = "https://github.com/karnotxyz/sequencer", rev = "a5f681b98ea91033ea3e5c52fe47ace4f7f82d0f" }
+starknet_api = { git = "https://github.com/karnotxyz/sequencer", rev = "a5f681b98ea91033ea3e5c52fe47ace4f7f82d0f" }

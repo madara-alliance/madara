@@ -61,7 +61,7 @@ jobs:
         working-directory: upstream-sequencer
         run: |
           cargo +1.92.0 test --target-dir ../target --locked --release -p starknet_os_flow_tests committed_data -- --nocapture
-          cargo +1.92.0 test --target-dir ../target --locked --release -p apollo_starknet_os_program test_program_hashes -- --nocapture
+          cargo +1.92.0 test --target-dir ../target --locked --release -p apollo_starknet_os_program test_program -- --nocapture
 
       - name: Export exact full-flow test runner for external snapshot validation
         if: ${{ !cancelled() }}

@@ -8,13 +8,32 @@ The dataset builder sorts keys and rejects duplicates. Empty datasets are reject
 
 Witnesses contain `root`, `key`, `value`, and bottom-up `siblings: [{bit, hash}, ...]`. Bits must strictly increase and be below 252. Both Rust execution and the Cairo OS authenticate the same key/value commitment. Maximum path length is 252; typical depth depends on key distribution, not just entry count. Missing data fails closed. This is a binary Patricia construction, not Ethereum's RLP/Keccak trie format.
 
-Batch proofs expand only branches containing requested keys. An unrequested subtree remains an opaque hash even when the same hash occurs on another requested path; repeated sibling hashes must not cause recursive expansion of unrelated subtrees. SNOS and the Cairo OS authenticate single-read witnesses before using their path length to decide whether enough gas remains. The commitment format and gas formulas are unchanged.
+Batch proofs expand only branches containing requested keys. An unrequested subtree remains an opaque hash even when the same hash occurs on another requested path; repeated sibling hashes must not cause recursive expansion of unrelated subtrees. SNOS and the Cairo OS authenticate single-read witnesses before using their path length to decide whether enough gas remains. The commitment format is unchanged. Single-key pricing is unchanged; batch pricing accounts for shared verification within a block as described below.
 
 ### Prover dependency revisions
 
-This implementation pins SNOS `58dac6523a9208fc142ae4a97379b49beaf0c68c` and Sequencer `d5591c7a6867978d4531eae6e8e79c3babd90394`. SNOS itself uses that same Sequencer revision. Besides bounded batch proofs and authentication before gas decisions, these revisions remove a redundant outer proof-RPC retry and close RPC timing intervals on cancellation. Committed-data proving remains explicitly enabled by the orchestrator configuration.
+This implementation pins SNOS `16994ca6cd0d86f371e9dff03b7f581fae14a153` and Sequencer `a5f681b98ea91033ea3e5c52fe47ace4f7f82d0f`. SNOS itself uses that same Sequencer revision. These revisions share batch verification within each accepted block and reject insufficient verification gas at transaction level, including caught-error paths. Committed-data proving remains explicitly enabled by the orchestrator configuration.
 
-The Sequencer build compiles the OS from its pinned Cairo sources. The aggregator runner obtains the child OS hash from that dependency's embedded `PROGRAM_HASHES`; there is no separate Madara hash override. These revisions require OS hash `0xc0990458eb34225948bbc8057a684719848fc7a880750ffef23b034f317ed3` (virtual OS: `0x598b3d3f14c34a689434be0adc531b7f7a30c53b22a28a19171cb6a8398f59c`). The aggregator program hashes are unchanged. Deployment must use the matching OS program and accepted child-program hash; changing dependency pins does not update deployed verification contracts.
+The Sequencer build compiles the OS from its pinned Cairo sources. The aggregator runner obtains the child OS hash from that dependency's embedded `PROGRAM_HASHES`; there is no separate Madara hash override. The compiled program identities are:
+
+| Program | Hash |
+| --- | --- |
+| OS | `0x182321dc87e7e34b11773323d254749d69d1d37648207976414167d9589ed4e` |
+| Virtual OS | `0xc569b5af2a69a7dac18f09116243902f66271b5fe22925c96e4e0079fd966c` |
+| Aggregator | `0x6e2f7599d9d7784d63f84db1cb499c8ea9ba70f0a8e3b80a36935bc79e74405` |
+| Aggregator with prefix | `0x4c39a175eddf2ec9f40dda451fb09047c058a1698f7c3f671a1bf9761616f62` |
+
+Deployment must use the matching OS program and accepted child-program hash. Update the relevant deployed verifier/aggregator allowlists as part of the coordinated rollout; changing dependency pins does not update deployed verification contracts. The virtual-OS identity above identifies the compiled program, not an assertion that an existing client-side-proving allowlist already accepts it. The exact-pin CI checks both compiled hashes and bytecode lengths.
+
+### Shared batch verification and gas
+
+Each block starts with an empty read set. A batch authenticates its host witnesses and charges for every requested output plus newly read leaves and newly expanded branches. The transaction owns a fork of the block read set and publishes it only after successful admission. Rejected transactions and fee-estimation probes cannot warm later calls. Canonically reverted execution is discarded because SNOS omits it; caught nested execution that SNOS replays retains its paid work. The set resets at the next block. Committed-data-enabled block execution currently uses the sequential executor; speculative parallel sharing is not implemented.
+
+For `N` requested outputs, `U` newly read leaves and `B` newly expanded branches, the extra Sierra charge is `81,400 + 8,280 × N`. When `U > 0`, add `10,540 + 25,268 × U + 17,402 × B`. Ordinary `CallContract` gas is charged separately. These are conservative bounded resources, not input-specific minimum execution costs.
+
+Cairo records each returned value in a dictionary and binds it to its earliest reader. At block finalization it authenticates the exact union per root and requires each expanded branch to occupy a distinct slot paid by the earliest reader. Repeated reads reuse constrained values. Incorrect values, routing, work counts or ownership claims cannot substitute for payment. Insufficient authenticated-read gas rejects the transaction instead of allowing a caught syscall error to leave verification unpaid.
+
+The archived full-application fixture with 400 existing disjoint positions on each side successfully opens one more position and completes SNOS replay at **999,069,127 execution Sierra gas**, below the normal **1,100,000,000** cap. Its receipt uses **1,004,699,687 L2 gas** and **1,472 L1 data gas**. Special-call work including all block memory holes measures **282,644,798 Sierra-weighted gas**, covered by **327,368,368 charged/reserved gas**; separate proving-weight and whole-block reservation checks also pass. The fixture is derived from application version 1.25.6, not a deployed 1.27 acceptance run. These measurements do not establish paid STARK proving, L1 settlement or production throughput.
 
 ## Durable records
 
