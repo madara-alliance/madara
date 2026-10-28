@@ -48,14 +48,12 @@ jobs:
           cache-key: committed-data-upstream-${{ runner.os }}-rust-1.92.0
       - uses: ./.github/actions/setup-cairo-native
       - uses: ./.github/actions/setup-python-cairo
+        with:
+          # Cairo's Python VM layout dataclasses require Python 3.10; compiling alone works on 3.11.
+          python-version: "3.10"
       - name: Independent Cairo union and billing constraints
         working-directory: upstream-sequencer
         run: python scripts/test_committed_data_union.py
-      - name: VM and native transaction rejection regressions
-        working-directory: upstream-sequencer
-        env:
-          CARGO_TARGET_DIR: ${{ github.workspace }}/target
-        run: cargo +1.92.0 test --locked --release -p blockifier --features testing,cairo_native committed_data -- --nocapture
       - name: Cairo proof constraints and full OS regressions
         if: ${{ !cancelled() }}
         working-directory: upstream-sequencer
@@ -93,3 +91,10 @@ jobs:
           path: committed-data-runner/
           retention-days: 7
           if-no-files-found: error
+
+      - name: VM and native transaction rejection regressions
+        if: ${{ !cancelled() }}
+        working-directory: upstream-sequencer
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target
+        run: cargo +1.92.0 test --locked --release -p blockifier --features testing,cairo_native committed_data -- --nocapture
