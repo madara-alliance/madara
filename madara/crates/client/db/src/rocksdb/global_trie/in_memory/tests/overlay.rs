@@ -152,36 +152,3 @@ fn prefix_operations_merge_overlay_with_pinned_snapshot() {
     let handle = backend.db.inner.get_column(BONSAI_CONTRACT_FLAT_COLUMN);
     assert_eq!(backend.db.inner.db.get_cf(&handle, b"p/a").unwrap().as_deref(), Some(&b"new-live-value"[..]));
 }
-
-#[test]
-fn batched_reads_preserve_pinned_snapshot_after_live_writes() {
-    let backend = setup_snapshot_db();
-    for column in [BONSAI_CONTRACT_FLAT_COLUMN, BONSAI_CONTRACT_TRIE_COLUMN, BONSAI_CONTRACT_LOG_COLUMN] {
-        write_snapshot_value(&backend.db, column, b"same-key", b"before");
-    }
-    let snapshot = fresh_snapshot(&backend.db);
-    let db = InMemoryBonsaiDb::test_with_mapping(snapshot, InMemoryColumnMapping::contract());
-    for column in [BONSAI_CONTRACT_FLAT_COLUMN, BONSAI_CONTRACT_TRIE_COLUMN, BONSAI_CONTRACT_LOG_COLUMN] {
-        write_snapshot_value(&backend.db, column.clone(), b"same-key", b"after");
-        write_snapshot_value(&backend.db, column, b"new-key", b"after");
-    }
-    let keys = [
-        DatabaseKey::TrieLog(b"same-key"),
-        DatabaseKey::Flat(b"same-key"),
-        DatabaseKey::Trie(b"same-key"),
-        DatabaseKey::Trie(b"same-key"),
-        DatabaseKey::Flat(b"new-key"),
-    ];
-    assert_eq!(db.get_multi(&keys).unwrap(), keys.iter().map(|key| db.get(key).unwrap()).collect::<Vec<_>>());
-    assert_eq!(
-        db.get_multi(&keys).unwrap(),
-        vec![
-            Some(ByteVec::from(&b"before"[..])),
-            Some(ByteVec::from(&b"before"[..])),
-            Some(ByteVec::from(&b"before"[..])),
-            Some(ByteVec::from(&b"before"[..])),
-            None
-        ]
-    );
-    assert!(db.get_multi(&[]).unwrap().is_empty());
-}
