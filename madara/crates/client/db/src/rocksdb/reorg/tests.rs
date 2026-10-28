@@ -137,6 +137,18 @@ fn successful_reorg_clears_recovery_marker() {
 }
 
 #[test]
+fn reorg_head_commit_clears_l1_proof_quarantine_for_removed_messages() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let backend = open_backend(dir.path(), true);
+    fill_chain(&backend);
+    backend.write_l1_message_proof_rejection(55, "too large for proof").unwrap();
+
+    backend.db.commit_reorg_head(3, &[55], None).unwrap();
+
+    assert_eq!(backend.get_l1_message_proof_rejection(55).unwrap(), None);
+}
+
+#[test]
 fn failed_reorg_recovery_keeps_marker_for_retry() {
     let dir = tempfile::TempDir::new().unwrap();
     let backend = open_backend(dir.path(), true);

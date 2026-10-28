@@ -341,6 +341,18 @@ impl RocksDBStorageInner {
         Ok(())
     }
 
+    pub(super) fn message_to_l2_remove_proof_rejections(
+        &self,
+        core_contract_nonces: impl IntoIterator<Item = u64>,
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        let rejection_cf = self.get_column(L1_TO_L2_PROOF_REJECTION_BY_NONCE);
+        for core_contract_nonce in core_contract_nonces {
+            batch.delete_cf(&rejection_cf, core_contract_nonce.to_be_bytes());
+        }
+        Ok(())
+    }
+
     pub(super) fn message_to_l2_remove_for_nonces(
         &self,
         nonces: &[u64],
@@ -359,6 +371,7 @@ impl RocksDBStorageInner {
 
         self.message_to_l2_remove_txns(nonces.iter().copied(), batch)?;
         self.message_to_l2_remove_pending(nonces.iter().copied(), batch)?;
+        self.message_to_l2_remove_proof_rejections(nonces.iter().copied(), batch)?;
         self.message_to_l2_remove_l1_block_by_nonces(nonces.iter().copied(), batch)?;
         self.message_to_l2_remove_l1_txn_hash_by_nonces(nonces.iter().copied(), batch)?;
         self.message_to_l2_remove_l2_txn_hash_by_l1_txn_hash_and_nonce(l1_tx_hash_mappings, batch)?;
