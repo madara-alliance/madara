@@ -352,9 +352,9 @@ rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", rev = "75f1
 librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", rev = "75f13c78fdf970b0afd2f21f52caf3317341341c" }
 
 [patch."https://github.com/starkware-libs/sequencer"]
-apollo_infra_utils = { git = "https://github.com/madara-alliance/sequencer", rev = "69af49b7bfa6a67723ba3a1f2b57ebd2452ba393" }
-apollo_proc_macros = { git = "https://github.com/madara-alliance/sequencer", rev = "69af49b7bfa6a67723ba3a1f2b57ebd2452ba393" }
-apollo_sizeof = { git = "https://github.com/madara-alliance/sequencer", rev = "69af49b7bfa6a67723ba3a1f2b57ebd2452ba393" }
-apollo_sizeof_macros = { git = "https://github.com/madara-alliance/sequencer", rev = "69af49b7bfa6a67723ba3a1f2b57ebd2452ba393" }
-blockifier = { git = "https://github.com/madara-alliance/sequencer", rev = "69af49b7bfa6a67723ba3a1f2b57ebd2452ba393" }
-starknet_api = { git = "https://github.com/madara-alliance/sequencer", rev = "69af49b7bfa6a67723ba3a1f2b57ebd2452ba393" }
+apollo_infra_utils = { git = "https://github.com/madara-alliance/sequencer", rev = "e75c10ddc0a84bc015673e825cf22958bf62b288" }
+apollo_proc_macros = { git = "https://github.com/madara-alliance/sequencer", rev = "e75c10ddc0a84bc015673e825cf22958bf62b288" }
+apollo_sizeof = { git = "https://github.com/madara-alliance/sequencer", rev = "e75c10ddc0a84bc015673e825cf22958bf62b288" }
+apollo_sizeof_macros = { git = "https://github.com/madara-alliance/sequencer", rev = "e75c10ddc0a84bc015673e825cf22958bf62b288" }
+blockifier = { git = "https://github.com/madara-alliance/sequencer", rev = "e75c10ddc0a84bc015673e825cf22958bf62b288" }
+starknet_api = { git = "https://github.com/madara-alliance/sequencer", rev = "e75c10ddc0a84bc015673e825cf22958bf62b288" }
