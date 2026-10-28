@@ -315,6 +315,7 @@ impl RocksDBStorage {
     /// Rolls all three tries back to a common checkpoint floor or the empty base.
     /// The result reports whether any durable trie state changed.
     fn rollback_tries_to_checkpoint_floor(&self, checkpoint_floor: Option<u64>, context: &str) -> Result<bool> {
+        self.reset_cached_contract_storage_trie();
         let trie_log_heads = self.trie_log_heads().context("Reading trie log heads before recovery rollback")?;
 
         let Some(checkpoint_floor) = checkpoint_floor else {
