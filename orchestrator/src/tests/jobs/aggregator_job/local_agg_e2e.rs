@@ -57,15 +57,15 @@ const SEPOLIA_STRK_FEE_TOKEN: &str = "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd6
 const SNOS_PIE_FILES: [&str; 4] =
     ["snos_sepolia_8059997.zip", "snos_sepolia_8059998.zip", "snos_sepolia_8059999.zip", "snos_sepolia_8060000.zip"];
 
-/// Child OS hash from Sequencer d5591c7a6867978d4531eae6e8e79c3babd90394.
+/// Child OS hash from Sequencer 43c5377d24901912a301c4cf2106e413cc16d2b6.
 /// Changing this hash changes the aggregator output and therefore the expected fact below,
 /// even when the historical child outputs and aggregator program are unchanged.
-const EXPECTED_CHILD_OS_HASH: &str = "0xc0990458eb34225948bbc8057a684719848fc7a880750ffef23b034f317ed3";
+const EXPECTED_CHILD_OS_HASH: &str = "0x182321dc87e7e34b11773323d254749d69d1d37648207976414167d9589ed4e";
 
 /// Expected fact for these historical outputs under `EXPECTED_CHILD_OS_HASH`.
 /// This checks the local aggregator's fact calculation; it does not establish that these
 /// historical blocks were proved under the committed-data OS.
-const EXPECTED_AGG_FACT: &str = "0x31897ce9a96c212536388295af81e1398137e0c957138bdfb16e4c2208f69249";
+const EXPECTED_AGG_FACT: &str = "0x0a2f01ceea68e20c7c5033f3a798ccb0ad35b2cfc6457cf1db344fb4e7932cd6";
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]

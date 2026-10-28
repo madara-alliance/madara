@@ -54,22 +54,20 @@ jobs:
       - name: Independent Cairo union and billing constraints
         working-directory: upstream-sequencer
         run: python scripts/test_committed_data_union.py
+      # A CLI target directory is intentionally not inherited by nested cargo install build scripts.
+      # Exporting CARGO_TARGET_DIR here makes those children wait on their parent Cargo lock.
       - name: Cairo proof constraints and full OS regressions
         if: ${{ !cancelled() }}
         working-directory: upstream-sequencer
-        env:
-          CARGO_TARGET_DIR: ${{ github.workspace }}/target
         run: |
-          cargo +1.92.0 test --locked --release -p starknet_os_flow_tests committed_data -- --nocapture
-          cargo +1.92.0 test --locked --release -p apollo_starknet_os_program test_program_hashes -- --nocapture
+          cargo +1.92.0 test --target-dir ../target --locked --release -p starknet_os_flow_tests committed_data -- --nocapture
+          cargo +1.92.0 test --target-dir ../target --locked --release -p apollo_starknet_os_program test_program_hashes -- --nocapture
 
       - name: Export exact full-flow test runner for external snapshot validation
         if: ${{ !cancelled() }}
         working-directory: upstream-sequencer
-        env:
-          CARGO_TARGET_DIR: ${{ github.workspace }}/target
         run: |
-          cargo +1.92.0 test --locked --release -p starknet_os_flow_tests --no-run --message-format=json > runner-build.jsonl
+          cargo +1.92.0 test --target-dir ../target --locked --release -p starknet_os_flow_tests --no-run --message-format=json > runner-build.jsonl
           python3 - <<'PYTHON'
           import json, pathlib, shutil, subprocess
           output = pathlib.Path("../committed-data-runner")
@@ -95,6 +93,4 @@ jobs:
       - name: VM and native transaction rejection regressions
         if: ${{ !cancelled() }}
         working-directory: upstream-sequencer
-        env:
-          CARGO_TARGET_DIR: ${{ github.workspace }}/target
-        run: cargo +1.92.0 test --locked --release -p blockifier --features testing,cairo_native committed_data -- --nocapture
+        run: cargo +1.92.0 test --target-dir ../target --locked --release -p blockifier --features testing,cairo_native committed_data -- --nocapture
