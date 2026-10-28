@@ -12,7 +12,7 @@ Batch proofs expand only branches containing requested keys. An unrequested subt
 
 ### Prover dependency revisions
 
-This implementation pins SNOS `16994ca6cd0d86f371e9dff03b7f581fae14a153` and Sequencer `a5f681b98ea91033ea3e5c52fe47ace4f7f82d0f`. SNOS itself uses that same Sequencer revision. These revisions share batch verification within each accepted block and reject insufficient verification gas at transaction level, including caught-error paths. Committed-data proving remains explicitly enabled by the orchestrator configuration.
+This implementation pins SNOS `fdaf50c0969d07044f13f6cb8ab5b9393576718a` and Sequencer `30a1e8a80975f92127dc5ef3773c054a039a838b`. SNOS itself uses that same Sequencer revision. These revisions share batch verification within each accepted block and reject insufficient verification gas at transaction level, including caught-error paths. Committed-data proving remains explicitly enabled by the orchestrator configuration.
 
 The Sequencer build compiles the OS from its pinned Cairo sources. The aggregator runner obtains the child OS hash from that dependency's embedded `PROGRAM_HASHES`; there is no separate Madara hash override. The compiled program identities are:
 
