@@ -4,13 +4,33 @@ use crate::error::other::OtherError;
 use crate::types::batch::{SnosBatch, SnosBatchStatus, SnosBatchUpdates};
 use crate::types::constant::ORCHESTRATOR_VERSION;
 use crate::utils::metrics_recorder::MetricsRecorder;
-use crate::worker::event_handler::triggers::batching::utils::{get_block_builtin_weights, get_block_version};
+use crate::worker::event_handler::triggers::batching::utils::{
+    get_block_builtin_weights, get_block_snos_output_budget, get_block_version,
+};
 use crate::worker::event_handler::triggers::batching::BlockProcessingResult;
 use blockifier::bouncer::BouncerWeights;
 use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::eyre;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
+
+const SNOS_OUTPUT_FIXED_CELLS: usize = 14;
+
+fn ensure_block_fits_output_limit(
+    block_num: u64,
+    output_cells: usize,
+    max_output_cells: usize,
+) -> Result<(), JobError> {
+    if output_cells > max_output_cells {
+        return Err(JobError::Other(OtherError(eyre!(
+            "Block {} SNOS output {} exceeds configured maximum {}",
+            block_num,
+            output_cells,
+            max_output_cells
+        ))));
+    }
+    Ok(())
+}
 
 pub enum SnosState {
     Empty(EmptySnosState),
@@ -148,13 +168,18 @@ impl SnosHandler {
                     self.empty_block_proving_gas,
                 )
                 .await?;
-                let new_state = NonEmptySnosState::new(SnosBatch::new(
-                    empty_state.index,
-                    aggregator_batch_index,
+                let (output_cells, max_output_cells) = get_block_snos_output_budget(
                     block_num,
-                    block_weights,
-                    block_version,
-                ));
+                    self.config.madara_rpc_client(),
+                    self.config.madara_feeder_gateway_client(),
+                    block_weights.message_segment_length,
+                )
+                .await?;
+                ensure_block_fits_output_limit(block_num, output_cells, max_output_cells)?;
+                let new_state = NonEmptySnosState::new(
+                    SnosBatch::new(empty_state.index, aggregator_batch_index, block_num, block_weights, block_version)
+                        .with_snos_output_budget(output_cells, max_output_cells),
+                );
                 Ok(BlockProcessingResult::Accumulated(new_state))
             }
             SnosState::NonEmpty(state) => {
@@ -199,6 +224,14 @@ impl SnosHandler {
             self.empty_block_proving_gas,
         )
         .await?;
+        let (block_output_cells, max_output_cells) = get_block_snos_output_budget(
+            block_num,
+            self.config.madara_rpc_client(),
+            self.config.madara_feeder_gateway_client(),
+            block_weights.message_segment_length,
+        )
+        .await?;
+        ensure_block_fits_output_limit(block_num, block_output_cells, max_output_cells)?;
         // Get the starknet version of the current block
         let block_version = get_block_version(block_num, self.config.madara_rpc_client()).await?;
 
@@ -208,6 +241,8 @@ impl SnosHandler {
                 block_weights,
                 block_version,
                 aggregator_batch_index,
+                block_output_cells,
+                max_output_cells,
                 &self.limits,
             )
             .await?
@@ -223,13 +258,16 @@ impl SnosHandler {
                 );
 
                 state.close();
-                let new_state = SnosState::NonEmpty(NonEmptySnosState::new(SnosBatch::new(
-                    state.batch.index + 1,
-                    aggregator_batch_index,
-                    block_num,
-                    block_weights,
-                    block_version,
-                )));
+                let new_state = SnosState::NonEmpty(NonEmptySnosState::new(
+                    SnosBatch::new(
+                        state.batch.index + 1,
+                        aggregator_batch_index,
+                        block_num,
+                        block_weights,
+                        block_version,
+                    )
+                    .with_snos_output_budget(block_output_cells, max_output_cells),
+                ));
                 Ok(BlockProcessingResult::BatchCompleted { completed_state: state, new_state })
             }
         }
@@ -271,6 +309,12 @@ pub enum SnosBatchCheckResult {
     WeightOverflow,
     /// Combined weights exceed the limit
     WeightLimitExceeded,
+    /// Persisted batch predates output-budget accounting.
+    SnosOutputBudgetMissing,
+    /// Chain limit changed while the batch was open.
+    SnosOutputLimitChanged,
+    /// Combined full output exceeds the proof limit.
+    SnosOutputLimitExceeded,
 }
 
 impl NonEmptySnosState {
@@ -289,15 +333,25 @@ impl NonEmptySnosState {
         block_aggregator_batch_index: Option<u64>,
         batch_limits: &SnosBatchLimits,
     ) -> SnosBatchCheckResult {
-        // If a fixed size is set, use only that to decide if we should close the SNOS batch
-        if let Some(fixed_blocks_per_snos_batch) = batch_limits.fixed_batch_size {
-            return if self.batch.num_blocks >= fixed_blocks_per_snos_batch {
-                SnosBatchCheckResult::FixedSizeReached
-            } else {
-                SnosBatchCheckResult::CanAddFixedSize
-            };
-        }
+        self.check_block_sync_with_output(
+            block_weights,
+            block_version,
+            block_aggregator_batch_index,
+            SNOS_OUTPUT_FIXED_CELLS,
+            self.batch.max_snos_output_cells,
+            batch_limits,
+        )
+    }
 
+    fn check_block_sync_with_output(
+        &self,
+        block_weights: BouncerWeights,
+        block_version: StarknetVersion,
+        block_aggregator_batch_index: Option<u64>,
+        block_output_cells: usize,
+        max_output_cells: usize,
+        batch_limits: &SnosBatchLimits,
+    ) -> SnosBatchCheckResult {
         // Check if batch is already closed
         if self.batch.status.is_closed() {
             return SnosBatchCheckResult::BatchClosed;
@@ -343,6 +397,31 @@ impl NonEmptySnosState {
             }
         }
 
+        if self.batch.max_snos_output_cells == 0 || self.batch.snos_output_cells < SNOS_OUTPUT_FIXED_CELLS {
+            return SnosBatchCheckResult::SnosOutputBudgetMissing;
+        }
+        if self.batch.max_snos_output_cells != max_output_cells {
+            return SnosBatchCheckResult::SnosOutputLimitChanged;
+        }
+        let Some(combined_output_cells) = block_output_cells
+            .checked_sub(SNOS_OUTPUT_FIXED_CELLS)
+            .and_then(|additional| self.batch.snos_output_cells.checked_add(additional))
+        else {
+            return SnosBatchCheckResult::SnosOutputLimitExceeded;
+        };
+        if combined_output_cells > max_output_cells {
+            return SnosBatchCheckResult::SnosOutputLimitExceeded;
+        }
+
+        // Fixed-size mode may bypass weight limits, never proof-output safety.
+        if let Some(fixed_blocks_per_snos_batch) = batch_limits.fixed_batch_size {
+            return if self.batch.num_blocks >= fixed_blocks_per_snos_batch {
+                SnosBatchCheckResult::FixedSizeReached
+            } else {
+                SnosBatchCheckResult::CanAddFixedSize
+            };
+        }
+
         // Check weight overflow and limit
         match self.batch.builtin_weights.checked_add(block_weights) {
             Some(combined_weights) => {
@@ -362,20 +441,46 @@ impl NonEmptySnosState {
         block_weights: BouncerWeights,
         block_version: StarknetVersion,
         block_aggregator_batch_index: Option<u64>,
+        block_output_cells: usize,
+        max_output_cells: usize,
         batch_limits: &SnosBatchLimits,
     ) -> Result<Option<Self>, JobError> {
-        let check_result =
-            self.check_block_sync(block_weights, block_version, block_aggregator_batch_index, batch_limits);
+        let check_result = self.check_block_sync_with_output(
+            block_weights,
+            block_version,
+            block_aggregator_batch_index,
+            block_output_cells,
+            max_output_cells,
+            batch_limits,
+        );
         match check_result {
             SnosBatchCheckResult::CanAdd(combined_weights) => {
-                Ok(Some(NonEmptySnosState::new(self.batch.update(block_num, combined_weights, None))))
+                let combined_output_cells = self
+                    .batch
+                    .snos_output_cells
+                    .checked_add(block_output_cells - SNOS_OUTPUT_FIXED_CELLS)
+                    .expect("SNOS output arithmetic was checked above");
+                Ok(Some(NonEmptySnosState::new(
+                    self.batch
+                        .update(block_num, combined_weights, None)
+                        .with_snos_output_budget(combined_output_cells, max_output_cells),
+                )))
             }
             SnosBatchCheckResult::CanAddFixedSize => {
+                let combined_output_cells = self
+                    .batch
+                    .snos_output_cells
+                    .checked_add(block_output_cells - SNOS_OUTPUT_FIXED_CELLS)
+                    .expect("SNOS output arithmetic was checked above");
                 warn!(
                     "Using MADARA_ORCHESTRATOR_FIXED_BLOCKS_PER_SNOS_BATCH env variable to close snos batch with max blocks = {:?}",
                     batch_limits.fixed_batch_size
                 );
-                Ok(Some(NonEmptySnosState::new(self.batch.update(block_num, BouncerWeights::empty(), None))))
+                Ok(Some(NonEmptySnosState::new(
+                    self.batch
+                        .update(block_num, BouncerWeights::empty(), None)
+                        .with_snos_output_budget(combined_output_cells, max_output_cells),
+                )))
             }
             SnosBatchCheckResult::FixedSizeReached => {
                 debug!(
@@ -458,6 +563,8 @@ mod tests {
             end_block: num_blocks.saturating_sub(1),
             num_blocks,
             builtin_weights: weights,
+            snos_output_cells: SNOS_OUTPUT_FIXED_CELLS,
+            max_snos_output_cells: 49_000,
             status,
             created_at,
             updated_at: Utc::now(),
@@ -501,6 +608,111 @@ mod tests {
 
     mod check_block_sync_tests {
         use super::*;
+
+        fn output_state(output_cells: usize, max_output_cells: usize) -> NonEmptySnosState {
+            let mut batch = create_test_snos_batch(
+                1,
+                SnosBatchStatus::Open,
+                StarknetVersion::V0_13_2,
+                create_test_weights(100, 100),
+                None,
+                Utc::now(),
+            );
+            batch.snos_output_cells = output_cells;
+            batch.max_snos_output_cells = max_output_cells;
+            NonEmptySnosState::new(batch)
+        }
+
+        #[test]
+        fn individually_valid_blocks_cannot_overflow_a_combined_snos_run() {
+            let state = output_state(30_000, 49_000);
+            let result = state.check_block_sync_with_output(
+                create_test_weights(100, 100),
+                StarknetVersion::V0_13_2,
+                None,
+                30_000,
+                49_000,
+                &create_test_limits(),
+            );
+
+            assert_eq!(result, SnosBatchCheckResult::SnosOutputLimitExceeded);
+        }
+
+        #[test]
+        fn combined_snos_output_counts_the_shared_header_once() {
+            let state = output_state(30_000, 49_000);
+            let result = state.check_block_sync_with_output(
+                create_test_weights(100, 100),
+                StarknetVersion::V0_13_2,
+                None,
+                19_014,
+                49_000,
+                &create_test_limits(),
+            );
+
+            assert!(matches!(result, SnosBatchCheckResult::CanAdd(_)));
+        }
+
+        #[test]
+        fn combined_snos_output_rejects_one_cell_over_the_boundary() {
+            let state = output_state(30_000, 49_000);
+            let result = state.check_block_sync_with_output(
+                create_test_weights(100, 100),
+                StarknetVersion::V0_13_2,
+                None,
+                19_015,
+                49_000,
+                &create_test_limits(),
+            );
+
+            assert_eq!(result, SnosBatchCheckResult::SnosOutputLimitExceeded);
+        }
+
+        #[test]
+        fn fixed_size_mode_does_not_bypass_snos_output_limit() {
+            let state = output_state(30_000, 49_000);
+            let limits = SnosBatchLimits::new_for_test(10, Some(10), 3600, create_test_weights(1_000_000, 10_000));
+            let result = state.check_block_sync_with_output(
+                create_test_weights(100, 100),
+                StarknetVersion::V0_13_2,
+                None,
+                30_000,
+                49_000,
+                &limits,
+            );
+
+            assert_eq!(result, SnosBatchCheckResult::SnosOutputLimitExceeded);
+        }
+
+        #[test]
+        fn legacy_open_batch_is_closed_before_safe_accounting_resumes() {
+            let state = output_state(0, 0);
+            let result = state.check_block_sync_with_output(
+                create_test_weights(100, 100),
+                StarknetVersion::V0_13_2,
+                None,
+                100,
+                49_000,
+                &create_test_limits(),
+            );
+
+            assert_eq!(result, SnosBatchCheckResult::SnosOutputBudgetMissing);
+        }
+
+        #[test]
+        fn changed_chain_limit_closes_existing_batch() {
+            let state = output_state(100, 49_000);
+            let result = state.check_block_sync_with_output(
+                create_test_weights(100, 100),
+                StarknetVersion::V0_13_2,
+                None,
+                100,
+                48_000,
+                &create_test_limits(),
+            );
+
+            assert_eq!(result, SnosBatchCheckResult::SnosOutputLimitChanged);
+        }
 
         #[test]
         fn test_fixed_batch_size_reached() {
@@ -915,6 +1127,12 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn oversized_first_block_is_rejected_instead_of_opening_an_invalid_batch() {
+        assert!(ensure_block_fits_output_limit(7, 49_001, 49_000).is_err());
+        assert!(ensure_block_fits_output_limit(7, 49_000, 49_000).is_ok());
     }
 
     mod close_tests {

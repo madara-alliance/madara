@@ -189,6 +189,7 @@ fn telemetry_route(path: &str) -> &'static str {
         "feeder_gateway/get_contract_addresses" => "feeder_gateway/get_contract_addresses",
         "feeder_gateway/get_public_key" => "feeder_gateway/get_public_key",
         "feeder_gateway/get_block_bouncer_weights" => "feeder_gateway/get_block_bouncer_weights",
+        "feeder_gateway/get_snos_output_limit" => "feeder_gateway/get_snos_output_limit",
         _ => "unknown",
     }
 }
