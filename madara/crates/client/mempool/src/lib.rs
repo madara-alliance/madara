@@ -403,10 +403,8 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
     /// The rejection row is written first, so a crash cannot reload the saved transaction.
     pub async fn finish_rejected_transactions(&self, rejected: &[(Felt, String)]) -> anyhow::Result<()> {
         for (hash, reason) in rejected {
-            self.backend.write_rejected_mempool_transaction(
-                hash,
-                &mc_db::RejectedMempoolTransaction { reason: reason.clone() },
-            )?;
+            self.backend
+                .write_rejected_mempool_transaction(hash, &mc_db::RejectedMempoolTransaction::new(reason.clone()))?;
         }
         self.backend.remove_saved_mempool_transactions(rejected.iter().map(|(hash, _)| *hash))?;
 
@@ -1006,7 +1004,7 @@ pub(crate) mod tests {
         backend
             .write_rejected_mempool_transaction(
                 &tx_account.hash,
-                &mc_db::RejectedMempoolTransaction { reason: "too large for proof".into() },
+                &mc_db::RejectedMempoolTransaction::new("too large for proof"),
             )
             .unwrap();
 

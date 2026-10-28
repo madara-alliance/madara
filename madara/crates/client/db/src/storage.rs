@@ -50,6 +50,23 @@ pub enum L1ToL2MessageIndexEntry {
 #[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct RejectedMempoolTransaction {
     pub reason: String,
+    rejected_at_unix_seconds: u64,
+}
+
+impl RejectedMempoolTransaction {
+    pub fn new(reason: impl Into<String>) -> Self {
+        let rejected_at_unix_seconds =
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+        Self { reason: reason.into(), rejected_at_unix_seconds }
+    }
+
+    pub(crate) fn new_at(reason: impl Into<String>, rejected_at_unix_seconds: u64) -> Self {
+        Self { reason: reason.into(), rejected_at_unix_seconds }
+    }
+
+    pub(crate) fn rejected_at_unix_seconds(&self) -> u64 {
+        self.rejected_at_unix_seconds
+    }
 }
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]

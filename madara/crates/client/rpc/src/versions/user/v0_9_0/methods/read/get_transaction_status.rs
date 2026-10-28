@@ -268,7 +268,7 @@ mod tests {
             .backend
             .write_rejected_mempool_transaction(
                 &TX_HASH,
-                &mc_db::RejectedMempoolTransaction { reason: "transaction too large for proof".into() },
+                &mc_db::RejectedMempoolTransaction::new("transaction too large for proof"),
             )
             .unwrap();
 

@@ -8,7 +8,7 @@ use mp_convert::Felt;
 fn rejected_mempool_transaction_roundtrip() {
     let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
     let hash = Felt::from(123u64);
-    let rejection = RejectedMempoolTransaction { reason: "too large for proof".into() };
+    let rejection = RejectedMempoolTransaction::new("too large for proof");
 
     backend.write_rejected_mempool_transaction(&hash, &rejection).unwrap();
 
