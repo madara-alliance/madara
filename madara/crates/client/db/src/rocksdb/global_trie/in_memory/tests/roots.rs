@@ -1,6 +1,51 @@
 use super::*;
 
 #[test]
+fn serial_parallel_serial_storage_root_matches_serial_reference() {
+    use crate::storage::MadaraStorageWrite;
+
+    let contract_address = Felt::from(777_u64);
+    let storage_diff = |entries: &[(u64, u64)]| StateDiff {
+        storage_diffs: vec![ContractStorageDiffItem {
+            address: contract_address,
+            storage_entries: entries
+                .iter()
+                .map(|&(key, value)| StorageEntry { key: Felt::from(key), value: Felt::from(value) })
+                .collect(),
+        }],
+        ..Default::default()
+    };
+    let base = storage_diff(&[(1, 10), (2, 20)]);
+    let parallel_update = storage_diff(&[(2, 200)]);
+    let serial_update = storage_diff(&[(1, 100)]);
+
+    let reference = setup_backend();
+    let expected_roots = sequential_roots(&reference, &[base.clone(), parallel_update.clone(), serial_update.clone()]);
+
+    let backend = setup_backend();
+    let (base_root, _) = backend
+        .write_access()
+        .apply_to_global_trie(0, [&base], protocol_version())
+        .expect("warm the serial contract-storage cache");
+    assert_eq!(base_root, expected_roots[0]);
+    backend.db.write_parallel_merkle_checkpoint(0).expect("publish base checkpoint");
+
+    let boundary = compute_boundary(&backend.db, Some(0), fresh_snapshot(&backend.db), 1, &[parallel_update]);
+    assert_eq!(boundary.state_root, expected_roots[1], "parallel root must match serial reference");
+    let outcome =
+        flush_overlay_and_checkpoint(&backend.db, 1, 1, Some(0), boundary.overlay.as_ref().expect("boundary overlay"))
+            .expect("publish parallel trie update");
+    assert_eq!(outcome, BoundaryFlushOutcome::Persisted);
+    assert_eq!(backend.db.get_state_root_hash().unwrap(), expected_roots[1]);
+
+    let (actual_root, _) = backend
+        .write_access()
+        .apply_to_global_trie(2, [&serial_update], protocol_version())
+        .expect("resume serial trie updates on the same backend");
+    assert_eq!(actual_root, expected_roots[2], "serial update must preserve the preceding parallel storage update");
+}
+
+#[test]
 fn in_memory_single_block_root_matches_sequential_apply() {
     let backend_seq = setup_backend();
     let backend_mem = setup_backend();
