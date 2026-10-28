@@ -1,9 +1,7 @@
 use super::ContractTrieTimings;
 use crate::metrics::metrics;
-use crate::rocksdb::trie::{GlobalTrie, WrappedBonsaiError};
+use crate::rocksdb::trie::{ContractStorageTrieStageLease, GlobalTrie, SharedContractStorageTrie, WrappedBonsaiError};
 use crate::{prelude::*, rocksdb::RocksDBStorage};
-use bitvec::order::Msb0;
-use bitvec::vec::BitVec;
 use bitvec::view::AsBits;
 use bonsai_trie::id::BasicId;
 use mp_state_update::{ContractStorageDiffItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StorageEntry};
@@ -22,8 +20,38 @@ struct ContractLeaf {
 
 /// Holds uncommitted contract tries between staged root computation and final commit.
 pub struct StagedContractTries {
-    contract_storage_trie: GlobalTrie<Pedersen>,
+    backend: RocksDBStorage,
+    contract_storage_trie: SharedContractStorageTrie,
+    cache_generation: u64,
     contract_trie: GlobalTrie<Pedersen>,
+    committed: bool,
+    _stage_lease: ContractStorageTrieStageLease,
+}
+
+impl Drop for StagedContractTries {
+    fn drop(&mut self) {
+        if !self.committed {
+            tracing::debug!("dropping staged contract tries without commit, resetting cached contract storage trie");
+            self.backend.reset_cached_contract_storage_trie_if_generation(self.cache_generation);
+        }
+    }
+}
+
+struct ResetCachedStorageTrieOnDrop {
+    backend: RocksDBStorage,
+    cache_generation: Option<u64>,
+    armed: bool,
+}
+
+impl Drop for ResetCachedStorageTrieOnDrop {
+    fn drop(&mut self) {
+        if self.armed {
+            tracing::debug!("staged contract trie computation aborted, resetting cached contract storage trie");
+            if let Some(cache_generation) = self.cache_generation {
+                self.backend.reset_cached_contract_storage_trie_if_generation(cache_generation);
+            }
+        }
+    }
 }
 
 impl StagedContractTries {
@@ -31,11 +59,18 @@ impl StagedContractTries {
         let mut timings = ContractTrieTimings::default();
 
         let storage_commit_start = Instant::now();
-        self.contract_storage_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
+        let mut contract_storage_trie =
+            self.contract_storage_trie.write().unwrap_or_else(|poisoned| poisoned.into_inner());
+        anyhow::ensure!(
+            self.contract_storage_trie.generation() == self.cache_generation,
+            "cached contract storage trie generation changed before staged commit"
+        );
+        contract_storage_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
         timings.storage_commit = storage_commit_start.elapsed();
         let storage_commit_secs = timings.storage_commit.as_secs_f64();
         metrics().contract_storage_trie_commit_duration.record(storage_commit_secs, &[]);
         metrics().contract_storage_trie_commit_last.record(storage_commit_secs, &[]);
+        drop(contract_storage_trie);
 
         let contract_commit_start = Instant::now();
         self.contract_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
@@ -44,6 +79,7 @@ impl StagedContractTries {
         metrics().contract_trie_commit_duration.record(contract_commit_secs, &[]);
         metrics().contract_trie_commit_last.record(contract_commit_secs, &[]);
 
+        self.committed = true;
         Ok(timings)
     }
 }
@@ -58,19 +94,38 @@ pub fn contract_trie_root_staged(
     storage_diffs: &[ContractStorageDiffItem],
     block_number: u64,
 ) -> Result<(Felt, StagedContractTries)> {
-    let mut contract_leafs: HashMap<Felt, ContractLeaf> = HashMap::new();
+    let mut contract_leafs: HashMap<Felt, ContractLeaf> =
+        HashMap::with_capacity(storage_diffs.len() + nonces.len() + deployed_contracts.len() + replaced_classes.len());
+    let cached_contract_storage_trie = backend.cached_contract_storage_trie();
+    let stage_lease = cached_contract_storage_trie
+        .try_acquire_stage()
+        .context("another contract-storage trie stage is already active")?;
+    let mut reset_cached_trie =
+        ResetCachedStorageTrieOnDrop { backend: backend.clone(), cache_generation: None, armed: true };
+    let cache_generation;
 
-    let mut contract_storage_trie = backend.contract_storage_trie();
+    {
+        let mut contract_storage_trie =
+            cached_contract_storage_trie.write().unwrap_or_else(|poisoned| poisoned.into_inner());
+        cache_generation = cached_contract_storage_trie.generation();
+        reset_cached_trie.cache_generation = Some(cache_generation);
 
-    tracing::trace!("contract_storage_trie inserting");
+        tracing::debug!(
+            touched_contracts = storage_diffs.len(),
+            storage_diff_entries = storage_diffs.iter().map(|diff| diff.storage_entries.len()).sum::<usize>(),
+            "contract_storage_trie using cached frontier",
+        );
 
-    for ContractStorageDiffItem { address, storage_entries } in storage_diffs {
-        for StorageEntry { key, value } in storage_entries {
-            let bytes = key.to_bytes_be();
-            let bv: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
-            contract_storage_trie.insert(&address.to_bytes_be(), &bv, value).map_err(WrappedBonsaiError)?;
+        for ContractStorageDiffItem { address, storage_entries } in storage_diffs {
+            let address_bytes = address.to_bytes_be();
+            for StorageEntry { key, value } in storage_entries {
+                let key_bytes = key.to_bytes_be();
+                contract_storage_trie
+                    .insert(&address_bytes, &key_bytes.as_bits()[5..], value)
+                    .map_err(WrappedBonsaiError)?;
+            }
+            contract_leafs.insert(*address, Default::default());
         }
-        contract_leafs.insert(*address, Default::default());
     }
 
     for NonceUpdate { contract_address, nonce } in nonces {
@@ -85,30 +140,49 @@ pub fn contract_trie_root_staged(
         contract_leafs.entry(*contract_address).or_default().class_hash = Some(*class_hash);
     }
 
+    {
+        let contract_storage_trie =
+            cached_contract_storage_trie.read().unwrap_or_else(|poisoned| poisoned.into_inner());
+        for (contract_address, leaf) in contract_leafs.iter_mut() {
+            leaf.storage_root = Some(
+                contract_storage_trie.root_hash_staged(&contract_address.to_bytes_be()).map_err(WrappedBonsaiError)?,
+            );
+        }
+    }
+
     let leaf_hashes: Vec<_> = contract_leafs
         .into_par_iter()
-        .map(|(contract_address, mut leaf)| {
-            let storage_root =
-                contract_storage_trie.root_hash_staged(&contract_address.to_bytes_be()).map_err(WrappedBonsaiError)?;
-            leaf.storage_root = Some(storage_root);
+        .map(|(contract_address, leaf)| {
             let leaf_hash = contract_state_leaf_hash(backend, &contract_address, &leaf, block_number)?;
             let bytes = contract_address.to_bytes_be();
-            let bv: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
-            anyhow::Ok((bv, leaf_hash))
+            anyhow::Ok((bytes, leaf_hash))
         })
         .collect::<Result<_>>()?;
 
     let mut contract_trie = backend.contract_trie();
 
-    for (k, v) in leaf_hashes {
-        contract_trie.insert(super::bonsai_identifier::CONTRACT, &k, &v).map_err(WrappedBonsaiError)?;
+    for (key_bytes, value) in leaf_hashes {
+        contract_trie
+            .insert(super::bonsai_identifier::CONTRACT, &key_bytes.as_bits()[5..], &value)
+            .map_err(WrappedBonsaiError)?;
     }
 
     let root_hash = contract_trie.root_hash_staged(super::bonsai_identifier::CONTRACT).map_err(WrappedBonsaiError)?;
 
     tracing::trace!("contract_trie staged root computed");
 
-    Ok((root_hash, StagedContractTries { contract_storage_trie, contract_trie }))
+    reset_cached_trie.armed = false;
+    Ok((
+        root_hash,
+        StagedContractTries {
+            backend: backend.clone(),
+            contract_storage_trie: cached_contract_storage_trie,
+            cache_generation,
+            contract_trie,
+            committed: false,
+            _stage_lease: stage_lease,
+        },
+    ))
 }
 
 /// Calculates the contract trie root (single-phase: inserts + commits immediately).
@@ -165,10 +239,31 @@ fn contract_state_leaf_hash(
 #[cfg(test)]
 mod contract_trie_root_tests {
     use super::*;
-    use crate::{rocksdb::global_trie::tests::setup_test_backend, MadaraBackend};
+    use crate::{rocksdb::global_trie::tests::setup_test_backend, test_utils::add_test_block, MadaraBackend};
     use mp_chain_config::ChainConfig;
     use rstest::*;
-    use std::sync::Arc;
+    use std::sync::{mpsc, Arc, Barrier};
+    use std::thread;
+
+    fn sample_contract_address() -> Felt {
+        Felt::from_hex_unchecked("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
+    }
+
+    fn sample_storage_diffs(value: Felt) -> Vec<ContractStorageDiffItem> {
+        vec![ContractStorageDiffItem {
+            address: sample_contract_address(),
+            storage_entries: vec![StorageEntry {
+                key: Felt::from_hex_unchecked("0x0000000000000000000000000000000000000000000000000000000000000001"),
+                value,
+            }],
+        }]
+    }
+
+    fn cached_storage_root(backend: &Arc<MadaraBackend>, contract_address: Felt) -> Felt {
+        let cached_trie = backend.db.cached_contract_storage_trie();
+        let trie = cached_trie.read().unwrap_or_else(|poisoned| poisoned.into_inner());
+        trie.root_hash_staged(&contract_address.to_bytes_be()).unwrap()
+    }
 
     #[rstest]
     fn test_contract_trie_root_success(setup_test_backend: Arc<MadaraBackend>) {
@@ -245,5 +340,141 @@ mod contract_trie_root_tests {
             result,
             Felt::from_hex_unchecked("0x6bbd8d4b5692148f83c38e19091f64381b5239e2a73f53b59be3ec3efb41143")
         );
+    }
+
+    #[rstest]
+    fn test_cached_contract_storage_trie_resets_when_staged_tries_are_dropped(setup_test_backend: Arc<MadaraBackend>) {
+        let backend = setup_test_backend;
+        let contract_address = sample_contract_address();
+
+        let (_root_hash, staged) =
+            contract_trie_root_staged(&backend.db, &[], &[], &[], &sample_storage_diffs(Felt::TWO), 1).unwrap();
+
+        assert_ne!(cached_storage_root(&backend, contract_address), Felt::ZERO);
+        drop(staged);
+        assert_eq!(cached_storage_root(&backend, contract_address), Felt::ZERO);
+    }
+
+    #[rstest]
+    fn test_cached_contract_storage_trie_supports_consecutive_commits(setup_test_backend: Arc<MadaraBackend>) {
+        let backend = setup_test_backend;
+        let contract_address = sample_contract_address();
+
+        let (_first_root, first_staged) =
+            contract_trie_root_staged(&backend.db, &[], &[], &[], &sample_storage_diffs(Felt::TWO), 1).unwrap();
+        let staged_storage_root_round_one = cached_storage_root(&backend, contract_address);
+        first_staged.commit(1).unwrap();
+
+        let committed_storage_root_round_one =
+            backend.db.contract_storage_trie().root_hash(&contract_address.to_bytes_be()).unwrap();
+        assert_eq!(staged_storage_root_round_one, committed_storage_root_round_one);
+
+        let (_second_root, second_staged) =
+            contract_trie_root_staged(&backend.db, &[], &[], &[], &sample_storage_diffs(Felt::from(3u64)), 2).unwrap();
+        let staged_storage_root_round_two = cached_storage_root(&backend, contract_address);
+        assert_ne!(staged_storage_root_round_two, committed_storage_root_round_one);
+        second_staged.commit(2).unwrap();
+
+        let committed_storage_root_round_two =
+            backend.db.contract_storage_trie().root_hash(&contract_address.to_bytes_be()).unwrap();
+        assert_eq!(staged_storage_root_round_two, committed_storage_root_round_two);
+    }
+
+    #[rstest]
+    fn test_cached_contract_storage_trie_rejects_overlapping_stages(setup_test_backend: Arc<MadaraBackend>) {
+        let backend = setup_test_backend;
+        let (_first_root, first_staged) =
+            contract_trie_root_staged(&backend.db, &[], &[], &[], &sample_storage_diffs(Felt::TWO), 1).unwrap();
+
+        let error = contract_trie_root_staged(&backend.db, &[], &[], &[], &sample_storage_diffs(Felt::from(3u64)), 2)
+            .err()
+            .expect("a second outstanding stage must be rejected");
+        assert!(format!("{error:#}").contains("stage is already active"));
+
+        first_staged.commit(1).unwrap();
+        let (_second_root, second_staged) =
+            contract_trie_root_staged(&backend.db, &[], &[], &[], &sample_storage_diffs(Felt::from(3u64)), 2).unwrap();
+        second_staged.commit(2).unwrap();
+    }
+
+    #[rstest]
+    fn test_revert_resets_cached_contract_storage_trie(setup_test_backend: Arc<MadaraBackend>) {
+        let backend = setup_test_backend;
+        let contract_address = sample_contract_address();
+        let block_0_hash = add_test_block(&backend, 0, vec![]);
+        add_test_block(&backend, 1, vec![]);
+
+        let (_root_hash, staged) =
+            contract_trie_root_staged(&backend.db, &[], &[], &[], &sample_storage_diffs(Felt::from(9u64)), 2).unwrap();
+        assert_ne!(cached_storage_root(&backend, contract_address), Felt::ZERO);
+
+        backend.revert_to(&block_0_hash).unwrap();
+
+        assert_eq!(cached_storage_root(&backend, contract_address), Felt::ZERO);
+        drop(staged);
+    }
+
+    #[rstest]
+    fn test_stale_staged_drop_does_not_reset_newer_cache_generation(setup_test_backend: Arc<MadaraBackend>) {
+        let backend = setup_test_backend;
+        let (_stale_root, stale_staged) =
+            contract_trie_root_staged(&backend.db, &[], &[], &[], &sample_storage_diffs(Felt::TWO), 1).unwrap();
+
+        backend.db.reset_cached_contract_storage_trie();
+        let cached_trie = backend.db.cached_contract_storage_trie();
+        let reset_generation = cached_trie.generation();
+        drop(stale_staged);
+
+        assert_eq!(cached_trie.generation(), reset_generation);
+    }
+
+    #[rstest]
+    fn test_stale_staged_commit_fails_after_cache_reset(setup_test_backend: Arc<MadaraBackend>) {
+        let backend = setup_test_backend;
+        let (_root_hash, staged) =
+            contract_trie_root_staged(&backend.db, &[], &[], &[], &sample_storage_diffs(Felt::TWO), 1).unwrap();
+
+        backend.db.reset_cached_contract_storage_trie();
+
+        let err = staged.commit(1).unwrap_err();
+        assert!(format!("{err:#}").contains("generation changed before staged commit"));
+    }
+
+    #[rstest]
+    fn test_cache_reset_does_not_allow_overlapping_stage(setup_test_backend: Arc<MadaraBackend>) {
+        let backend = setup_test_backend;
+        let (_stale_root, stale_staged) =
+            contract_trie_root_staged(&backend.db, &[], &[], &[], &sample_storage_diffs(Felt::TWO), 1).unwrap();
+        let start_barrier = Arc::new(Barrier::new(2));
+        let (result_tx, result_rx) = mpsc::channel();
+        let backend_for_worker = backend.clone();
+        let start_barrier_for_worker = start_barrier.clone();
+
+        let worker = thread::spawn(move || {
+            start_barrier_for_worker.wait();
+            backend_for_worker.db.reset_cached_contract_storage_trie();
+            let error = contract_trie_root_staged(
+                &backend_for_worker.db,
+                &[],
+                &[],
+                &[],
+                &sample_storage_diffs(Felt::from(3u64)),
+                2,
+            )
+            .err()
+            .expect("cache reset must not bypass the active stage lease");
+            result_tx.send(error).unwrap();
+        });
+
+        start_barrier.wait();
+        let overlap_error = result_rx.recv().unwrap();
+        assert!(format!("{overlap_error:#}").contains("stage is already active"));
+        let err = stale_staged.commit(1).unwrap_err();
+        assert!(format!("{err:#}").contains("generation changed before staged commit"));
+        worker.join().unwrap();
+
+        let (_fresh_root, fresh_staged) =
+            contract_trie_root_staged(&backend.db, &[], &[], &[], &sample_storage_diffs(Felt::from(3u64)), 2).unwrap();
+        fresh_staged.commit(2).unwrap();
     }
 }

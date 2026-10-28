@@ -119,6 +119,7 @@ fn is_retryable_block_processing_error(error: &BlockProcessingError) -> bool {
             error_chain_is_retryable(source)
         }
         BlockProcessingError::TransactionExecution(source) => is_retryable_transaction_executor_error(source),
+        BlockProcessingError::TransactionExecutionTask { .. } => true,
         BlockProcessingError::ContextBuilding(_)
         | BlockProcessingError::TransactionExecutorCreation { .. }
         | BlockProcessingError::StarknetVersion(_)
@@ -312,6 +313,25 @@ mod tests {
         .unwrap_err();
 
         let error = SnosError::SnosExecutionError { internal_id: 7, source: PieGenerationError::TaskJoin(join_error) };
+
+        assert!(error.is_retryable());
+    }
+
+    #[tokio::test]
+    async fn transaction_execution_task_join_errors_are_retryable() {
+        let join_error = tokio::spawn(async {
+            panic!("simulated transaction execution task panic");
+        })
+        .await
+        .unwrap_err();
+
+        let error = SnosError::SnosExecutionError {
+            internal_id: 7,
+            source: PieGenerationError::BlockProcessing {
+                block_number: 12,
+                source: Box::new(BlockProcessingError::TransactionExecutionTask { source: join_error }),
+            },
+        };
 
         assert!(error.is_retryable());
     }

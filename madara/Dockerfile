@@ -22,6 +22,10 @@ ENV CHEF_TAR=cargo-chef-x86_64-unknown-linux-gnu.tar.gz
 
 ENV RUSTC_WRAPPER=/bin/sccache
 
+# Keep published images portable; specialized builders can opt into a newer CPU baseline.
+ARG MADARA_RUSTFLAGS=""
+ENV RUSTFLAGS="${MADARA_RUSTFLAGS}"
+
 ENV WGET="-O- --timeout=10 --waitretry=3 --retry-connrefused --progress=dot:mega"
 
 # Copy Makefile for LLVM installation
@@ -100,7 +104,7 @@ RUN python3 -m venv /app/sequencer_venv && \
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/registry \
     . /app/sequencer_venv/bin/activate && \
-    CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo chef cook --locked --release --recipe-path recipe.json
+    CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo chef cook --locked --profile production --recipe-path recipe.json
 
 COPY Cargo.toml Cargo.lock .db-versions.yml ./
 COPY madara madara
@@ -113,7 +117,7 @@ COPY test_utils test_utils
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/registry \
     . /app/sequencer_venv/bin/activate && \
-    CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo build --locked --release --bin madara
+    CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo build --locked --profile production --bin madara
 
 # Step 3: runner
 FROM debian:bookworm-slim AS runner
@@ -151,7 +155,7 @@ ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib:/lib/x86_64-linux-gnu:/li
 
 WORKDIR /app
 
-COPY --from=builder-rust /app/target/release/madara /bin
+COPY --from=builder-rust /app/target/production/madara /bin
 
 ENV TINI_VERSION=v0.19.0
 ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /bin/tini

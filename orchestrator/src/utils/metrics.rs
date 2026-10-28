@@ -33,6 +33,11 @@ pub struct OrchestratorMetrics {
     pub job_e2e_latency: Gauge<f64>,
     pub proof_generation_time: Gauge<f64>,
     pub snos_job_processing_time: Histogram<f64>,
+    pub snos_total_processing_time: Histogram<f64>,
+    pub snos_rpc_wait_time: Histogram<f64>,
+    pub snos_execution_time: Histogram<f64>,
+    pub snos_cairo_steps: Histogram<f64>,
+    pub snos_rpc_calls_per_job: Histogram<f64>,
     pub snos_batch_blocks: Histogram<f64>,
     pub snos_rpc_fallback_total: Counter<f64>,
     pub settlement_time: Gauge<f64>,
@@ -219,6 +224,50 @@ impl Metrics for OrchestratorMetrics {
             "snos_job_processing_time".to_string(),
             "Time to process SNOS jobs".to_string(),
             "s".to_string(),
+        );
+
+        let snos_total_processing_time = register_histogram_metric_instrument(
+            &orchestrator_meter,
+            "snos_total_processing_time".to_string(),
+            "SNOS-reported total processing time".to_string(),
+            "s".to_string(),
+        );
+
+        let snos_rpc_wait_time = register_histogram_metric_instrument(
+            &orchestrator_meter,
+            "snos_rpc_wait_time".to_string(),
+            "SNOS-reported wall-clock time with RPC calls in flight".to_string(),
+            "s".to_string(),
+        );
+
+        let snos_execution_time = register_histogram_metric_instrument(
+            &orchestrator_meter,
+            "snos_execution_time".to_string(),
+            "SNOS-reported local execution time outside RPC waits".to_string(),
+            "s".to_string(),
+        );
+
+        let snos_cairo_steps = orchestrator_meter
+            .f64_histogram("snos_cairo_steps")
+            .with_description("Cairo steps executed per SNOS job")
+            .with_unit("steps")
+            .with_boundaries(vec![
+                1_000_000.0,
+                5_000_000.0,
+                10_000_000.0,
+                25_000_000.0,
+                50_000_000.0,
+                100_000_000.0,
+                250_000_000.0,
+                500_000_000.0,
+            ])
+            .build();
+
+        let snos_rpc_calls_per_job = register_histogram_metric_instrument(
+            &orchestrator_meter,
+            "snos_rpc_calls_per_job".to_string(),
+            "SNOS RPC attempts per job grouped by method".to_string(),
+            "calls".to_string(),
         );
 
         let snos_batch_blocks = register_histogram_metric_instrument(
@@ -526,6 +575,11 @@ impl Metrics for OrchestratorMetrics {
             job_e2e_latency,
             proof_generation_time,
             snos_job_processing_time,
+            snos_total_processing_time,
+            snos_rpc_wait_time,
+            snos_execution_time,
+            snos_cairo_steps,
+            snos_rpc_calls_per_job,
             snos_batch_blocks,
             snos_rpc_fallback_total,
             settlement_time,
