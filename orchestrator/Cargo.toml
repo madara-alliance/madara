@@ -34,7 +34,7 @@ aws-sdk-sqs = { workspace = true, features = ["behavior-version-latest"] }
 axum = { workspace = true, features = ["macros"] }
 base64 = { workspace = true }
 bincode = { workspace = true }
-blockifier = { git = "https://github.com/madara-alliance/sequencer", rev = "9a919da83014beec95d5e1f24ad2b1eaabbf3de1", features = [
+blockifier = { git = "https://github.com/madara-alliance/sequencer", rev = "c19a89e86750d6dd8fb70f879b217adef120190b", features = [
   "node_api",
 ] }
 bson = { workspace = true, optional = true }
@@ -80,7 +80,7 @@ starknet = { workspace = true }
 starknet-core = { workspace = true }
 starknet-crypto = { workspace = true }
 starknet-types-core = { workspace = true }
-starknet_api = { git = "https://github.com/madara-alliance/sequencer", rev = "9a919da83014beec95d5e1f24ad2b1eaabbf3de1" }
+starknet_api = { git = "https://github.com/madara-alliance/sequencer", rev = "c19a89e86750d6dd8fb70f879b217adef120190b" }
 strum = { workspace = true }
 strum_macros = { workspace = true }
 swiftness_proof_parser = { workspace = true }

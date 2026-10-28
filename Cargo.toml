@@ -319,7 +319,7 @@ strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-generate-pie = { git = "https://github.com/madara-alliance/snos.git", rev = "ecbc4b6801470a71cfdc865d67a9d68bbe80282d" }
+generate-pie = { git = "https://github.com/madara-alliance/snos.git", rev = "5c7faf72d3bdbcc17c5984bad1bbf053fd47d509" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
@@ -329,8 +329,8 @@ orchestrator-ethereum-settlement-client = { path = "orchestrator/crates/settleme
 orchestrator-starknet-settlement-client = { path = "orchestrator/crates/settlement-clients/starknet" }
 orchestrator-utils = { path = "orchestrator/crates/utils" }
 orchestrator-aggregator-runner = { path = "orchestrator/crates/aggregator-runner" }
-apollo_starknet_os_program = { git = "https://github.com/madara-alliance/sequencer", rev = "9a919da83014beec95d5e1f24ad2b1eaabbf3de1" }
-starknet_os = { git = "https://github.com/madara-alliance/sequencer", rev = "9a919da83014beec95d5e1f24ad2b1eaabbf3de1" }
+apollo_starknet_os_program = { git = "https://github.com/madara-alliance/sequencer", rev = "c19a89e86750d6dd8fb70f879b217adef120190b" }
+starknet_os = { git = "https://github.com/madara-alliance/sequencer", rev = "c19a89e86750d6dd8fb70f879b217adef120190b" }
 orchestrator-prover-client-interface = { path = "orchestrator/crates/prover-clients/prover-client-interface" }
 orchestrator-gps-fact-checker = { path = "orchestrator/crates/prover-clients/gps-fact-checker" }
 orchestrator-sharp-service = { path = "orchestrator/crates/prover-clients/sharp-service" }

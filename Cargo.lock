@@ -1066,9 +1066,9 @@ dependencies = [
 [[package]]
 name = "apollo_compilation_utils"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1#9a919da83014beec95d5e1f24ad2b1eaabbf3de1"
+source = "git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b#c19a89e86750d6dd8fb70f879b217adef120190b"
 dependencies = [
- "apollo_infra_utils 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "apollo_infra_utils 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "cairo-lang-sierra 2.17.0",
  "cairo-lang-starknet-classes",
  "cairo-lang-utils 2.17.0",
@@ -1076,7 +1076,7 @@ dependencies = [
  "serde",
  "serde_json",
  "starknet-types-core 0.2.4",
- "starknet_api 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "starknet_api 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "tempfile",
  "thiserror 1.0.69",
 ]
@@ -1097,11 +1097,11 @@ dependencies = [
 [[package]]
 name = "apollo_compile_to_native"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1#9a919da83014beec95d5e1f24ad2b1eaabbf3de1"
+source = "git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b#c19a89e86750d6dd8fb70f879b217adef120190b"
 dependencies = [
- "apollo_compilation_utils 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
- "apollo_compile_to_native_types 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
- "apollo_infra_utils 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "apollo_compilation_utils 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
+ "apollo_compile_to_native_types 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
+ "apollo_infra_utils 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "cairo-lang-starknet-classes",
  "cairo-native",
  "tempfile",
@@ -1120,9 +1120,9 @@ dependencies = [
 [[package]]
 name = "apollo_compile_to_native_types"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1#9a919da83014beec95d5e1f24ad2b1eaabbf3de1"
+source = "git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b#c19a89e86750d6dd8fb70f879b217adef120190b"
 dependencies = [
- "apollo_config 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "apollo_config 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "serde",
  "validator",
 ]
@@ -1148,9 +1148,9 @@ dependencies = [
 [[package]]
 name = "apollo_config"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1#9a919da83014beec95d5e1f24ad2b1eaabbf3de1"
+source = "git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b#c19a89e86750d6dd8fb70f879b217adef120190b"
 dependencies = [
- "apollo_infra_utils 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "apollo_infra_utils 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "clap",
  "const_format",
  "itertools 0.12.1",
@@ -1188,9 +1188,9 @@ dependencies = [
 [[package]]
 name = "apollo_infra_utils"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1#9a919da83014beec95d5e1f24ad2b1eaabbf3de1"
+source = "git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b#c19a89e86750d6dd8fb70f879b217adef120190b"
 dependencies = [
- "apollo_proc_macros 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "apollo_proc_macros 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "assert-json-diff",
  "colored 3.0.0",
  "num_enum",
@@ -1224,9 +1224,9 @@ dependencies = [
 [[package]]
 name = "apollo_metrics"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1#9a919da83014beec95d5e1f24ad2b1eaabbf3de1"
+source = "git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b#c19a89e86750d6dd8fb70f879b217adef120190b"
 dependencies = [
- "apollo_time 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "apollo_time 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "indexmap 2.13.1",
  "metrics 0.24.3",
  "num-traits",
@@ -1249,7 +1249,7 @@ dependencies = [
 [[package]]
 name = "apollo_proc_macros"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1#9a919da83014beec95d5e1f24ad2b1eaabbf3de1"
+source = "git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b#c19a89e86750d6dd8fb70f879b217adef120190b"
 dependencies = [
  "lazy_static",
  "proc-macro2",
@@ -1269,9 +1269,9 @@ dependencies = [
 [[package]]
 name = "apollo_sizeof"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1#9a919da83014beec95d5e1f24ad2b1eaabbf3de1"
+source = "git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b#c19a89e86750d6dd8fb70f879b217adef120190b"
 dependencies = [
- "apollo_sizeof_macros 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "apollo_sizeof_macros 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "starknet-types-core 0.2.4",
 ]
 
@@ -1288,7 +1288,7 @@ dependencies = [
 [[package]]
 name = "apollo_sizeof_macros"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1#9a919da83014beec95d5e1f24ad2b1eaabbf3de1"
+source = "git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b#c19a89e86750d6dd8fb70f879b217adef120190b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1298,9 +1298,9 @@ dependencies = [
 [[package]]
 name = "apollo_starknet_os_program"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1#9a919da83014beec95d5e1f24ad2b1eaabbf3de1"
+source = "git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b#c19a89e86750d6dd8fb70f879b217adef120190b"
 dependencies = [
- "apollo_infra_utils 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "apollo_infra_utils 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "cairo-vm",
  "serde",
  "serde_json",
@@ -1321,7 +1321,7 @@ dependencies = [
 [[package]]
 name = "apollo_time"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1#9a919da83014beec95d5e1f24ad2b1eaabbf3de1"
+source = "git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b#c19a89e86750d6dd8fb70f879b217adef120190b"
 dependencies = [
  "chrono",
 ]
@@ -2879,20 +2879,20 @@ dependencies = [
 [[package]]
 name = "blockifier"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1#9a919da83014beec95d5e1f24ad2b1eaabbf3de1"
+source = "git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b#c19a89e86750d6dd8fb70f879b217adef120190b"
 dependencies = [
  "anyhow",
- "apollo_compilation_utils 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
- "apollo_compile_to_native 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
- "apollo_compile_to_native_types 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
- "apollo_config 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
- "apollo_infra_utils 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
- "apollo_metrics 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "apollo_compilation_utils 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
+ "apollo_compile_to_native 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
+ "apollo_compile_to_native_types 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
+ "apollo_config 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
+ "apollo_infra_utils 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
+ "apollo_metrics 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "ark-ec",
  "ark-ff 0.5.0",
  "ark-secp256k1",
  "ark-secp256r1",
- "blockifier_test_utils 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "blockifier_test_utils 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "cached",
  "cairo-lang-casm 2.17.0",
  "cairo-lang-runner",
@@ -2921,7 +2921,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "starknet-types-core 0.2.4",
- "starknet_api 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "starknet_api 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "strum 0.27.2",
  "thiserror 1.0.69",
  "validator",
@@ -2947,15 +2947,15 @@ dependencies = [
 [[package]]
 name = "blockifier_test_utils"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1#9a919da83014beec95d5e1f24ad2b1eaabbf3de1"
+source = "git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b#c19a89e86750d6dd8fb70f879b217adef120190b"
 dependencies = [
- "apollo_infra_utils 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "apollo_infra_utils 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "cairo-lang-starknet-classes",
  "digest 0.10.7",
  "serde_json",
  "sha2",
  "starknet-types-core 0.2.4",
- "starknet_api 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "starknet_api 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "strum 0.27.2",
  "tempfile",
  "tracing",
@@ -6851,11 +6851,11 @@ dependencies = [
 [[package]]
 name = "generate-pie"
 version = "0.2.0"
-source = "git+https://github.com/madara-alliance/snos.git?rev=ecbc4b6801470a71cfdc865d67a9d68bbe80282d#ecbc4b6801470a71cfdc865d67a9d68bbe80282d"
+source = "git+https://github.com/madara-alliance/snos.git?rev=5c7faf72d3bdbcc17c5984bad1bbf053fd47d509#5c7faf72d3bdbcc17c5984bad1bbf053fd47d509"
 dependencies = [
  "anyhow",
  "async-trait",
- "blockifier 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "blockifier 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "cairo-lang-starknet-classes",
  "cairo-vm",
  "chrono",
@@ -6873,7 +6873,7 @@ dependencies = [
  "starknet-rust",
  "starknet-rust-core 0.19.0-rc.2",
  "starknet-types-core 0.2.4",
- "starknet_api 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "starknet_api 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "starknet_os",
  "starknet_patricia",
  "thiserror 1.0.69",
@@ -10662,7 +10662,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "bincode",
- "blockifier 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "blockifier 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "bson",
  "build-version",
  "bytes",
@@ -10721,7 +10721,7 @@ dependencies = [
  "starknet-rust-core 0.19.0-rc.2",
  "starknet-rust-crypto 0.19.0-rc.2",
  "starknet-types-core 0.2.4",
- "starknet_api 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "starknet_api 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "strum 0.26.3",
  "strum_macros 0.26.4",
  "swiftness_proof_parser",
@@ -11102,7 +11102,7 @@ dependencies = [
 [[package]]
 name = "papyrus_common"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1#9a919da83014beec95d5e1f24ad2b1eaabbf3de1"
+source = "git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b#c19a89e86750d6dd8fb70f879b217adef120190b"
 dependencies = [
  "cairo-lang-starknet-classes",
  "indexmap 2.13.1",
@@ -11110,7 +11110,7 @@ dependencies = [
  "serde",
  "serde_json",
  "starknet-types-core 0.2.4",
- "starknet_api 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "starknet_api 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
 ]
 
 [[package]]
@@ -12286,11 +12286,11 @@ checksum = "afab94fb28594581f62d981211a9a4d53cc8130bbcbbb89a0440d9b8e81a7746"
 [[package]]
 name = "rpc-client"
 version = "0.2.0"
-source = "git+https://github.com/madara-alliance/snos.git?rev=ecbc4b6801470a71cfdc865d67a9d68bbe80282d#ecbc4b6801470a71cfdc865d67a9d68bbe80282d"
+source = "git+https://github.com/madara-alliance/snos.git?rev=5c7faf72d3bdbcc17c5984bad1bbf053fd47d509#5c7faf72d3bdbcc17c5984bad1bbf053fd47d509"
 dependencies = [
  "anyhow",
  "bitvec",
- "blockifier 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "blockifier 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "cairo-lang-starknet-classes",
  "cairo-vm",
  "futures",
@@ -12305,7 +12305,7 @@ dependencies = [
  "starknet-rust-core 0.19.0-rc.2",
  "starknet-rust-crypto 0.19.0-rc.2",
  "starknet-types-core 0.2.4",
- "starknet_api 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "starknet_api 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "thiserror 1.0.69",
  "tokio",
 ]
@@ -13216,11 +13216,11 @@ dependencies = [
 [[package]]
 name = "shared_execution_objects"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1#9a919da83014beec95d5e1f24ad2b1eaabbf3de1"
+source = "git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b#c19a89e86750d6dd8fb70f879b217adef120190b"
 dependencies = [
- "blockifier 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "blockifier 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "serde",
- "starknet_api 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "starknet_api 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
 ]
 
 [[package]]
@@ -13535,7 +13535,7 @@ dependencies = [
 [[package]]
 name = "starknet-os-types"
 version = "0.2.0"
-source = "git+https://github.com/madara-alliance/snos.git?rev=ecbc4b6801470a71cfdc865d67a9d68bbe80282d#ecbc4b6801470a71cfdc865d67a9d68bbe80282d"
+source = "git+https://github.com/madara-alliance/snos.git?rev=5c7faf72d3bdbcc17c5984bad1bbf053fd47d509#5c7faf72d3bdbcc17c5984bad1bbf053fd47d509"
 dependencies = [
  "cairo-lang-starknet-classes",
  "cairo-vm",
@@ -13549,7 +13549,7 @@ dependencies = [
  "starknet-rust-core 0.19.0-rc.2",
  "starknet-rust-crypto 0.19.0-rc.2",
  "starknet-types-core 0.2.4",
- "starknet_api 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "starknet_api 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "thiserror 1.0.69",
 ]
 
@@ -13855,16 +13855,17 @@ dependencies = [
 [[package]]
 name = "starknet_api"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1#9a919da83014beec95d5e1f24ad2b1eaabbf3de1"
+source = "git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b#c19a89e86750d6dd8fb70f879b217adef120190b"
 dependencies = [
- "apollo_infra_utils 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
- "apollo_sizeof 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "apollo_infra_utils 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
+ "apollo_sizeof 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "base64 0.13.1",
  "bitvec",
  "cached",
  "cairo-lang-runner",
  "cairo-lang-starknet-classes",
  "cairo-lang-utils 2.17.0",
+ "dashmap 6.1.0",
  "derive_more 2.1.1",
  "expect-test",
  "flate2",
@@ -13893,9 +13894,9 @@ dependencies = [
 [[package]]
 name = "starknet_committer"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1#9a919da83014beec95d5e1f24ad2b1eaabbf3de1"
+source = "git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b#c19a89e86750d6dd8fb70f879b217adef120190b"
 dependencies = [
- "apollo_config 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "apollo_config 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "async-trait",
  "derive_more 2.1.1",
  "ethnum",
@@ -13907,7 +13908,7 @@ dependencies = [
  "serde_json",
  "starknet-rust-core 0.16.0",
  "starknet-types-core 0.2.4",
- "starknet_api 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "starknet_api 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "starknet_patricia",
  "starknet_patricia_storage",
  "strum 0.27.2",
@@ -13919,7 +13920,7 @@ dependencies = [
 [[package]]
 name = "starknet_os"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1#9a919da83014beec95d5e1f24ad2b1eaabbf3de1"
+source = "git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b#c19a89e86750d6dd8fb70f879b217adef120190b"
 dependencies = [
  "apollo_starknet_os_program",
  "ark-bls12-381",
@@ -13928,7 +13929,7 @@ dependencies = [
  "ark-secp256k1",
  "ark-secp256r1",
  "blake2",
- "blockifier 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "blockifier 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "c-kzg",
  "cairo-lang-casm 2.17.0",
  "cairo-lang-runner",
@@ -13953,7 +13954,7 @@ dependencies = [
  "sha3 0.10.8",
  "shared_execution_objects",
  "starknet-types-core 0.2.4",
- "starknet_api 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "starknet_api 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "starknet_committer",
  "starknet_patricia",
  "starknet_patricia_storage",
@@ -13965,7 +13966,7 @@ dependencies = [
 [[package]]
 name = "starknet_patricia"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1#9a919da83014beec95d5e1f24ad2b1eaabbf3de1"
+source = "git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b#c19a89e86750d6dd8fb70f879b217adef120190b"
 dependencies = [
  "async-recursion",
  "derive_more 2.1.1",
@@ -13976,7 +13977,7 @@ dependencies = [
  "serde_json",
  "starknet-rust-core 0.16.0",
  "starknet-types-core 0.2.4",
- "starknet_api 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "starknet_api 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "starknet_patricia_storage",
  "strum 0.27.2",
  "thiserror 1.0.69",
@@ -13986,15 +13987,15 @@ dependencies = [
 [[package]]
 name = "starknet_patricia_storage"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1#9a919da83014beec95d5e1f24ad2b1eaabbf3de1"
+source = "git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b#c19a89e86750d6dd8fb70f879b217adef120190b"
 dependencies = [
- "apollo_config 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "apollo_config 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "hex",
  "lru 0.12.5",
  "serde",
  "serde_json",
  "starknet-types-core 0.2.4",
- "starknet_api 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=9a919da83014beec95d5e1f24ad2b1eaabbf3de1)",
+ "starknet_api 0.18.0-rc.1 (git+https://github.com/madara-alliance/sequencer?rev=c19a89e86750d6dd8fb70f879b217adef120190b)",
  "thiserror 1.0.69",
  "validator",
 ]
