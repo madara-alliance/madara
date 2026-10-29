@@ -106,6 +106,31 @@ pub(crate) async fn get_witness(
         .await
 }
 
+/// Bounded read-only witness transport. Authentication remains mandatory at the receiver.
+pub(crate) async fn get_witnesses(
+    req: Request<Incoming>,
+    backend: Arc<MadaraBackend>,
+    reads: Arc<Semaphore>,
+) -> Result<Response<String>, GatewayError> {
+    use blockifier::execution::syscalls::committed_data::MAX_COMMITTED_DATA_READ_KEYS;
+    let params = get_params_from_request(&req);
+    let root = params.get("root").ok_or_else(invalid).and_then(|value| Felt::from_hex(value).map_err(|_| invalid()))?;
+    let encoded = params.get("keys").ok_or_else(invalid)?;
+    // 0x + 64 hex digits + comma per key; reject before allocating the decoded list.
+    if encoded.len() > MAX_COMMITTED_DATA_READ_KEYS * 67 {
+        return Err(invalid());
+    }
+    let keys =
+        encoded.split(',').map(|key| Felt::from_hex(key).map_err(|_| invalid())).collect::<Result<Vec<_>, _>>()?;
+    if keys.is_empty() || keys.len() > MAX_COMMITTED_DATA_READ_KEYS {
+        return Err(invalid());
+    }
+    bounded_read(reads, move || {
+        Ok(create_json_response(StatusCode::OK, &backend.db.get_committed_data_witnesses(root, &keys)?))
+    })
+    .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

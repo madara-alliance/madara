@@ -200,6 +200,7 @@ fn telemetry_route(path: &str) -> &'static str {
         "feeder_gateway/get_committed_data_roots" => "feeder_gateway/get_committed_data_roots",
         "feeder_gateway/get_committed_data_versions" => "feeder_gateway/get_committed_data_versions",
         "feeder_gateway/get_committed_data" => "feeder_gateway/get_committed_data",
+        "feeder_gateway/get_committed_data_witnesses" => "feeder_gateway/get_committed_data_witnesses",
         "feeder_gateway/get_committed_data_witness" => "feeder_gateway/get_committed_data_witness",
         _ => "unknown",
     }

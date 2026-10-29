@@ -136,6 +136,22 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
         anyhow::bail!("Committed-data storage is unsupported by this backend")
     }
 
+    /// Transport witnesses in request order. Cold implementations reconstruct once per batch.
+    fn get_committed_data_witnesses(
+        &self,
+        root: Felt,
+        keys: &[Felt],
+    ) -> Result<Vec<blockifier::execution::syscalls::committed_data::CommittedDataWitness>> {
+        anyhow::ensure!(
+            !keys.is_empty()
+                && keys.len() <= blockifier::execution::syscalls::committed_data::MAX_COMMITTED_DATA_READ_KEYS,
+            "Invalid batch size"
+        );
+        keys.iter()
+            .map(|key| self.get_committed_data_witness(root, *key)?.context("Missing committed-data key"))
+            .collect()
+    }
+
     /// Build one batch; cold implementations must reconstruct once rather than once per key.
     fn get_committed_data_batch(
         &self,
@@ -411,6 +427,15 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     fn store_recovery_record(&self, _record: &crate::committed_data_recovery::RecoveryRecord) -> Result<String> {
         anyhow::bail!("Recovery storage unsupported")
     }
+    /// Install an authenticated remote backup identity without queuing its payload for upload.
+    /// Must atomically preserve namespace identity and acknowledge any identical pending record.
+    fn restore_recovery_manifest(
+        &self,
+        _manifest: &crate::committed_data_recovery::RecoveryManifest,
+    ) -> Result<String> {
+        anyhow::bail!("Committed-data recovery is unsupported by this backend")
+    }
+
     /// Acknowledge verified remote durability, removing only temporary local upload payloads.
     fn mark_recovery_exported(&self, _id: &str) -> Result<()> {
         anyhow::bail!("Recovery storage unsupported")

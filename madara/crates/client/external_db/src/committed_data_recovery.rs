@@ -193,8 +193,11 @@ async fn restore_record(backend: &Arc<MadaraBackend>, expected_id: String, recor
     }
     let local = Arc::clone(backend);
     tokio::task::spawn_blocking(move || {
-        ensure!(local.db.store_recovery_record(&record)? == expected_id, "Local recovery identity mismatch");
-        local.db.mark_recovery_exported(&expected_id)
+        ensure!(
+            local.db.restore_recovery_manifest(&record.manifest)? == expected_id,
+            "Local recovery identity mismatch"
+        );
+        Ok(())
     })
     .await?
 }

@@ -413,3 +413,50 @@ fn committed_data_catalog_and_outbox_do_not_wait_for_proof_pruning() {
     assert!(backend.db.has_committed_data_version(version).unwrap());
     assert_dataset(&backend.db, &tree);
 }
+
+/// Full-node imports have no explicit parent. Equal dictionaries must still share proof nodes
+/// and archive only changed values, including after restart and after the parent is pruned.
+#[test]
+fn full_snapshots_reuse_local_history_across_restart_and_pruning() {
+    let directory = tempfile::tempdir().unwrap();
+    let first = dataset(10);
+    let second = dataset(20);
+    {
+        let backend = open(directory.path());
+        backend.db.write_committed_data_dataset(&first, Some(0)).unwrap();
+    }
+    let backend = open(directory.path());
+    let db = &backend.db;
+    let before = rows(db, b"cdm/n/").len();
+    db.write_committed_data_dataset(&second, Some(1)).unwrap();
+    assert_eq!(rows(db, b"cdm/n/").len() - before, 4, "Only one leaf and its three ancestors change");
+    let snapshot = SnapshotWithDBArc::new(Arc::clone(&db.inner));
+    assert_eq!(history_chain(&snapshot, second.root()).unwrap().0, vec![second.root(), first.root()]);
+    drop(snapshot);
+    drain(db, Some(u64::MAX));
+    assert!(rows(db, b"cdm/n/").is_empty());
+    assert_dataset(db, &first);
+    assert_dataset(db, &second);
+    // A pruned optimization candidate is harmless: a new complete checkpoint is still valid.
+    let third = dataset(30);
+    db.write_committed_data_dataset(&third, Some(2)).unwrap();
+    assert_dataset(db, &third);
+    let snapshot = SnapshotWithDBArc::new(Arc::clone(&db.inner));
+    assert_eq!(history_chain(&snapshot, third.root()).unwrap().0, vec![third.root()]);
+}
+
+#[test]
+fn full_snapshot_reuse_does_not_merge_different_key_sets() {
+    let directory = tempfile::tempdir().unwrap();
+    let backend = open(directory.path());
+    let original = dataset(10);
+    backend.db.write_committed_data_dataset(&original, Some(0)).unwrap();
+    let mut entries = original.entries().to_vec();
+    entries[0].0 = Felt::from(100);
+    let replacement = CommittedDataSet::new(entries).unwrap();
+    backend.db.write_committed_data_dataset(&replacement, Some(1)).unwrap();
+    assert!(backend.db.get_committed_data_witness(replacement.root(), Felt::ZERO).unwrap().is_none());
+    assert!(backend.db.get_committed_data_witness(replacement.root(), Felt::from(100)).unwrap().unwrap().verify());
+    let snapshot = SnapshotWithDBArc::new(Arc::clone(&backend.db.inner));
+    assert_eq!(history_chain(&snapshot, replacement.root()).unwrap().0, vec![replacement.root()]);
+}

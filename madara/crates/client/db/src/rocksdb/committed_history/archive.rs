@@ -20,6 +20,27 @@ const MAX_ENCODED_ENTRY_BYTES: u64 = 3 + 2 + FELT_BYTES as u64;
 pub(super) const HISTORY: &[u8] = b"cdh/v1/";
 pub(super) const HISTORY_HASH: &[u8] = b"cdh/hash/";
 pub(super) const DICTIONARY: &[u8] = b"cdh/keys/";
+// An optimization hint only: full imports still authenticate every value and the resulting root.
+const REUSE_ROOT: &[u8] = b"cdh/reuse/";
+
+/// Find the last locally imported map with exactly this sorted key dictionary.
+/// The caller holds the tree writer lock and checks that its proof nodes are still retained.
+pub(in crate::rocksdb) fn reusable_root(db: &RocksDBStorage, entries: &[(Felt, Felt)]) -> Result<Option<Felt>> {
+    let mut hasher = Sha256::new();
+    for (key, _) in entries {
+        hasher.update(key.to_bytes_be());
+    }
+    let dictionary_id: [u8; 32] = hasher.finalize().into();
+    let cf = db.inner.get_column(meta::META_COLUMN);
+    let Some(bytes) = db.inner.db.get_pinned_cf(&cf, named(REUSE_ROOT, &dictionary_id))? else {
+        return Ok(None);
+    };
+    let root = codec::felt(&bytes)?;
+    let snapshot = SnapshotWithDBArc::new(Arc::clone(&db.inner));
+    let history = read_history(&snapshot, root)?;
+    anyhow::ensure!(history.dictionary == dictionary_id, "Historical reuse dictionary mismatch");
+    Ok(Some(root))
+}
 
 /// One immutable archive record. `base=None, depth=0` is a self-contained checkpoint.
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -95,6 +116,14 @@ pub(super) fn history_chain(snapshot: &SnapshotWithDBArc, root: Felt) -> Result<
 /// Replay a bounded chain oldest-first into a temporary map, then authenticate its final root.
 /// No durable proof nodes are recreated, so historical reads do not undo retention.
 pub(super) fn reconstruct(snapshot: &SnapshotWithDBArc, root: Felt) -> Result<CommittedDataSet> {
+    let tree = CommittedDataSet::new(values(snapshot, root)?)?;
+    anyhow::ensure!(tree.root() == root, "Reconstructed historical root mismatch");
+    Ok(tree)
+}
+
+/// Decode checksummed archive values without constructing a proof index. Replication consumers
+/// authenticate the complete map against its requested root; pages are not membership proofs.
+pub(in crate::rocksdb) fn values(snapshot: &SnapshotWithDBArc, root: Felt) -> Result<Vec<(Felt, Felt)>> {
     let (records, count) = history_chain(snapshot, root)?;
     let mut keys = Vec::new();
     let mut values = Vec::new();
@@ -121,9 +150,7 @@ pub(super) fn reconstruct(snapshot: &SnapshotWithDBArc, root: Felt) -> Result<Co
     }
     let entries: Vec<_> = keys.into_iter().zip(values).collect();
     anyhow::ensure!(entries.len() == count as usize, "Historical count mismatch");
-    let tree = CommittedDataSet::new(entries)?;
-    anyhow::ensure!(tree.root() == root, "Reconstructed historical root mismatch");
-    Ok(tree)
+    Ok(entries)
 }
 
 impl RocksDBStorage {
@@ -138,11 +165,13 @@ impl RocksDBStorage {
         tree_root: (u64, u32),
     ) -> Result<()> {
         let (id, count) = tree_root;
-        if exists(self, root)? {
-            return Ok(());
-        }
         let cf = self.inner.get_column(meta::META_COLUMN);
         let snapshot = SnapshotWithDBArc::new(Arc::clone(&self.inner));
+        if exists(self, root)? {
+            let history = read_history(&snapshot, root)?;
+            batch.put_cf(&cf, named(REUSE_ROOT, &history.dictionary), root.to_bytes_be());
+            return Ok(());
+        }
         let parent =
             base.filter(|base| *base != root).map(|base| -> Result<_> { read_history(&snapshot, base) }).transpose()?;
         let parent = parent.filter(|p| p.depth < MAX_DELTAS && p.count == count);
@@ -183,6 +212,7 @@ impl RocksDBStorage {
             data: zstd::stream::encode_all(raw.as_slice(), ARCHIVE_COMPRESSION_LEVEL)?,
         };
         let bytes = serialize(&history)?;
+        batch.put_cf(&cf, named(REUSE_ROOT, &dictionary_id), root.to_bytes_be());
         batch.put_cf(&cf, root_key(HISTORY_HASH, root), digest(&bytes));
         batch.put_cf(&cf, root_key(HISTORY, root), bytes);
         Ok(())

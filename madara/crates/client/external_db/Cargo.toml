@@ -57,6 +57,7 @@ futures.workspace = true
 mp-gateway.workspace = true
 
 [dev-dependencies]
+tempfile = { workspace = true }
 mc-mempool = { workspace = true }
 mp-utils = { workspace = true, features = ["testing"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

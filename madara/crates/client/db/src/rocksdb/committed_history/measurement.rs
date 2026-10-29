@@ -144,7 +144,7 @@ fn committed_history_measure_storage_and_memory() {
     let retained = parameter("CD_MEASURE_RETAINED", DEFAULT_RETAINED);
     let rolling_versions = parameter("CD_MEASURE_ROLLING_VERSIONS", DEFAULT_ROLLING_VERSIONS);
     let large_moves = std::env::var("CD_MEASURE_LARGE_MOVES").is_ok_and(|v| v == "true");
-    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
     let integer_values = std::env::var("CD_MEASURE_INTEGER_VALUES").is_ok_and(|value| value == "true");
     assert!(entries > 0 && entries <= MAX_COMMITTED_DATA_VALUES);
     assert!(
@@ -309,6 +309,95 @@ fn committed_history_measure_storage_and_memory() {
         "initial_import_ms": initial_ms, "incremental_import_ms": import_ms, "prune_total_ms": prune_ms,
         "retained_batch_ms": warm_ms, "reconstructed_batch_ms": cold_ms,
         "limitations": MEASUREMENT_LIMITATIONS});
+    println!("{}", serde_json::to_string_pretty(&report).unwrap());
+    if let Ok(path) = std::env::var("CD_MEASURE_REPORT") {
+        std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
+    }
+}
+
+/// Exercise the full-map API used by replicas, rather than the sequencer's explicit-base API.
+/// Time includes complete-map authentication; reference construction and SST scans are outside it.
+#[test]
+#[ignore = "Opt-in full-snapshot storage/RSS measurement"]
+fn committed_history_measure_full_snapshot_replication() {
+    let entries = parameter("CD_MEASURE_ENTRIES", DEFAULT_ENTRIES);
+    let updates = parameter("CD_MEASURE_UPDATES", DEFAULT_UPDATES);
+    let versions = parameter("CD_MEASURE_VERSIONS", DEFAULT_VERSIONS);
+    let retained = parameter("CD_MEASURE_RETAINED", DEFAULT_RETAINED);
+    assert!((1..=MAX_COMMITTED_DATA_VALUES).contains(&entries));
+    assert!(
+        updates > 0 && updates <= entries && retained > 0 && retained < versions && versions <= MAX_MEASURED_VERSIONS
+    );
+    let directory = tempfile::tempdir().unwrap();
+    let open = || {
+        MadaraBackend::open_rocksdb(
+            directory.path(),
+            mp_chain_config::ChainConfig::madara_test().into(),
+            MadaraBackendConfig::default(),
+            RocksDBConfig::default(),
+            Default::default(),
+        )
+        .unwrap()
+    };
+    let mut backend = open();
+    let mut values: Vec<_> = (0..entries).map(|key| (value(key, usize::MAX), value(key, 0))).collect();
+    let sample_keys: Vec<_> = values.iter().take(PROOF_SAMPLE_KEYS).map(|entry| entry.0).collect();
+    let mut roots = Vec::new();
+    let mut import_ms = Vec::new();
+    let mut expected = Vec::new();
+    for tick in 0..versions {
+        if tick > 0 {
+            for offset in 0..updates {
+                let index = (tick * updates + offset) % entries;
+                values[index].1 = value(index, tick);
+            }
+        }
+        let reference = CommittedDataSet::new(values.clone()).unwrap();
+        let root = reference.root();
+        expected.push(
+            blockifier::execution::syscalls::committed_data::CommittedDataBatchProof::from_dataset(
+                &reference,
+                &sample_keys,
+            )
+            .unwrap(),
+        );
+        drop(reference);
+        let started = Instant::now();
+        // Exactly the storage entrypoint used after HTTP replication assembles a complete map.
+        backend.db.import_committed_data_values(root, values.clone(), Some(tick as u64)).unwrap();
+        import_ms.push(started.elapsed().as_secs_f64() * 1000.);
+        roots.push(root);
+        if tick == versions / 2 {
+            drop(backend);
+            backend = open(); // Sharing candidates must survive process restart.
+        }
+    }
+    compact(&backend.db);
+    let before = footprint(&backend.db);
+    let started = Instant::now();
+    while backend.db.maintain_history(Some((versions - retained + 1) as u64)).unwrap() {}
+    let prune_ms = started.elapsed().as_secs_f64() * 1000.;
+    compact(&backend.db);
+    let after = footprint(&backend.db);
+    let mut historical_batch_ms = Vec::new();
+    for (root, proof) in roots.iter().zip(&expected) {
+        let started = Instant::now();
+        assert_eq!(&backend.db.get_committed_data_batch(*root, &sample_keys).unwrap(), proof);
+        historical_batch_ms.push(started.elapsed().as_secs_f64() * 1000.);
+    }
+    drop(backend);
+    let backend = open();
+    for (root, proof) in roots.iter().zip(&expected) {
+        assert_eq!(&backend.db.get_committed_data_batch(*root, &sample_keys).unwrap(), proof);
+    }
+    let report = serde_json::json!({
+        "workload": "complete_maps_without_explicit_base", "entries": entries,
+        "updates_per_version": updates, "versions": versions, "retained_versions": retained,
+        "before_prune": before, "after_prune": after, "full_snapshot_import_ms": import_ms,
+        "prune_ms": prune_ms, "historical_batch_ms": historical_batch_ms,
+        "restart_and_historical_proofs_verified": true,
+        "limitations": "Synthetic storage API workload. Excludes HTTP transfer and block execution. RSS includes independent full-map reference construction. Live SST sizes exclude WAL and obsolete files. No capacity claim."
+    });
     println!("{}", serde_json::to_string_pretty(&report).unwrap());
     if let Ok(path) = std::env::var("CD_MEASURE_REPORT") {
         std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();

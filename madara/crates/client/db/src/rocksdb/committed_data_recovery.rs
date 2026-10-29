@@ -121,19 +121,52 @@ impl RocksDBStorageInner {
         self.db.write_opt(batch, &durable())?;
         Ok(id)
     }
-    /// After remote acknowledgement, atomically remove payload/index bytes and retain the manifest.
-    pub(super) fn mark_recovery_exported(&self, id: &str) -> Result<()> {
+    /// Remote recovery has already authenticated the payload and its root. Retain its identity
+    /// in one durable write without borrowing capacity from the unrelated upload queue.
+    pub(super) fn restore_recovery_manifest(&self, manifest: &RecoveryManifest) -> Result<String> {
         let _lock = self.committed_data.records.lock().map_err(|_| anyhow::anyhow!("Committed-data lock poisoned"))?;
+        manifest.validate()?;
+        let id = manifest.id()?;
+        let namespace = namespace_key(manifest.update, manifest.root)?;
+        if let Some(existing) = self.find_recovery_record(&namespace)? {
+            anyhow::ensure!(existing == id, "Conflicting recovery namespace identity");
+        }
+        if let Some(base) = &manifest.base {
+            anyhow::ensure!(self.get_recovery_manifest(base)?.is_some(), "Recovery base missing");
+        }
         let cf = self.get_column(COMMITTED_DATA_RECOVERY_COLUMN);
-        anyhow::ensure!(self.get_recovery_manifest(id)?.is_some(), "Missing recovery manifest");
+        if let Some(existing) = self.get_recovery_manifest(&id)? {
+            anyhow::ensure!(existing.id()? == id, "Corrupt local recovery manifest");
+        }
+        let mut batch = WriteBatch::default();
+        batch.put_cf(&cf, key(MANIFEST_PREFIX, id.as_bytes()), super::serialize(manifest)?);
+        batch.put_cf(&cf, key(NAMESPACE_PREFIX, &namespace), id.as_bytes());
+        self.stage_recovery_acknowledgement(&mut batch, &id)?;
+        self.db.write_opt(batch, &durable())?;
+        Ok(id)
+    }
+
+    /// Caller owns the records lock. Reused by upload acknowledgement and remote restore.
+    fn stage_recovery_acknowledgement(&self, batch: &mut WriteBatch, id: &str) -> Result<()> {
+        let cf = self.get_column(COMMITTED_DATA_RECOVERY_COLUMN);
         let pending_key = key(PENDING_PREFIX, id.as_bytes());
         if let Some(bytes) = self.db.get_cf(&cf, &pending_key)? {
             let size: u64 = super::deserialize(bytes)?;
             let pending = self.pending_recovery_bytes()?.checked_sub(size).context("Recovery backlog underflow")?;
-            let mut batch = WriteBatch::default();
             batch.delete_cf(&cf, pending_key);
             batch.delete_cf(&cf, key(RECORD_PREFIX, id.as_bytes()));
             batch.put_cf(&cf, PENDING_BYTES_KEY, super::serialize(&pending)?);
+        }
+        Ok(())
+    }
+
+    /// After remote acknowledgement, atomically remove payload/index bytes and retain the manifest.
+    pub(super) fn mark_recovery_exported(&self, id: &str) -> Result<()> {
+        let _lock = self.committed_data.records.lock().map_err(|_| anyhow::anyhow!("Committed-data lock poisoned"))?;
+        anyhow::ensure!(self.get_recovery_manifest(id)?.is_some(), "Missing recovery manifest");
+        let mut batch = WriteBatch::default();
+        self.stage_recovery_acknowledgement(&mut batch, id)?;
+        if !batch.is_empty() {
             self.db.write_opt(batch, &durable())?;
         }
         Ok(())

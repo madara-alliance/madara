@@ -49,18 +49,24 @@ fn validate_catalog_page<T: Ord>(page: &[T], after: Option<&T>) -> anyhow::Resul
 
 async fn sync_datasets(backend: &Arc<MadaraBackend>, client: &GatewayProvider) -> anyhow::Result<()> {
     let mut after = None;
+    let mut first_error = None;
     loop {
         let roots = tokio::time::timeout(Duration::from_secs(30), client.get_committed_data_roots(after)).await??;
         validate_catalog_page(&roots, after.as_ref())?;
         for root in &roots {
-            sync_dataset(backend, client, *root).await?;
+            if let Err(error) = sync_dataset(backend, client, *root).await {
+                // A missing historical root must not starve later available roots. The next
+                // pass retries it; incomplete datasets still never become locally visible.
+                tracing::warn!(%root, "Committed-data dataset replication failed: {error:#}");
+                first_error.get_or_insert(error);
+            }
         }
         if roots.len() < ROOTS_PER_PAGE {
             break;
         }
         after = roots.last().copied();
     }
-    Ok(())
+    first_error.map_or(Ok(()), Err)
 }
 
 async fn sync_dataset(backend: &Arc<MadaraBackend>, client: &GatewayProvider, root: Felt) -> anyhow::Result<()> {

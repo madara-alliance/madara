@@ -222,3 +222,87 @@ async fn invalid_records_never_publish_a_tree_or_recovery_manifest() {
     restore_record(&backend, snapshot.manifest.id().unwrap(), snapshot).await.unwrap();
     assert_eq!(backend.db.list_committed_data_roots(None).unwrap().len(), 1);
 }
+
+/// Restore consumes no upload capacity, even when the target's budget is smaller than the
+/// archived checkpoint or its old upload queue is already above the newly configured budget.
+#[rstest::rstest]
+#[case::empty_queue(false)]
+#[case::existing_queue(true)]
+#[tokio::test]
+async fn remote_restore_bypasses_upload_budget_and_survives_restart(#[case] queued: bool) {
+    let directory = tempfile::tempdir().unwrap();
+    let open = |budget| {
+        MadaraBackend::open_rocksdb(
+            directory.path(),
+            ChainConfig::madara_test().into(),
+            mc_db::MadaraBackendConfig {
+                committed_data_retention: mc_db::committed_data_retention::CommittedDataRetentionConfig {
+                    pending_backup_bytes: budget,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            Default::default(),
+            Default::default(),
+        )
+        .unwrap()
+    };
+    let pending;
+    {
+        let backend = open(1024 * 1024);
+        if queued {
+            let values = vec![(Felt::ZERO, Felt::ONE)];
+            let root = CommittedDataSet::new(values.clone()).unwrap().root();
+            backend.import_committed_data_snapshot(root, values.clone()).await.unwrap();
+            backend.journal_committed_data(None, root, values).await.unwrap();
+        }
+        pending = backend.db.recovery_pending_bytes().unwrap();
+    }
+    let values: Vec<_> = (0..32u32).map(|key| (Felt::from(key), Felt::from(key + 100))).collect();
+    let tree = CommittedDataSet::new(values.clone()).unwrap();
+    let record =
+        RecoveryRecord::encode(ChainConfig::madara_test().chain_id.to_felt(), None, tree.root(), None, values).unwrap();
+    let id = record.manifest.id().unwrap();
+    {
+        let backend = open(1);
+        restore_record(&backend, id.clone(), record.clone()).await.unwrap();
+        restore_record(&backend, id.clone(), record).await.unwrap();
+        assert_eq!(backend.db.recovery_pending_bytes().unwrap(), pending);
+        assert!(backend.db.get_recovery_record(&id).unwrap().is_none());
+    }
+    let backend = open(1);
+    assert_eq!(backend.db.recovery_pending_bytes().unwrap(), pending);
+    assert_eq!(
+        backend
+            .db
+            .find_recovery_record(&mc_db::committed_data_recovery::namespace_key(None, tree.root()).unwrap())
+            .unwrap(),
+        Some(id.clone())
+    );
+    assert_eq!(backend.db.get_recovery_manifest(&id).unwrap().unwrap().root, tree.root());
+    assert!(backend.committed_data_witness(tree.root(), Felt::ONE).unwrap().unwrap().verify());
+}
+
+/// Restoring an already uploaded local record acknowledges exactly that pending payload.
+/// A conflicting namespace identity must never remove a different queued record.
+#[tokio::test]
+async fn remote_restore_acknowledges_matching_pending_payload_and_rejects_conflicts() {
+    let backend = MadaraBackend::open_for_testing(mp_chain_config::ChainConfig::madara_test().into());
+    let entries = vec![(Felt::ONE, Felt::MAX)];
+    let root = CommittedDataSet::new(entries.clone()).unwrap().root();
+    backend.import_committed_data_snapshot(root, entries.clone()).await.unwrap();
+    let record = RecoveryRecord::encode(backend.chain_config().chain_id.to_felt(), None, root, None, entries).unwrap();
+    let id = backend.db.store_recovery_record(&record).unwrap();
+    let pending = backend.db.recovery_pending_bytes().unwrap();
+    assert!(pending > 0);
+    let mut conflict = record.manifest.clone();
+    conflict.chain_id += Felt::ONE;
+    assert!(backend.db.restore_recovery_manifest(&conflict).is_err());
+    assert_eq!(backend.db.recovery_pending_bytes().unwrap(), pending);
+    assert!(backend.db.get_recovery_record(&id).unwrap().is_some());
+    restore_record(&backend, id.clone(), record.clone()).await.unwrap();
+    restore_record(&backend, id.clone(), record).await.unwrap();
+    assert_eq!(backend.db.recovery_pending_bytes().unwrap(), 0);
+    assert!(backend.db.get_recovery_record(&id).unwrap().is_none());
+    assert_eq!(backend.db.get_recovery_manifest(&id).unwrap().unwrap().id().unwrap(), id);
+}

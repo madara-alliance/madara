@@ -211,14 +211,18 @@ impl RocksDBStorage {
         anyhow::ensure!((start as usize) < count, "Committed-data page outside dataset");
         let id = persistent_id(&metadata)?;
         if id == 0 {
-            return super::committed_history::with_reconstructed(&snapshot, root, |tree| {
-                let entries = tree.entries();
-                anyhow::ensure!(entries.len() == count, "Historical value count mismatch");
-                Ok(Some((
-                    count as u32,
-                    entries[start as usize..(start as usize + VALUES_PER_PAGE).min(entries.len())].to_vec(),
-                )))
-            });
+            let _permit = self
+                .inner
+                .committed_data
+                .reconstruction
+                .lock()
+                .map_err(|_| anyhow::anyhow!("Historical reconstruction lock poisoned"))?;
+            let entries = super::committed_history::historical_values(&snapshot, root)?;
+            anyhow::ensure!(entries.len() == count, "Historical value count mismatch");
+            return Ok(Some((
+                count as u32,
+                entries[start as usize..(start as usize + VALUES_PER_PAGE).min(entries.len())].to_vec(),
+            )));
         }
         let mut tree = Tree::new(u64::MAX, MAX_COMMITTED_DATA_VALUES as u32, |id| {
             Ok(snapshot.get_pinned_cf(&cf, node_key(id))?.map(|b| b.to_vec()))
@@ -245,6 +249,30 @@ impl RocksDBStorage {
         });
         tree.check_root(id, root, count(&metadata)? as u32)?;
         tree.witness(id, root, index)
+    }
+
+    /// Serve a transport batch from one snapshot and at most one cold reconstruction.
+    pub(super) fn read_committed_data_witnesses(&self, root: Felt, keys: &[Felt]) -> Result<Vec<CommittedDataWitness>> {
+        anyhow::ensure!(
+            !keys.is_empty()
+                && keys.len() <= blockifier::execution::syscalls::committed_data::MAX_COMMITTED_DATA_READ_KEYS,
+            "Invalid batch size"
+        );
+        let cf = self.inner.get_column(meta::META_COLUMN);
+        let snapshot = rocksdb_snapshot::SnapshotWithDBArc::new(Arc::clone(&self.inner));
+        let metadata =
+            snapshot.get_pinned_cf(&cf, metadata_key(root, METADATA_LEVEL, 0))?.context("Missing dataset")?;
+        let id = persistent_id(&metadata)?;
+        if id == 0 {
+            return super::committed_history::with_reconstructed(&snapshot, root, |tree| {
+                keys.iter().map(|key| tree.witness(*key).context("Missing committed-data key")).collect()
+            });
+        }
+        let mut tree = Tree::new(u64::MAX, MAX_COMMITTED_DATA_VALUES as u32, |id| {
+            Ok(snapshot.get_pinned_cf(&cf, node_key(id))?.map(|bytes| bytes.to_vec()))
+        });
+        tree.check_root(id, root, count(&metadata)? as u32)?;
+        keys.iter().map(|key| tree.witness(id, root, *key)?.context("Missing committed-data key")).collect()
     }
 
     /// Authenticate a bounded batch under one RocksDB snapshot; reconstruct pruned roots in memory.
@@ -336,6 +364,18 @@ impl RocksDBStorage {
     ) -> Result<()> {
         let cf = self.inner.get_column(meta::META_COLUMN);
         let old_metadata = self.inner.db.get_pinned_cf(&cf, metadata_key(root, METADATA_LEVEL, 0))?;
+        let mut base = base;
+        if full_import && base.is_none() && old_metadata.is_none() {
+            entries.sort_unstable_by_key(|(key, _)| *key);
+            // Replicas submit complete maps without a declared parent. Reuse a local map with
+            // the same keys; this is storage sharing, never namespace or publication authority.
+            if let Some(candidate) = super::committed_history::reusable_root(self, &entries)? {
+                let metadata = self.inner.db.get_pinned_cf(&cf, metadata_key(candidate, METADATA_LEVEL, 0))?;
+                if metadata.as_ref().map(|bytes| persistent_id(bytes)).transpose()?.is_some_and(|id| id != 0) {
+                    base = Some(candidate);
+                }
+            }
+        }
         let base_root = base.unwrap_or(root);
         let base_metadata = self.inner.db.get_pinned_cf(&cf, metadata_key(base_root, METADATA_LEVEL, 0))?;
         let base_id = base_metadata.as_ref().map(|b| persistent_id(b)).transpose()?.filter(|id| *id != 0);
@@ -372,6 +412,8 @@ impl RocksDBStorage {
             Ok(id) => id,
             // A full map can rebuild damaged storage; authenticate the rebuilt root below.
             Err(_) if full_import => {
+                // Rebuilding no longer describes a delta against the rejected storage base.
+                base = None;
                 tree = Tree::new(first_id, MAX_COMMITTED_DATA_VALUES as u32, reader);
                 tree.build(&mut entries)?
             }

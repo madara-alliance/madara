@@ -207,7 +207,7 @@ async fn missing_dataset_does_not_publish_a_root_or_namespace() {
 }
 
 /// Compatibility is controlled by the full node's local opt-in, never an upstream flag.
-/// Legacy callers keep using existing endpoints. Opted-in callers wait on missing data;
+/// Legacy callers keep using existing endpoints. Missing optional history never gates chain sync;
 /// a new sequencer with an empty (but supported) catalog remains syncable.
 #[rstest::rstest]
 #[case::legacy_upstream_opt_out(false, false, false, true)]
@@ -215,7 +215,7 @@ async fn missing_dataset_does_not_publish_a_root_or_namespace() {
 #[case::bouncer_only_legacy_upstream(true, false, false, true)]
 #[case::bouncer_only_new_upstream(true, false, true, true)]
 #[case::feature_without_replication(false, true, false, true)]
-#[case::legacy_upstream_opt_in(true, true, false, false)]
+#[case::legacy_upstream_opt_in(true, true, false, true)]
 #[case::empty_new_upstream_opt_in(true, true, true, true)]
 #[tokio::test]
 async fn committed_data_latest_probe_compatibility(
@@ -252,14 +252,52 @@ async fn committed_data_latest_probe_compatibility(
     ));
     let probe = Arc::new(super::super::GatewayLatestProbe::new(client, backend, enabled));
     let previous = mp_gateway::block::ProviderBlockHeader { block_number: 9, block_hash: Felt::ONE };
-    assert_eq!(probe.probe(Some(previous.clone())).await.unwrap(), Some(if advances { latest } else { previous }));
-    catalogs
-        .assert_hits_async(if !enabled || !use_committed_data {
-            0
-        } else if supported {
-            2
-        } else {
-            1
+    assert_eq!(
+        probe.clone().probe(Some(previous.clone())).await.unwrap(),
+        Some(if advances { latest } else { previous })
+    );
+    if enabled && use_committed_data {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while catalogs.hits_async().await < if supported { 2 } else { 1 } {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+    } else {
+        catalogs.assert_hits_async(0).await;
+    }
+    drop(probe); // Aborts the owned history worker; no detached replication task survives sync.
+}
+
+#[tokio::test]
+async fn unavailable_historical_root_does_not_starve_available_datasets() {
+    use blockifier::execution::syscalls::committed_data::CommittedDataSet;
+    let values = vec![(Felt::ONE, Felt::MAX)];
+    let root = CommittedDataSet::new(values.clone()).unwrap().root();
+    let server = httpmock::MockServer::start_async().await;
+    server
+        .mock_async(|when, then| {
+            when.path("/feeder_gateway/get_committed_data_roots");
+            then.json_body_obj(&vec![Felt::ZERO, root]);
         })
         .await;
+    server
+        .mock_async(|when, then| {
+            when.path("/feeder_gateway/get_committed_data").query_param("root", "0x0");
+            then.json_body_obj(&Option::<CommittedDataPage>::None);
+        })
+        .await;
+    server
+        .mock_async(|when, then| {
+            when.path("/feeder_gateway/get_committed_data").query_param("root", format!("{root:#x}"));
+            then.json_body_obj(&Some(CommittedDataPage { root, start: 0, count: 1, entries: values }));
+        })
+        .await;
+    let client =
+        GatewayProvider::new(server.url("/gateway/").parse().unwrap(), server.url("/feeder_gateway/").parse().unwrap());
+    let replica = MadaraBackend::open_for_testing(Arc::new(mp_chain_config::ChainConfig::madara_test()));
+    assert!(sync_available(&replica, &client).await.is_err());
+    assert!(replica.db.get_committed_data_count(Felt::ZERO).unwrap().is_none());
+    assert!(replica.committed_data_witness(root, Felt::ONE).unwrap().unwrap().verify());
 }

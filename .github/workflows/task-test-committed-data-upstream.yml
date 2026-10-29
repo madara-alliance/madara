@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/load-env
-      - name: Read exact Sequencer revision
+      - name: Read exact upstream revisions
         id: revision
         shell: bash
         run: |
@@ -36,12 +36,20 @@ jobs:
           assert len(revisions) == 1, "expected one coherent Sequencer revision"
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
               output.write(f"sha={revisions.pop()}\n")
+              snos = re.findall(r'git = "https://github.com/karnotxyz/snos", rev = "([0-9a-f]{40})"', manifest)
+              assert len(set(snos)) == 1, "expected one coherent SNOS revision"
+              output.write(f"snos_sha={snos[0]}\n")
           PY
       - uses: actions/checkout@v5
         with:
           repository: karnotxyz/sequencer
           ref: ${{ steps.revision.outputs.sha }}
           path: upstream-sequencer
+      - uses: actions/checkout@v5
+        with:
+          repository: karnotxyz/snos
+          ref: ${{ steps.revision.outputs.snos_sha }}
+          path: upstream-snos
       - uses: ./.github/actions/setup-rust
         with:
           rust-version: 1.92.0
@@ -62,6 +70,7 @@ jobs:
         run: |
           cargo +1.92.0 test --target-dir ../target --locked --release -p starknet_os_flow_tests committed_data -- --nocapture
           cargo +1.92.0 test --target-dir ../target --locked --release -p apollo_starknet_os_program test_program -- --nocapture
+          cargo +1.92.0 test --target-dir ../target --locked --release -p starknet_os committed_witness_tests -- --nocapture
 
       - name: Export exact full-flow test runner for external snapshot validation
         if: ${{ !cancelled() }}
@@ -94,3 +103,8 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: upstream-sequencer
         run: cargo +1.92.0 test --target-dir ../target --locked --release -p blockifier --features testing,cairo_native committed_data -- --nocapture
+
+      - name: SNOS multi-block witness transport regressions
+        if: ${{ !cancelled() }}
+        working-directory: upstream-snos
+        run: cargo +1.92.0 test --target-dir ../target --locked --release -p generate-pie --lib committed_data -- --nocapture

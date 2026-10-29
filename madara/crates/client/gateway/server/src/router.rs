@@ -63,6 +63,11 @@ async fn feeder_gateway_router(
         (&Method::GET, "feeder_gateway/get_committed_data") => {
             Ok(crate::committed_data::get_page(req, backend, committed_data_reads).await.unwrap_or_else(Into::into))
         }
+        (&Method::GET, "feeder_gateway/get_committed_data_witnesses") => {
+            Ok(crate::committed_data::get_witnesses(req, backend, committed_data_reads)
+                .await
+                .unwrap_or_else(Into::into))
+        }
         (&Method::GET, "feeder_gateway/get_committed_data_witness") => {
             Ok(crate::committed_data::get_witness(req, backend, committed_data_reads).await.unwrap_or_else(Into::into))
         }
@@ -151,6 +156,7 @@ mod committed_data_tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn committed_data_feeder_serves_gets_and_rejects_post_and_invalid_offsets() {
+        use mc_db::MadaraStorageWrite;
         use std::io::{Read, Write};
         let backend = MadaraBackend::open_for_testing(Arc::new(mp_chain_config::ChainConfig::madara_test()));
         let values = vec![(Felt::ZERO, Felt::ONE), (Felt::MAX, Felt::TWO)];
@@ -169,8 +175,10 @@ mod committed_data_tests {
             .unwrap();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
+        let serving_backend = backend.clone();
         let server = tokio::spawn(async move {
-            for _ in 0..8 {
+            let backend = serving_backend;
+            for _ in 0..11 {
                 let (stream, _) = listener.accept().await.unwrap();
                 let backend = backend.clone();
                 let service = hyper::service::service_fn(move |req: Request<Incoming>| {
@@ -216,6 +224,34 @@ mod committed_data_tests {
         let witness: blockifier::execution::syscalls::committed_data::CommittedDataWitness =
             serde_json::from_str(&body).unwrap();
         assert!(witness.verify());
+        // Remove the durable proof index and exercise the actual HTTP cold transport.
+        while backend.db.maintain_committed_data_history(Some(u64::MAX)).unwrap() {}
+        let (_, body) = query(
+            "GET",
+            format!(
+                "get_committed_data_witnesses?root={root:#x}&keys={:#x},{:#x},{:#x}",
+                Felt::MAX,
+                Felt::ZERO,
+                Felt::MAX
+            ),
+        )
+        .await;
+        let witnesses: Vec<blockifier::execution::syscalls::committed_data::CommittedDataWitness> =
+            serde_json::from_str(&body).unwrap();
+        assert_eq!(
+            witnesses.iter().map(|witness| witness.key).collect::<Vec<_>>(),
+            vec![Felt::MAX, Felt::ZERO, Felt::MAX]
+        );
+        assert!(witnesses.iter().all(|witness| witness.verify()));
+        let (_, body) = query("GET", format!("get_committed_data?root={root:#x}&start=0")).await;
+        assert_eq!(
+            serde_json::from_str::<mp_gateway::committed_data::CommittedDataPage>(&body).unwrap().entries,
+            values
+        );
+        assert!(query("GET", format!("get_committed_data_witnesses?root={root:#x}&keys="))
+            .await
+            .0
+            .starts_with("HTTP/1.1 400"));
         assert!(query("GET", format!("get_committed_data?root={root:#x}&start=1")).await.0.starts_with("HTTP/1.1 400"));
         assert!(query("POST", "get_committed_data".into()).await.0.starts_with("HTTP/1.1 404"));
         let (_, body) = query("GET", "get_committed_data_versions".into()).await;

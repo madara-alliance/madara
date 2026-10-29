@@ -17,6 +17,8 @@ pub(crate) mod blocks;
 pub(crate) mod classes;
 mod committed_data;
 
+const COMMITTED_DATA_RESCAN_INTERVAL: Duration = Duration::from_secs(5);
+
 pub struct ForwardSyncConfig {
     pub block_parallelization: usize,
     pub block_batch_size: usize,
@@ -336,8 +338,15 @@ impl ForwardPipeline for GatewayForwardSync {
 
 struct GatewayLatestProbe {
     client: Arc<GatewayProvider>,
-    backend: Arc<MadaraBackend>,
-    sync_committed_data: bool,
+    replication: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl Drop for GatewayLatestProbe {
+    fn drop(&mut self) {
+        if let Some(task) = &self.replication {
+            task.abort();
+        }
+    }
 }
 
 impl GatewayLatestProbe {
@@ -345,7 +354,20 @@ impl GatewayLatestProbe {
         // Bouncer replication predates committed data. Enabling that existing behavior must
         // not make ordinary full nodes depend on catalog routes absent from older sequencers.
         let sync_committed_data = additional_data_sync && backend.use_committed_data();
-        Self { client, backend, sync_committed_data }
+        let replication = sync_committed_data.then(|| {
+            let client = client.clone();
+            tokio::spawn(async move {
+                loop {
+                    if let Err(error) = committed_data::sync_available(&backend, &client).await {
+                        tracing::warn!(
+                            "Committed-data replication failed; will retry independently of chain sync: {error:#}"
+                        );
+                    }
+                    tokio::time::sleep(COMMITTED_DATA_RESCAN_INTERVAL).await;
+                }
+            })
+        });
+        Self { client, replication }
     }
 
     async fn probe(
@@ -354,14 +376,6 @@ impl GatewayLatestProbe {
     ) -> anyhow::Result<Option<ProviderBlockHeader>> {
         match self.client.get_header(BlockId::Tag(BlockTag::Latest)).await {
             Ok(header) => {
-                if self.sync_committed_data {
-                    // Gate new confirmed targets on a successful pass. Dataset import precedes
-                    // publication on the upstream; a concurrent lexical insertion is caught next pass.
-                    if let Err(error) = committed_data::sync_available(&self.backend, &self.client).await {
-                        tracing::warn!("Committed-data replication failed; retaining previous target: {error:#}");
-                        return Ok(highest_known_block);
-                    }
-                }
                 tracing::debug!("Probe got header {header:?}");
                 Ok(Some(header))
             }

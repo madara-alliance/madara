@@ -28,6 +28,14 @@ impl MadaraStorageRead for RocksDBStorage {
         self.read_committed_data_witness(root, index)
     }
 
+    fn get_committed_data_witnesses(
+        &self,
+        root: Felt,
+        keys: &[Felt],
+    ) -> Result<Vec<blockifier::execution::syscalls::committed_data::CommittedDataWitness>> {
+        self.read_committed_data_witnesses(root, keys)
+    }
+
     fn get_committed_data_batch(
         &self,
         root: Felt,

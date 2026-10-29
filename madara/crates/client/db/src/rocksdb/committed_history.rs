@@ -12,6 +12,7 @@ mod measurement;
 #[cfg(test)]
 mod tests;
 use archive::{history_chain, reconstruct};
+pub(super) use archive::{reusable_root, values as historical_values};
 #[cfg(test)]
 use archive::{ValueHistory, HISTORY};
 

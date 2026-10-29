@@ -314,6 +314,10 @@ impl MadaraStorageWrite for RocksDBStorage {
     fn store_recovery_record(&self, record: &crate::committed_data_recovery::RecoveryRecord) -> Result<String> {
         self.inner.store_recovery_record(record)
     }
+    fn restore_recovery_manifest(&self, manifest: &crate::committed_data_recovery::RecoveryManifest) -> Result<String> {
+        self.inner.restore_recovery_manifest(manifest)
+    }
+
     fn mark_recovery_exported(&self, id: &str) -> Result<()> {
         self.inner.mark_recovery_exported(id)
     }
