@@ -1,6 +1,7 @@
 #![allow(clippy::declare_interior_mutable_const)]
 #![allow(clippy::borrow_interior_mutable_const)]
 
+use super::http_connections::HttpConnections;
 use super::metrics::RpcMetrics;
 use super::middleware::{Metrics, RpcMiddlewareLayerMetrics};
 use super::tracked_requests::TrackedRpcRequests;
@@ -15,7 +16,7 @@ use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio_util::{sync::CancellationToken, task::TaskTracker};
+use tokio_util::task::TaskTracker;
 use tower::Service;
 
 #[allow(non_upper_case_globals)]
@@ -117,13 +118,11 @@ pub async fn start_server(
     let ctx1 = ctx.clone();
     let requests = TaskTracker::new();
     let admitted_requests = requests.clone();
-    let http_stop = CancellationToken::new();
-    let connections_stop = http_stop.clone();
+    let connections = HttpConnections::default();
 
     let make_service = hyper::service::make_service_fn(move |_| {
         let cfg = cfg.clone();
         let requests = admitted_requests.clone();
-        let http_stop = connections_stop.clone();
         let ctx1 = ctx1.clone();
         let starknet = Arc::clone(&starknet);
 
@@ -134,7 +133,6 @@ pub async fn start_server(
             Ok::<_, Infallible>(hyper::service::service_fn(move |req| {
                 let PerConnection { service_builder, metrics, stop_handle, methods } = cfg.clone();
                 let ctx1 = ctx1.clone();
-                let http_stop = http_stop.clone();
                 let starknet = Arc::clone(&starknet);
 
                 let is_websocket = jsonrpsee::server::ws::is_upgrade_request(&req);
@@ -189,7 +187,7 @@ pub async fn start_server(
                             });
                         }
 
-                        finish_http_request(&http_stop, svc.call(req)).await
+                        svc.call(req).await
                     }
                 }
             }))
@@ -198,6 +196,7 @@ pub async fn start_server(
 
     let server = hyper::Server::from_tcp(listener.into_std()?)
         .with_context(|| format!("Creating hyper server at: {addr}"))?
+        .executor(connections.clone())
         .serve(make_service);
 
     tracing::info!(
@@ -228,34 +227,18 @@ pub async fn start_server(
         .with_graceful_shutdown(async {
             ctx.run_until_cancelled(stop_handle.shutdown()).await;
             requests.close();
-            http_stop.cancel();
+            connections.close();
             let _ = server_handle.stop(); // Stop existing WebSocket intake too.
         })
         .await;
     // Also drain on a listener error. A dropped HTTP/WS client must not detach a DB writer
     // across service stop/revert, including trace calls that lazily rebuild proof indexes.
     requests.close();
-    http_stop.cancel();
+    connections.close();
     let _ = server_handle.stop();
+    connections.wait().await;
     requests.wait().await;
     result.context("Running rpc server")
-}
-
-/// Cancel transport work (including unfinished request bodies) on stop. Admitted RPC methods
-/// have independent owners in `TrackedRpcRequests` and are drained separately by the server.
-async fn finish_http_request<E>(
-    stop: &CancellationToken,
-    response: impl std::future::Future<Output = Result<hyper::Response<hyper::Body>, E>>,
-) -> Result<hyper::Response<hyper::Body>, E> {
-    tokio::select! {
-        biased;
-        _ = stop.cancelled() => {
-            let mut response = hyper::Response::new(hyper::Body::from("RPC server is stopping"));
-            *response.status_mut() = hyper::StatusCode::SERVICE_UNAVAILABLE;
-            Ok(response)
-        }
-        response = response => response,
-    }
 }
 
 // Copied from https://github.com/paritytech/polkadot-sdk/blob/a0aefc6b233ace0a82a8631d67b6854e6aeb014b/substrate/client/rpc-servers/src/utils.rs#L192
@@ -346,52 +329,4 @@ pub(crate) fn format_cors(maybe_cors: Option<&Vec<String>>) -> String {
 }
 pub(crate) fn format_rpc_versions(versions: &[RpcVersion]) -> String {
     format!("{:?}", versions.iter().map(|v| format!("/rpc/v{v}/")).collect::<Vec<_>>())
-}
-
-#[cfg(test)]
-mod shutdown_tests {
-    use super::*;
-    use tokio::io::AsyncWriteExt;
-
-    /// A client leaves a declared POST body incomplete. Shutdown must close it without
-    /// waiting for the client to send more bytes; no RPC method has been admitted yet.
-    #[tokio::test]
-    async fn rpc_shutdown_closes_unfinished_http_uploads() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        listener.set_nonblocking(true).unwrap();
-        let address = listener.local_addr().unwrap();
-        let stop = CancellationToken::new();
-        let connections = stop.clone();
-        let (started, mut ready) = tokio::sync::mpsc::unbounded_channel();
-        let make_service = hyper::service::make_service_fn(move |_| {
-            let stop = connections.clone();
-            let started = started.clone();
-            async move {
-                Ok::<_, Infallible>(hyper::service::service_fn(move |request: hyper::Request<hyper::Body>| {
-                    let stop = stop.clone();
-                    let started = started.clone();
-                    async move {
-                        finish_http_request(&stop, async move {
-                            started.send(()).unwrap();
-                            hyper::body::to_bytes(request.into_body()).await?;
-                            Ok::<_, hyper::Error>(hyper::Response::new(hyper::Body::empty()))
-                        })
-                        .await
-                    }
-                }))
-            }
-        });
-        let shutdown = stop.clone();
-        let server = hyper::Server::from_tcp(listener)
-            .unwrap()
-            .serve(make_service)
-            .with_graceful_shutdown(async move { shutdown.cancelled().await });
-        let server = tokio::spawn(server);
-        let mut client = tokio::net::TcpStream::connect(address).await.unwrap();
-        client.write_all(b"POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 10000\r\n\r\n{").await.unwrap();
-        ready.recv().await.unwrap();
-        stop.cancel();
-        tokio::time::timeout(Duration::from_secs(1), server).await.unwrap().unwrap().unwrap();
-        drop(client);
-    }
 }
