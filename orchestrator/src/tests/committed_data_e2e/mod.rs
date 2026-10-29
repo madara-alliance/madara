@@ -344,6 +344,35 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
         let replicated = rpc(&replica.rpc, "starknet_traceTransaction", json!([hash])).await?;
         ensure!(comparable_trace(original) == comparable_trace(replicated), "replicated historical trace differs");
     }
+    // SIGTERM must drain the real services and checkpoint canonical chain state. Killing the
+    // restarted nodes then checks process-crash recovery without assuming unflushed chain blocks
+    // are durable (the committed-data WAL has a stronger, independent acknowledgement contract).
+    for abrupt in [false, true] {
+        source.restart(abrupt).await?;
+        replica.restart(abrupt).await?;
+        replica.wait_for_block(target).await?;
+        replica.wait_for_datasets(&[tree.root(), deep.root()]).await?;
+        for observation in &observations {
+            let hash = &observation["receipt"]["transaction_hash"];
+            let expected = comparable_trace(observation["trace"].clone());
+            for node in [&source, &replica] {
+                let actual = rpc(&node.rpc, "starknet_traceTransaction", json!([hash])).await?;
+                ensure!(
+                    comparable_trace(actual) == expected,
+                    "historical trace changed after restart (abrupt={abrupt})"
+                );
+                ensure!(
+                    rpc(&node.rpc, "starknet_getTransactionReceipt", json!([hash])).await? == observation["receipt"],
+                    "historical receipt changed after restart"
+                );
+            }
+        }
+        save(
+            if abrupt { "sigkill_restart" } else { "sigterm_restart" },
+            &json!({"source_and_fullnode_traces_equal":true,"transactions_checked_per_node":observations.len(),
+                "source":source.footprint()?,"fullnode":replica.footprint()?}),
+        )?;
+    }
     save("fullnode_after_trace", &replica.footprint()?)?;
     let mut legacy_reader = Node::start_with_data(Some(&source), false).await?;
     legacy_reader.wait_for_block(target).await?;

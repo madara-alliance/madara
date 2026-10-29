@@ -244,6 +244,28 @@ impl Node {
             "rss_kib": kib("VmRSS:"), "peak_rss_kib": kib("VmHWM:")}))
     }
 
+    /// Gracefully checkpoint first, then exercise abrupt death on the same durable chain.
+    /// Only signal the process owned by this fixture; never kill a node discovered by port/name.
+    pub async fn restart(&mut self, abrupt: bool) -> Result<()> {
+        if abrupt {
+            self.child.kill()?;
+        } else {
+            ensure!(
+                Command::new("kill").args(["-TERM", &self.child.id().to_string()]).status()?.success(),
+                "Could not signal owned Madara process"
+            );
+        }
+        for _ in 0..120 {
+            if let Some(status) = self.child.try_wait()? {
+                ensure!(abrupt || status.success(), "Graceful Madara shutdown failed: {status}");
+                self.child = Self::spawn(&self.binary, &self.args, self.directory.path())?;
+                return self.ready().await;
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+        anyhow::bail!("Madara shutdown deadline exceeded")
+    }
+
     pub async fn restart_after_revert(&mut self, block_hash: Value) -> Result<()> {
         // The admin call stops services, rolls back chain state, then exits. A connection close
         // can race its JSON reply, so the postcondition is checked after waiting and reopening.
