@@ -751,10 +751,13 @@ mod tests {
 
     /// Delayed confirmed-head callbacks must not relabel the last trie in a sync batch.
     #[rstest::rstest]
-    #[case::every_block(1)]
-    #[case::sparse_snapshots(4)]
-    #[case::head_only(0)]
-    fn historical_trie_snapshots_match_each_block_of_a_sync_batch(#[case] interval: u64) {
+    #[case::every_block(1, 10)]
+    #[case::sparse_snapshots(4, 10)]
+    #[case::head_only(4, 0)]
+    fn historical_trie_snapshots_match_each_block_of_a_sync_batch(
+        #[case] interval: u64,
+        #[case] retained_snapshots: usize,
+    ) {
         use crate::MadaraStorageWrite;
         use mp_chain_config::StarknetVersion;
         use mp_state_update::{DeclaredClassItem, StateDiff};
@@ -763,7 +766,11 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let storage = RocksDBStorage::open(
             directory.path(),
-            RocksDBConfig { snapshot_interval: interval, max_kept_snapshots: Some(10), ..Default::default() },
+            RocksDBConfig {
+                snapshot_interval: interval,
+                max_kept_snapshots: Some(retained_snapshots),
+                ..Default::default()
+            },
         )
         .unwrap();
         let diffs: Vec<_> = (0..=5u64)
