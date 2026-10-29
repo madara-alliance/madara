@@ -88,8 +88,8 @@ pub trait MadaraWriteRpcApi {
         l1_handler_message: L1HandlerTransactionWithFee,
     ) -> RpcResult<L1HandlerTransactionResult>;
 
-    /// Clears a proof-size quarantine so the pending L1 message can be retried after
-    /// restarting the settlement-client service. Requires unsafe RPC methods.
+    /// Clears a proof-size quarantine and rewinds the active L1-message consumer for retry.
+    /// Requires block production and unsafe RPC methods.
     #[method(name = "retryL1Message")]
     async fn retry_l1_message(&self, nonce: u64) -> RpcResult<Option<String>>;
 

@@ -175,6 +175,7 @@ pub struct BlockProductionTask {
     l1_client: Arc<dyn SettlementClient>,
     bypass_tx_input: Option<mpsc::Receiver<ValidatedTransaction>>,
     mempool_intake_rx: watch::Receiver<MempoolIntakeMode>,
+    l1_retry_rx: watch::Receiver<Option<u64>>,
     no_charge_fee: bool,
     discard_preconfirmed_on_startup: bool,
     replay_mode_enabled: bool,
@@ -210,6 +211,7 @@ impl BlockProductionTask {
         let (bypass_input_sender, bypass_tx_input) = mpsc::channel(1024);
         let initial_intake = if mempool_paused { MempoolIntakeMode::Paused } else { MempoolIntakeMode::Running };
         let (mempool_intake_tx, mempool_intake_rx) = watch::channel(initial_intake);
+        let (l1_retry_tx, l1_retry_rx) = watch::channel(None);
         Self {
             backend: backend.clone(),
             mempool,
@@ -221,6 +223,7 @@ impl BlockProductionTask {
                 sender,
                 bypass_input_sender,
                 mempool_intake_tx.clone(),
+                l1_retry_tx,
                 no_charge_fee,
             ),
             state_notifications: None,
@@ -228,6 +231,7 @@ impl BlockProductionTask {
             l1_client,
             bypass_tx_input: Some(bypass_tx_input),
             mempool_intake_rx,
+            l1_retry_rx,
             no_charge_fee,
             discard_preconfirmed_on_startup,
             replay_mode_enabled: false,

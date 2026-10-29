@@ -3,13 +3,14 @@ use anyhow::Context;
 use mc_db::MadaraBackend;
 use mp_transactions::L1HandlerTransactionWithFee;
 use std::sync::Arc;
-use tokio::sync::Notify;
+use tokio::sync::{watch, Notify};
 
 pub struct MessagesToL2Consumer {
     next_nonce: u64,
     backend: Arc<MadaraBackend>,
     l1_read: Arc<dyn SettlementLayerProvider>,
     notify: Arc<Notify>,
+    retry_rx: watch::Receiver<Option<u64>>,
     unsafe_skip_l1_message_consumed_check: bool,
 }
 
@@ -18,9 +19,10 @@ impl MessagesToL2Consumer {
         backend: Arc<MadaraBackend>,
         l1_read: Arc<dyn SettlementLayerProvider>,
         notify: Arc<Notify>,
+        retry_rx: watch::Receiver<Option<u64>>,
         unsafe_skip_l1_message_consumed_check: bool,
     ) -> Self {
-        Self { next_nonce: 0, backend, l1_read, notify, unsafe_skip_l1_message_consumed_check }
+        Self { next_nonce: 0, backend, l1_read, notify, retry_rx, unsafe_skip_l1_message_consumed_check }
     }
 
     pub async fn consume_next_or_wait(&mut self) -> anyhow::Result<L1HandlerTransactionWithFee> {
@@ -34,6 +36,14 @@ impl MessagesToL2Consumer {
         tokio::pin!(permit);
         let mut wait = false;
         loop {
+            // Apply retries before scanning the DB. This prevents a later pending message from
+            // overtaking the retried nonce when the operator sends the retry between polls.
+            if self.retry_rx.has_changed().unwrap_or(false) {
+                if let Some(nonce) = *self.retry_rx.borrow_and_update() {
+                    self.next_nonce = self.next_nonce.min(nonce);
+                }
+            }
+
             // Register us to be notified. First loop doesn't subscribe, optimistic query.
             if wait {
                 permit.as_mut().enable();
@@ -79,8 +89,15 @@ impl MessagesToL2Consumer {
             // We have no more messages in db.
 
             if wait {
-                permit.as_mut().await; // Wait until we're notified.
-                permit.set(self.notify.notified());
+                tokio::select! {
+                    _ = permit.as_mut() => permit.set(self.notify.notified()),
+                    changed = self.retry_rx.changed() => {
+                        changed.context("L1 message retry channel closed")?;
+                        if let Some(nonce) = *self.retry_rx.borrow_and_update() {
+                            self.next_nonce = self.next_nonce.min(nonce);
+                        }
+                    }
+                }
             }
             wait = true;
         }
@@ -100,7 +117,7 @@ mod tests {
     use mp_convert::Felt;
     use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee};
     use std::sync::Arc;
-    use tokio::sync::Notify;
+    use tokio::sync::{watch, Notify};
 
     fn l1_handler_tx(nonce: u64) -> L1HandlerTransactionWithFee {
         L1HandlerTransactionWithFee {
@@ -157,7 +174,8 @@ mod tests {
         backend.write_pending_message_to_l2(&l1_handler_tx(103)).unwrap();
         mock_l1_handler_tx(&mut mock, 103, true, false);
 
-        let mut consumer = MessagesToL2Consumer::new(backend.clone(), Arc::new(mock), notify, false);
+        let (_retry_tx, retry_rx) = watch::channel(None);
+        let mut consumer = MessagesToL2Consumer::new(backend.clone(), Arc::new(mock), notify, retry_rx, false);
 
         assert_eq!(consumer.consume_next_or_wait().now_or_never().unwrap().unwrap(), l1_handler_tx(4));
         assert_eq!(consumer.consume_next_or_wait().now_or_never().unwrap().unwrap(), l1_handler_tx(5));
@@ -176,7 +194,8 @@ mod tests {
         mock_l1_handler_tx(&mut mock, 4, true, false);
         mock_l1_handler_tx(&mut mock, 5, true, false);
 
-        let mut consumer = MessagesToL2Consumer::new(backend.clone(), Arc::new(mock), notify.clone(), false);
+        let (_retry_tx, retry_rx) = watch::channel(None);
+        let mut consumer = MessagesToL2Consumer::new(backend.clone(), Arc::new(mock), notify.clone(), retry_rx, false);
 
         // first: test empty, then write.
         {
@@ -221,8 +240,13 @@ mod tests {
             let mut mock = MockSettlementLayerProvider::new();
             mock.expect_get_client_type().returning(|| ClientType::Starknet);
             mock_l1_handler_tx(&mut mock, 4, true, false);
-            let mut consumer =
-                MessagesToL2Consumer::new(backend.clone(), Arc::new(mock), Arc::new(Notify::new()), false);
+            let mut consumer = MessagesToL2Consumer::new(
+                backend.clone(),
+                Arc::new(mock),
+                Arc::new(Notify::new()),
+                watch::channel(None).1,
+                false,
+            );
 
             assert_eq!(consumer.consume_next_or_wait().now_or_never().unwrap().unwrap(), l1_handler_tx(4));
         }
@@ -233,21 +257,27 @@ mod tests {
         let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
         backend.write_pending_message_to_l2(&l1_handler_tx(4)).unwrap();
         backend.write_pending_message_to_l2(&l1_handler_tx(5)).unwrap();
+        backend.write_pending_message_to_l2(&l1_handler_tx(6)).unwrap();
         backend.write_l1_message_proof_rejection(4, "too large for proof").unwrap();
 
         let mut mock = MockSettlementLayerProvider::new();
         mock.expect_get_client_type().returning(|| ClientType::Starknet);
         mock_l1_handler_tx(&mut mock, 5, true, false);
-        let mut consumer = MessagesToL2Consumer::new(backend.clone(), Arc::new(mock), Arc::new(Notify::new()), false);
+        mock_l1_handler_tx(&mut mock, 4, true, false);
+        mock_l1_handler_tx(&mut mock, 6, true, false);
+        let (retry_tx, retry_rx) = watch::channel(None);
+        let mut consumer =
+            MessagesToL2Consumer::new(backend.clone(), Arc::new(mock), Arc::new(Notify::new()), retry_rx, false);
         assert_eq!(consumer.consume_next_or_wait().now_or_never().unwrap().unwrap(), l1_handler_tx(5));
+        // Model the normal block-confirmation acknowledgement before the operator retry.
+        // Rewinding the live cursor must not redeliver already-consumed work.
+        backend.write_l1_handler_txn_hash_by_nonce(5, &Felt::ONE).unwrap();
         assert!(backend.get_pending_message_to_l2(4).unwrap().is_some());
         assert!(backend.get_l1_handler_txn_hash_by_nonce(4).unwrap().is_none());
 
         backend.clear_l1_message_proof_rejection(4).unwrap();
-        let mut retry_mock = MockSettlementLayerProvider::new();
-        retry_mock.expect_get_client_type().returning(|| ClientType::Starknet);
-        mock_l1_handler_tx(&mut retry_mock, 4, true, false);
-        let mut restarted = MessagesToL2Consumer::new(backend, Arc::new(retry_mock), Arc::new(Notify::new()), false);
-        assert_eq!(restarted.consume_next_or_wait().now_or_never().unwrap().unwrap(), l1_handler_tx(4));
+        retry_tx.send(Some(4)).unwrap();
+        assert_eq!(consumer.consume_next_or_wait().now_or_never().unwrap().unwrap(), l1_handler_tx(4));
+        assert_eq!(consumer.consume_next_or_wait().now_or_never().unwrap().unwrap(), l1_handler_tx(6));
     }
 }

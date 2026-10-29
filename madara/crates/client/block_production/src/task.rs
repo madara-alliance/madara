@@ -154,6 +154,7 @@ impl BlockProductionTask {
                 batch_sender,
                 bypass_tx_input,
                 self.mempool_intake_rx.clone(),
+                self.l1_retry_rx.clone(),
             )
             .run(),
         ))
