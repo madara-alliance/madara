@@ -460,6 +460,9 @@ impl RocksDBStorage {
                 format!("Writing checkpoint for confirmed block #{confirmed_tip} during parallel merkle reconciliation")
             })?;
         }
+        // Startup snapshots precede repair. Replace them explicitly even when the
+        // confirmed height is unchanged; ordinary head publication is idempotent.
+        self.snapshots.rewind_to(confirmed_tip);
         self.on_new_confirmed_head(confirmed_tip).with_context(|| {
             format!("Refreshing snapshot inventory for confirmed block #{confirmed_tip} during parallel merkle reconciliation")
         })?;

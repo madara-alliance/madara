@@ -166,6 +166,14 @@ impl Snapshots {
         let mut inner = self.inner.write().expect("Poisoned lock");
         inner.exact.retain(|saved_block_n, _| *saved_block_n <= block_n);
         inner.historical.retain(|saved_block_n, _| *saved_block_n <= block_n);
+        // Same-height repair can replace the target's materialized state. Neither
+        // interval lookup nor a pinned root base may retain its pre-repair snapshot.
+        if let Some(saved) = inner.exact.get_mut(&block_n) {
+            *saved = Arc::clone(&snapshot);
+        }
+        if let Some(saved) = inner.historical.get_mut(&block_n) {
+            *saved = Arc::clone(&snapshot);
+        }
         inner.head = snapshot;
         inner.head_block_n = Some(block_n);
         tracing::debug!(
@@ -430,8 +438,14 @@ mod tests {
         storage.snapshots.set_new_head(5);
         storage.snapshots.pin_head(5);
 
+        // Simulate repair after snapshots were already captured: an interval
+        // snapshot at the target must be replaced alongside the live head.
+        let column = storage.inner.get_column(crate::rocksdb::meta::META_COLUMN);
+        storage.inner.db.put_cf(&column, b"snapshot_repair_test", b"repaired").unwrap();
         storage.snapshots.rewind_to(4);
         storage.snapshots.pin_head(4);
+        let (_, historical) = storage.snapshots.get_closest(4);
+        assert_eq!(historical.get_cf(&column, b"snapshot_repair_test").unwrap(), Some(b"repaired".to_vec()));
 
         assert!(storage.snapshots.get_exact(Some(5)).is_none(), "Future exact snapshot should be pruned");
         assert!(storage.snapshots.get_exact(Some(4)).is_some(), "Target exact snapshot should remain available");

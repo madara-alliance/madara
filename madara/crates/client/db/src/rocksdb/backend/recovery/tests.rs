@@ -214,6 +214,29 @@ fn restart_resumes_confirmed_recovery_after_process_exit(
         assert_eq!(backend.latest_confirmed_block_n(), Some(6));
         let expected = backend.db.get_block_info(6).unwrap().unwrap().header.global_state_root;
         assert_eq!(backend.db.get_state_root_hash().unwrap(), expected);
+        // Live roots alone miss stale snapshots captured before startup repair.
+        // Exercise historical proof reads and both parallel-root base selectors.
+        use bitvec::{order::Msb0, view::BitView};
+        let key = Felt::ZERO.to_bytes_be();
+        let key = &key.view_bits::<Msb0>()[5..];
+        let address = Felt::from(106u64).to_bytes_be();
+        let mut live = backend.db.contract_storage_trie();
+        let mut historical = live.get_transactional_state(BasicId::new(6), live.get_config()).unwrap().unwrap();
+        assert_eq!(historical.get(&address, key).unwrap(), Some(Felt::from(106u64)));
+        assert_eq!(
+            historical.get_multi_proof(&address, [key]).unwrap().0,
+            live.get_multi_proof(&address, [key]).unwrap().0
+        );
+        let version = backend.db.get_block_info(6).unwrap().unwrap().header.protocol_version;
+        let next = backend.db.compute_root_from_latest_snapshot(7, &StateDiff::default(), version, false).unwrap();
+        assert_eq!(next.state_root, expected, "head snapshot after {phase}, WAL {wal}");
+        let (floor, snapshot) = backend.db.snapshots.get_durable_floor(Some(6)).unwrap();
+        assert_eq!(floor, Some(6));
+        let next = backend
+            .db
+            .compute_root_from_selected_snapshot(floor, snapshot, 7, &StateDiff::default(), version, false, false)
+            .unwrap();
+        assert_eq!(next.state_root, expected, "durable snapshot after {phase}, WAL {wal}");
         assert_eq!(backend.get_latest_applied_trie_update().unwrap(), Some(6));
         assert_eq!(backend.get_parallel_merkle_latest_checkpoint().unwrap(), Some(6));
         assert_eq!(backend.db.inner.get_confirmed_trie_recovery().unwrap(), None);
