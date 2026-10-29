@@ -6650,7 +6650,7 @@ dependencies = [
 [[package]]
 name = "generate-pie"
 version = "0.2.0"
-source = "git+https://github.com/madara-alliance/snos.git?rev=2b7c054741018aa4fe76a9a60edf910c83d73e39#2b7c054741018aa4fe76a9a60edf910c83d73e39"
+source = "git+https://github.com/madara-alliance/snos.git?rev=827de55c6d06ac3ef9b012f1cc7831f9a858dc37#827de55c6d06ac3ef9b012f1cc7831f9a858dc37"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -12096,7 +12096,7 @@ checksum = "afab94fb28594581f62d981211a9a4d53cc8130bbcbbb89a0440d9b8e81a7746"
 [[package]]
 name = "rpc-client"
 version = "0.2.0"
-source = "git+https://github.com/madara-alliance/snos.git?rev=2b7c054741018aa4fe76a9a60edf910c83d73e39#2b7c054741018aa4fe76a9a60edf910c83d73e39"
+source = "git+https://github.com/madara-alliance/snos.git?rev=827de55c6d06ac3ef9b012f1cc7831f9a858dc37#827de55c6d06ac3ef9b012f1cc7831f9a858dc37"
 dependencies = [
  "anyhow",
  "bitvec",
@@ -13345,7 +13345,7 @@ dependencies = [
 [[package]]
 name = "starknet-os-types"
 version = "0.2.0"
-source = "git+https://github.com/madara-alliance/snos.git?rev=2b7c054741018aa4fe76a9a60edf910c83d73e39#2b7c054741018aa4fe76a9a60edf910c83d73e39"
+source = "git+https://github.com/madara-alliance/snos.git?rev=827de55c6d06ac3ef9b012f1cc7831f9a858dc37#827de55c6d06ac3ef9b012f1cc7831f9a858dc37"
 dependencies = [
  "cairo-lang-starknet-classes",
  "cairo-vm",

@@ -4,7 +4,8 @@ use crate::{
     helpers::{create_json_response, get_params_from_request},
 };
 use blockifier::execution::syscalls::committed_data::MAX_COMMITTED_DATA_VALUES;
-use hyper::{body::Incoming, Request, Response, StatusCode};
+use http_body_util::{BodyExt, Limited};
+use hyper::{body::Incoming, Method, Request, Response, StatusCode};
 use mc_db::{MadaraBackend, MadaraStorageRead};
 use mp_gateway::{
     committed_data::{CommittedDataPage, CommittedDataVersion, VALUES_PER_PAGE},
@@ -113,15 +114,32 @@ pub(crate) async fn get_witnesses(
     reads: Arc<Semaphore>,
 ) -> Result<Response<String>, GatewayError> {
     use blockifier::execution::syscalls::committed_data::MAX_COMMITTED_DATA_READ_KEYS;
-    let params = get_params_from_request(&req);
-    let root = params.get("root").ok_or_else(invalid).and_then(|value| Felt::from_hex(value).map_err(|_| invalid()))?;
-    let encoded = params.get("keys").ok_or_else(invalid)?;
-    // 0x + 64 hex digits + comma per key; reject before allocating the decoded list.
-    if encoded.len() > MAX_COMMITTED_DATA_READ_KEYS * 67 {
-        return Err(invalid());
-    }
-    let keys =
-        encoded.split(',').map(|key| Felt::from_hex(key).map_err(|_| invalid())).collect::<Result<Vec<_>, _>>()?;
+    // POST avoids HTTP URI limits for 1,024 wide keys. GET remains compatible with older callers.
+    // Each JSON felt needs at most 68 bytes plus a comma; allow space for the root and field names.
+    const MAX_BATCH_BODY_BYTES: usize = MAX_COMMITTED_DATA_READ_KEYS * 70 + 256;
+    let (root, keys) = if req.method() == Method::POST {
+        #[derive(serde::Deserialize)]
+        struct WitnessQuery {
+            root: Felt,
+            keys: Vec<Felt>,
+        }
+        let body =
+            Limited::new(req.into_body(), MAX_BATCH_BODY_BYTES).collect().await.map_err(|_| invalid())?.to_bytes();
+        let query: WitnessQuery = serde_json::from_slice(&body).map_err(|_| invalid())?;
+        (query.root, query.keys)
+    } else {
+        let params = get_params_from_request(&req);
+        let root =
+            params.get("root").ok_or_else(invalid).and_then(|value| Felt::from_hex(value).map_err(|_| invalid()))?;
+        let encoded = params.get("keys").ok_or_else(invalid)?;
+        // 0x + 64 hex digits + comma per key; reject before allocating the decoded list.
+        if encoded.len() > MAX_COMMITTED_DATA_READ_KEYS * 67 {
+            return Err(invalid());
+        }
+        let keys =
+            encoded.split(',').map(|key| Felt::from_hex(key).map_err(|_| invalid())).collect::<Result<Vec<_>, _>>()?;
+        (root, keys)
+    };
     if keys.is_empty() || keys.len() > MAX_COMMITTED_DATA_READ_KEYS {
         return Err(invalid());
     }

@@ -63,7 +63,7 @@ async fn feeder_gateway_router(
         (&Method::GET, "feeder_gateway/get_committed_data") => {
             Ok(crate::committed_data::get_page(req, backend, committed_data_reads).await.unwrap_or_else(Into::into))
         }
-        (&Method::GET, "feeder_gateway/get_committed_data_witnesses") => {
+        (&Method::GET | &Method::POST, "feeder_gateway/get_committed_data_witnesses") => {
             Ok(crate::committed_data::get_witnesses(req, backend, committed_data_reads)
                 .await
                 .unwrap_or_else(Into::into))
@@ -155,7 +155,7 @@ mod committed_data_tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn committed_data_feeder_serves_gets_and_rejects_post_and_invalid_offsets() {
+    async fn committed_data_feeder_serves_bounded_reads_and_rejects_ingestion() {
         use mc_db::MadaraStorageWrite;
         use std::io::{Read, Write};
         let backend = MadaraBackend::open_for_testing(Arc::new(mp_chain_config::ChainConfig::madara_test()));
@@ -178,7 +178,7 @@ mod committed_data_tests {
         let serving_backend = backend.clone();
         let server = tokio::spawn(async move {
             let backend = serving_backend;
-            for _ in 0..11 {
+            for _ in 0..16 {
                 let (stream, _) = listener.accept().await.unwrap();
                 let backend = backend.clone();
                 let service = hyper::service::service_fn(move |req: Request<Incoming>| {
@@ -203,17 +203,18 @@ mod committed_data_tests {
                     .unwrap();
             }
         });
-        let query = move |method: &'static str, path: String| async move {
+        let request = move |body: String, method: &'static str, path: String| async move {
             tokio::task::spawn_blocking(move || {
                 let mut stream = std::net::TcpStream::connect(addr).unwrap();
                 stream.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
-                write!(stream, "{method} /feeder_gateway/{path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n").unwrap();
+                write!(stream, "{method} /feeder_gateway/{path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\nContent-Length: {}\r\nContent-Type: application/json\r\n\r\n{}", body.len(), body).unwrap();
                 let mut response = String::new();
                 stream.read_to_string(&mut response).unwrap();
                 let (head, body) = response.split_once("\r\n\r\n").unwrap();
                 (head.to_string(), body.to_string())
             }).await.unwrap()
         };
+        let query = move |method, path| request(String::new(), method, path);
         let (head, body) = query("GET", "get_committed_data_roots".into()).await;
         assert!(head.starts_with("HTTP/1.1 200"));
         assert_eq!(serde_json::from_str::<Vec<Felt>>(&body).unwrap(), vec![root]);
@@ -268,6 +269,27 @@ mod committed_data_tests {
             .await
             .0
             .starts_with("HTTP/1.1 400"));
+        // A maximum batch of wide keys exceeds a typical URI limit but fits the bounded JSON body.
+        let keys = vec![Felt::MAX; 1024];
+        let payload = serde_json::json!({"root": root, "keys": keys}).to_string();
+        assert!(payload.len() > 64 * 1024);
+        let (head, body) = request(payload, "POST", "get_committed_data_witnesses".into()).await;
+        assert!(head.starts_with("HTTP/1.1 200"));
+        let witnesses: Vec<blockifier::execution::syscalls::committed_data::CommittedDataWitness> =
+            serde_json::from_str(&body).unwrap();
+        assert_eq!(witnesses.len(), keys.len());
+        assert!(witnesses.iter().all(|proof| proof.key == Felt::MAX && proof.value == Felt::TWO && proof.verify()));
+        for payload in [
+            serde_json::json!({"root": root, "keys": []}).to_string(),
+            serde_json::json!({"root": root, "keys": vec![Felt::ZERO; 1025]}).to_string(),
+            "{".into(),
+            " ".repeat(80 * 1024),
+        ] {
+            assert!(request(payload, "POST", "get_committed_data_witnesses".into())
+                .await
+                .0
+                .starts_with("HTTP/1.1 400"));
+        }
         server.await.unwrap();
     }
 }
