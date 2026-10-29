@@ -54,7 +54,7 @@ impl Batcher {
         out: mpsc::Sender<BatchToExecute>,
         bypass_in: mpsc::Receiver<ValidatedTransaction>,
         mempool_intake_rx: watch::Receiver<MempoolIntakeMode>,
-        l1_retry_rx: watch::Receiver<Option<u64>>,
+        l1_retry_rx: mpsc::UnboundedReceiver<u64>,
     ) -> Self {
         Self {
             mempool,

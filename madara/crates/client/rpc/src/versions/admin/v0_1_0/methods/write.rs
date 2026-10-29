@@ -369,9 +369,15 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         }
         let block_prod_handle = self.block_prod_handle.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?;
         let reason = self.backend.get_l1_message_proof_rejection(nonce).map_err(StarknetRpcApiError::from)?;
-        if reason.is_some() {
+        if let Some(reason) = reason.as_deref() {
             self.backend.clear_l1_message_proof_rejection(nonce).map_err(StarknetRpcApiError::from)?;
-            block_prod_handle.retry_l1_message(nonce).map_err(StarknetRpcApiError::from)?;
+            if let Err(error) = block_prod_handle.retry_l1_message(nonce) {
+                // Clearing quarantine and waking the live consumer form one operator action. If
+                // the consumer is gone, restore the durable rejection so the retry can be issued
+                // again after block production restarts.
+                self.backend.write_l1_message_proof_rejection(nonce, reason).map_err(StarknetRpcApiError::from)?;
+                return Err(StarknetRpcApiError::from(error).into());
+            }
         }
         Ok(reason)
     }
@@ -554,6 +560,17 @@ mod tests {
 
         assert_eq!(rpc.retry_l1_message(55).await.unwrap(), Some("too large for proof".into()));
         assert_eq!(backend.get_l1_message_proof_rejection(55).unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn retry_l1_message_restores_quarantine_when_consumer_is_closed() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        backend.write_l1_message_proof_rejection(55, "too large for proof").unwrap();
+        let (producer, rpc) = make_starknet_with_block_production(backend.clone());
+        drop(producer);
+
+        assert!(rpc.retry_l1_message(55).await.is_err());
+        assert_eq!(backend.get_l1_message_proof_rejection(55).unwrap().as_deref(), Some("too large for proof"));
     }
 
     fn make_starknet_with_mempool_and_unsafe(rpc_unsafe_enabled: bool) -> (Arc<Mempool>, Starknet) {

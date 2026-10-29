@@ -59,7 +59,7 @@ async fn next_batch_limits_each_account_and_keeps_remaining_transactions(
     let (out, _out_rx) = mpsc::channel(1);
     let (_bypass_tx, bypass_in) = mpsc::channel(1);
     let (_intake_tx, mempool_intake_rx) = watch::channel(MempoolIntakeMode::Running);
-    let (_retry_tx, l1_retry_rx) = watch::channel(None);
+    let (_retry_tx, l1_retry_rx) = mpsc::unbounded_channel();
     let l1_client = Arc::new(L1ClientMock::new());
     let mut batcher = Batcher::new(
         backend,
@@ -133,7 +133,7 @@ impl Harness {
         let (out, output) = mpsc::channel(1);
         let (bypass, bypass_in) = mpsc::channel(1);
         let (intake, intake_rx) = watch::channel(MempoolIntakeMode::Running);
-        let (_retry, retry_rx) = watch::channel(None);
+        let (_retry, retry_rx) = mpsc::unbounded_channel();
         let l1 = Arc::new(L1ClientMock::new());
         let ctx = ServiceContext::new_for_testing();
         let batcher = Batcher::new(

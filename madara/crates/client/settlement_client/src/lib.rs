@@ -107,7 +107,7 @@
 //! once consumed.
 //!
 //! ```ignore
-//! let (_retry_tx, retry_rx) = tokio::sync::watch::channel(None);
+//! let (_retry_tx, retry_rx) = tokio::sync::mpsc::unbounded_channel();
 //! let mut consumer = settlement_client.create_message_to_l2_consumer(retry_rx);
 //! while let Some(Ok(message)) = consumer.next().await {
 //!     // Include message in block
@@ -164,7 +164,7 @@ use mc_db::MadaraBackend;
 use mp_transactions::L1HandlerTransactionWithFee;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{watch, Notify};
+use tokio::sync::{mpsc, Notify};
 use url::Url;
 
 /// Base delay for reconnection attempts after stream failure.
@@ -189,7 +189,7 @@ pub trait SettlementClient: Send + Sync + 'static {
     /// Create a stream consuming pending messages to l2.
     fn create_message_to_l2_consumer(
         &self,
-        retry_rx: watch::Receiver<Option<u64>>,
+        retry_rx: mpsc::UnboundedReceiver<u64>,
     ) -> BoxStream<'static, anyhow::Result<L1HandlerTransactionWithFee>>;
 }
 
@@ -248,7 +248,7 @@ impl L1ClientImpl {
 impl SettlementClient for L1ClientImpl {
     fn create_message_to_l2_consumer(
         &self,
-        retry_rx: watch::Receiver<Option<u64>>,
+        retry_rx: mpsc::UnboundedReceiver<u64>,
     ) -> BoxStream<'static, anyhow::Result<L1HandlerTransactionWithFee>> {
         let consumer = MessagesToL2Consumer::new(
             self.backend.clone(),
@@ -267,7 +267,7 @@ pub struct L1SyncDisabledClient;
 impl SettlementClient for L1SyncDisabledClient {
     fn create_message_to_l2_consumer(
         &self,
-        _retry_rx: watch::Receiver<Option<u64>>,
+        _retry_rx: mpsc::UnboundedReceiver<u64>,
     ) -> BoxStream<'static, anyhow::Result<L1HandlerTransactionWithFee>> {
         stream::empty().boxed()
     }
@@ -284,7 +284,7 @@ pub struct L1ClientMock {
 impl SettlementClient for L1ClientMock {
     fn create_message_to_l2_consumer(
         &self,
-        _retry_rx: watch::Receiver<Option<u64>>,
+        _retry_rx: mpsc::UnboundedReceiver<u64>,
     ) -> BoxStream<'static, anyhow::Result<L1HandlerTransactionWithFee>> {
         stream::unfold(self.pending_l1_to_l2_messages.clone(), |recv| async move {
             let tx = recv.lock().await.recv().await;
