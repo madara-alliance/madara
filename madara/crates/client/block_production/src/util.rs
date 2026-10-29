@@ -278,7 +278,7 @@ pub(crate) fn create_executor_with_block_n_min_10(
     }
 
     executor
-        .seed_snos_output_shadow_from_block_state()
+        .seed_output_builtin_from_block_state()
         .context("Seeding SNOS output predictor from pre-transaction state changes")?;
 
     Ok(executor)
