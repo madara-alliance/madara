@@ -226,16 +226,13 @@ mod committed_data_tests {
         assert!(witness.verify());
         // Remove the durable proof index and exercise the actual HTTP cold transport.
         while backend.db.maintain_committed_data_history(Some(u64::MAX)).unwrap() {}
-        let (_, body) = query(
-            "GET",
-            format!(
-                "get_committed_data_witnesses?root={root:#x}&keys={:#x},{:#x},{:#x}",
-                Felt::MAX,
-                Felt::ZERO,
-                Felt::MAX
-            ),
-        )
-        .await;
+        // SNOS builds this query with URL encoding, including percent-encoded commas.
+        let mut endpoint = url::Url::parse("http://localhost/get_committed_data_witnesses").unwrap();
+        endpoint
+            .query_pairs_mut()
+            .append_pair("root", &format!("{root:#x}"))
+            .append_pair("keys", &format!("{:#x},{:#x},{:#x}", Felt::MAX, Felt::ZERO, Felt::MAX));
+        let (_, body) = query("GET", endpoint[url::Position::BeforePath..].trim_start_matches('/').into()).await;
         let witnesses: Vec<blockifier::execution::syscalls::committed_data::CommittedDataWitness> =
             serde_json::from_str(&body).unwrap();
         assert_eq!(

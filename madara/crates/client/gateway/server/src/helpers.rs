@@ -1,4 +1,4 @@
-use hyper::{body::Incoming, header, Request, Response, StatusCode};
+use hyper::{header, Request, Response, StatusCode};
 use mc_db::{MadaraBackend, MadaraBlockView, MadaraStateView};
 use mp_gateway::error::{StarknetError, StarknetErrorCode};
 use serde::Serialize;
@@ -80,17 +80,10 @@ pub(crate) fn create_response_with_json_body(status: StatusCode, body: String) -
     }
 }
 
-pub(crate) fn get_params_from_request(req: &Request<Incoming>) -> HashMap<String, String> {
-    let query = req.uri().query().unwrap_or("");
-    let params = query.split('&');
-    let mut query_params = HashMap::new();
-    for param in params {
-        let parts: Vec<&str> = param.split('=').collect();
-        if parts.len() == 2 {
-            query_params.insert(parts[0].to_string(), parts[1].to_string());
-        }
-    }
-    query_params
+/// Decode query values before route-specific validation. Standard URL builders encode
+/// delimiters such as the commas in a committed-data witness batch as `%2C`.
+pub(crate) fn get_params_from_request<B>(req: &Request<B>) -> HashMap<String, String> {
+    url::form_urlencoded::parse(req.uri().query().unwrap_or("").as_bytes()).into_owned().collect()
 }
 
 pub(crate) fn block_view_from_params(
@@ -154,4 +147,22 @@ pub(crate) fn view_from_params(
 
 pub(crate) fn include_block_params(params: &HashMap<String, String>) -> bool {
     params.get("includeBlock").is_some_and(|v| v == "true")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Match the query builder used by SNOS, while retaining raw-query compatibility.
+    #[rstest::rstest]
+    #[case("root=0x1&keys=0x2,0x3&blockNumber=latest")]
+    #[case("root=0x1&keys=0x2%2C0x3&blockNumber=latest")]
+    fn witness_batch_query_decodes_url_delimiters(#[case] query: &str) {
+        let request =
+            Request::builder().uri(format!("/feeder_gateway/get_committed_data_witnesses?{query}")).body(()).unwrap();
+        let params = get_params_from_request(&request);
+        assert_eq!(params["root"], "0x1");
+        assert_eq!(params["keys"], "0x2,0x3");
+        assert_eq!(params["blockNumber"], "latest");
+    }
 }
