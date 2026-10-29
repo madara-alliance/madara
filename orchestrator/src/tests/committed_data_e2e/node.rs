@@ -247,6 +247,12 @@ impl Node {
     /// Gracefully checkpoint first, then exercise abrupt death on the same durable chain.
     /// Only signal the process owned by this fixture; never kill a node discovered by port/name.
     pub async fn restart(&mut self, abrupt: bool) -> Result<()> {
+        self.stop(abrupt).await?;
+        self.child = Self::spawn(&self.binary, &self.args, self.directory.path())?;
+        self.ready().await
+    }
+
+    async fn stop(&mut self, abrupt: bool) -> Result<()> {
         if abrupt {
             self.child.kill()?;
         } else {
@@ -258,12 +264,71 @@ impl Node {
         for _ in 0..120 {
             if let Some(status) = self.child.try_wait()? {
                 ensure!(abrupt || status.success(), "Graceful Madara shutdown failed: {status}");
-                self.child = Self::spawn(&self.binary, &self.args, self.directory.path())?;
-                return self.ready().await;
+                return Ok(());
             }
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
         anyhow::bail!("Madara shutdown deadline exceeded")
+    }
+
+    #[cfg(feature = "with_mongodb")]
+    pub fn backup_database(&self) -> &str {
+        let index = self.args.iter().position(|arg| arg == "--external-db-database").unwrap();
+        &self.args[index + 1]
+    }
+
+    /// Destroy this fixture's entire directory after killing its process, then recover only
+    /// canonical history from a dataset-free peer. Mongo is the sole source of restored maps.
+    /// Restore runs in sequencer mode because the operator CLI requires mempool persistence.
+    #[cfg(feature = "with_mongodb")]
+    pub async fn recover_total_loss(&mut self, chain_peer: &Self, block: u64, manifests: &[String]) -> Result<()> {
+        self.stop(true).await?;
+        if let Ok(output) = std::env::var("COMMITTED_DATA_E2E_OUTPUT") {
+            std::fs::copy(self.directory.path().join("madara.log"), PathBuf::from(output).join("before-db-loss.log"))?;
+        }
+        std::fs::remove_dir_all(self.directory.path())?;
+        std::fs::create_dir(self.directory.path())?;
+        ensure!(std::fs::read_dir(self.directory.path())?.next().is_none(), "loss fixture is not empty");
+
+        let source_flags = self.args.iter().position(|arg| arg == "--devnet").context("expected source fixture")?;
+        let mut sync_args = self.args[..source_flags].to_vec();
+        sync_args.retain(|arg| arg != "--use-committed-data");
+        sync_args.extend([
+            "--full".into(),
+            "--preset".into(),
+            "devnet".into(),
+            "--gateway-url".into(),
+            chain_peer.feeder.trim_end_matches("/feeder_gateway/").into(),
+            "--madara-additional-data-sync".into(),
+        ]);
+        self.child = Self::spawn(&self.binary, &sync_args, self.directory.path())?;
+        self.ready().await?;
+        self.wait_for_block(block).await?;
+        let catalog: Value =
+            reqwest::get(format!("{}get_committed_data_roots", self.feeder)).await?.error_for_status()?.json().await?;
+        ensure!(catalog == json!([]), "canonical resync unexpectedly supplied committed data");
+        self.stop(false).await?;
+
+        // Devnet's local private-key metadata is deliberately gone. Canonical account state
+        // has been synced, so resume as a normal sequencer instead of recreating genesis.
+        self.args[source_flags] = "--sequencer".into();
+        self.args.extend(["--preset".into(), "devnet".into()]);
+        let mut restore_args = self.args.clone();
+        // Commit the first valid map, then fail on a missing manifest. Startup must remain
+        // closed, and the subsequent complete retry must reuse the partial restore safely.
+        restore_args
+            .extend(["--restore-committed-data-records".into(), format!("{},{}", manifests[0], "0".repeat(64))]);
+        self.child = Self::spawn(&self.binary, &restore_args, self.directory.path())?;
+        let failure = self.ready().await.expect_err("missing Mongo manifest must abort startup");
+        ensure!(
+            format!("{failure:#}").contains("Missing complete recovery manifest"),
+            "wrong restore failure: {failure:#}"
+        );
+        ensure!(self.child.try_wait()?.is_some_and(|status| !status.success()), "restore did not exit with failure");
+        let mut restore_args = self.args.clone();
+        restore_args.extend(["--restore-committed-data-records".into(), manifests.join(",")]);
+        self.child = Self::spawn(&self.binary, &restore_args, self.directory.path())?;
+        self.ready().await
     }
 
     pub async fn restart_after_revert(&mut self, block_hash: Value) -> Result<()> {

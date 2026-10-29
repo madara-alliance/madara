@@ -708,6 +708,47 @@ mod tests {
     use super::*;
     use crate::rocksdb::RocksDBConfig;
 
+    /// Restart discards in-memory snapshots. Historical reads must undo the durable head's
+    /// logs newest first, including deletion/reinsertion, without changing the live trie.
+    #[test]
+    fn historical_storage_proof_rewinds_head_after_reopen() {
+        use bitvec::{order::Msb0, view::BitView};
+        use starknet_types_core::felt::Felt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let config = RocksDBConfig { max_saved_trie_logs: None, ..Default::default() };
+        let identifier = Felt::ONE.to_bytes_be();
+        let key_bytes = Felt::TWO.to_bytes_be();
+        let key = &key_bytes.view_bits::<Msb0>()[5..];
+        let values = [Some(Felt::ONE), Some(Felt::TWO), None, Some(Felt::THREE)];
+        let mut expected = Vec::new();
+        {
+            let storage = RocksDBStorage::open(directory.path(), config.clone()).unwrap();
+            let mut trie = storage.contract_storage_trie();
+            for (revision, value) in values.iter().enumerate() {
+                match value {
+                    Some(value) => trie.insert(&identifier, key, value).unwrap(),
+                    None => trie.remove(&identifier, key).unwrap(),
+                }
+                trie.commit(BasicId::new(revision as u64)).unwrap();
+                expected
+                    .push((trie.root_hash(&identifier).unwrap(), trie.get_multi_proof(&identifier, [key]).unwrap()));
+            }
+            storage.inner.db.flush().unwrap();
+        }
+        let storage = RocksDBStorage::open(directory.path(), config).unwrap();
+        storage.snapshots.set_new_head(3);
+        let trie = storage.contract_storage_trie();
+        for (revision, (root, proof)) in expected.into_iter().enumerate() {
+            let mut historical =
+                trie.get_transactional_state(BasicId::new(revision as u64), trie.get_config()).unwrap().unwrap();
+            assert_eq!(historical.root_hash(&identifier).unwrap(), root, "revision {revision}");
+            assert_eq!(historical.get(&identifier, key).unwrap(), values[revision]);
+            assert_eq!(historical.get_multi_proof(&identifier, [key]).unwrap().0, proof.0);
+        }
+        assert_eq!(trie.get(&identifier, key).unwrap(), Some(Felt::THREE));
+    }
+
     #[test]
     fn trie_log_revision_valid_prefix_returns_revision() {
         let revision = 42u64.to_be_bytes();

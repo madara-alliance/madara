@@ -2,6 +2,8 @@
 //! The same historical transactions must trace on a replicating full node and remain replayable
 //! after a chain revert. Resource reports keep receipt billing separate from proof reservations.
 mod node;
+#[cfg(feature = "with_mongodb")]
+mod recovery;
 
 use anyhow::{ensure, Context, Result};
 use blockifier::execution::syscalls::committed_data::{self, CommittedDataBatchProof, CommittedDataSet};
@@ -386,6 +388,9 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
         .json()
         .await?;
     ensure!(legacy_catalog == json!([]), "feature-disabled reader unexpectedly replicated datasets");
+    drop(replica); // The recovery run must have no surviving peer with committed-data values.
+    #[cfg(feature = "with_mongodb")]
+    recovery::total_database_loss(&mut source, &legacy_reader, &[&tree, &deep], &observations, target).await?;
     let retained = &observations[0]["receipt"];
     source.restart_after_revert(retained["block_hash"].clone()).await?;
     ensure!(
