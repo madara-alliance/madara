@@ -237,26 +237,24 @@ impl RocksDBStorage {
         heads: TrieLogHeads,
         checkpoint_ceiling: u64,
     ) -> Result<()> {
-        let checkpoint_floor = self
+        let mut recovery_floor = self
             .inner
             .get_parallel_merkle_checkpoint_floor(context.target_block_n)
-            .context("Reading parallel merkle checkpoint floor before revert")?
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Missing parallel merkle checkpoint floor for revert target {} with latest checkpoint {checkpoint_ceiling}",
-                    context.target_block_n
-                )
-            })?;
+            .context("Reading parallel merkle checkpoint floor before revert")?;
         // All three tries describe one state. The last change in any trie identifies its
         // latest materialized revision; unchanged tries can have older or absent log heads.
-        let mut recovery_floor = checkpoint_floor;
+        // A serial full node promoted to sequencer may have no checkpoint at/before the
+        // target. Its retained serial revisions are equally valid materialized bases.
         for column in
             [trie::BONSAI_CONTRACT_LOG_COLUMN, trie::BONSAI_CONTRACT_STORAGE_LOG_COLUMN, trie::BONSAI_CLASS_LOG_COLUMN]
         {
             if let Some(revision) = self.inner.bonsai_log_floor(column, context.target_block_n)? {
-                recovery_floor = recovery_floor.max(revision);
+                recovery_floor = Some(recovery_floor.map_or(revision, |floor| floor.max(revision)));
             }
         }
+        let recovery_floor = recovery_floor.with_context(|| {
+            format!("No retained trie revision or checkpoint at/before revert target {}", context.target_block_n)
+        })?;
         // Serial sync can advance trie logs long after migration wrote the last checkpoint.
         // Retention follows the actual revisions, not the age of the checkpoint metadata.
         let latest_trie_revision = heads.highest().unwrap_or(checkpoint_ceiling).max(checkpoint_ceiling);

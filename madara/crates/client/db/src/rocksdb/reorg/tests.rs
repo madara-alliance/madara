@@ -236,19 +236,24 @@ fn unfinished_reorg_keeps_its_original_recovery_floor() {
     assert_eq!(backend.db.inner.get_reorg_recovery_floor().unwrap(), Some(2));
 }
 
-#[test]
-fn reorg_rejects_pruned_migration_floor_before_mutating_tries() {
+#[rstest::rstest]
+fn reorg_rejects_pruned_migration_floor_before_mutating_tries(#[values(0, 3)] first_checkpoint: u64) {
     let dir = tempfile::TempDir::new().unwrap();
     let expected_root = {
         let backend = open_backend(dir.path(), true);
         fill_chain(&backend);
-        // Migration's checkpoint survives while serial sync advances and prunes old logs.
-        backend.write_parallel_merkle_checkpoint(0).unwrap();
+        // A checkpoint label does not make pruned inverse logs available again.
+        backend.write_parallel_merkle_checkpoint(first_checkpoint).unwrap();
         let expected_root = backend.db.get_state_root_hash().unwrap();
         let target = backend.db.get_block_info(0).unwrap().unwrap();
 
         let error = backend.revert_to(&target.block_hash).unwrap_err();
-        assert!(format!("{error:#}").contains("checkpoint floor 0 predates first retained trie-log revision 2"));
+        let expected = if first_checkpoint == 0 {
+            "checkpoint floor 0 predates first retained trie-log revision 2"
+        } else {
+            "No retained trie revision or checkpoint at/before revert target 0"
+        };
+        assert!(format!("{error:#}").contains(expected), "{error:#}");
         assert_eq!(backend.latest_confirmed_block_n(), Some(3));
         assert_eq!(backend.get_latest_applied_trie_update().unwrap(), Some(3));
         assert_eq!(backend.db.get_state_root_hash().unwrap(), expected_root);
@@ -261,12 +266,17 @@ fn reorg_rejects_pruned_migration_floor_before_mutating_tries() {
 }
 
 #[rstest::rstest]
-fn recent_reorg_uses_retained_serial_revision_after_migration(#[values(true, false)] wal: bool) {
+fn recent_reorg_uses_retained_serial_revision_after_mode_switch(
+    #[values(true, false)] wal: bool,
+    #[values(0, 3)] first_checkpoint: u64,
+) {
     let dir = tempfile::TempDir::new().unwrap();
     let expected_root = {
         let backend = open_backend(dir.path(), wal);
         fill_chain(&backend);
-        backend.write_parallel_merkle_checkpoint(0).unwrap();
+        // A migrated database can have an early checkpoint; a serial full node promoted
+        // to sequencer can start checkpointing strictly after the requested revert target.
+        backend.write_parallel_merkle_checkpoint(first_checkpoint).unwrap();
         let target = backend.db.get_block_info(2).unwrap().unwrap();
         backend.revert_to(&target.block_hash).unwrap();
         assert_eq!(backend.get_parallel_merkle_latest_checkpoint().unwrap(), Some(2));

@@ -453,7 +453,7 @@ fn revert_floor_replay_rewinds_and_reanchors_checkpoint_metadata() {
 }
 
 #[test]
-fn revert_errors_when_latest_checkpoint_exists_but_no_floor_covers_target() {
+fn revert_errors_when_no_materialized_revision_covers_target() {
     let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
 
     let mut block_hashes = Vec::new();
@@ -464,12 +464,12 @@ fn revert_errors_when_latest_checkpoint_exists_but_no_floor_covers_target() {
     backend.write_parallel_merkle_checkpoint(4).expect("checkpoint 4");
     backend.write_parallel_merkle_checkpoint(5).expect("checkpoint 5");
 
-    let err =
-        backend.revert_to(&block_hashes[3]).expect_err("revert should fail when no checkpoint floor covers the target");
+    // These empty fixture blocks have neither an earlier checkpoint nor a trie-log revision.
+    // A missing recovery base must still fail before any checkpoint or canonical head changes.
+    let err = backend.revert_to(&block_hashes[3]).expect_err("revert requires a retained materialized revision");
 
     assert!(
-        err.to_string()
-            .contains("Missing parallel merkle checkpoint floor for revert target 3 with latest checkpoint 5"),
+        err.to_string().contains("No retained trie revision or checkpoint at/before revert target 3"),
         "unexpected error: {err:#}"
     );
     assert_eq!(backend.get_parallel_merkle_latest_checkpoint().expect("latest checkpoint"), Some(5));
