@@ -3,6 +3,7 @@
 
 use super::metrics::RpcMetrics;
 use super::middleware::{Metrics, RpcMiddlewareLayerMetrics};
+use super::tracked_requests::TrackedRpcRequests;
 use crate::service::rpc::middleware::RpcMiddlewareServiceVersion;
 use anyhow::Context;
 use mc_rpc::versions::user::v0_7_1::methods::read::syncing::syncing;
@@ -14,6 +15,7 @@ use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio_util::task::TaskTracker;
 use tower::Service;
 
 #[allow(non_upper_case_globals)]
@@ -60,6 +62,7 @@ pub async fn start_server(
     config: ServerConfig,
     mut ctx: ServiceContext,
     stop_handle: jsonrpsee::server::StopHandle,
+    server_handle: jsonrpsee::server::ServerHandle,
     starknet: Arc<Starknet>,
 ) -> anyhow::Result<()> {
     let ServerConfig {
@@ -112,9 +115,12 @@ pub async fn start_server(
         service_builder: builder.to_service_builder(),
     };
     let ctx1 = ctx.clone();
+    let requests = TaskTracker::new();
+    let admitted_requests = requests.clone();
 
     let make_service = hyper::service::make_service_fn(move |_| {
         let cfg = cfg.clone();
+        let requests = admitted_requests.clone();
         let ctx1 = ctx1.clone();
         let starknet = Arc::clone(&starknet);
 
@@ -132,7 +138,9 @@ pub async fn start_server(
                 let path = req.uri().path().to_string();
                 let metrics_layer = RpcMiddlewareLayerMetrics::new(Metrics::new(metrics, transport_label));
 
+                let requests = requests.clone();
                 let rpc_middleware = jsonrpsee::server::RpcServiceBuilder::new()
+                    .layer_fn(move |service| TrackedRpcRequests::new(service, requests.clone()))
                     .layer_fn(move |service| {
                         RpcMiddlewareServiceVersion::new(service, path.clone(), rpc_version_default)
                     })
@@ -212,12 +220,19 @@ pub async fn start_server(
         format_rpc_versions(&supported_versions),
     );
 
-    server
+    let result = server
         .with_graceful_shutdown(async {
             ctx.run_until_cancelled(stop_handle.shutdown()).await;
+            requests.close();
+            let _ = server_handle.stop(); // Stop existing WebSocket intake too.
         })
-        .await
-        .context("Running rpc server")
+        .await;
+    // Also drain on a listener error. A dropped HTTP/WS client must not detach a DB writer
+    // across service stop/revert, including trace calls that lazily rebuild proof indexes.
+    requests.close();
+    let _ = server_handle.stop();
+    requests.wait().await;
+    result.context("Running rpc server")
 }
 
 // Copied from https://github.com/paritytech/polkadot-sdk/blob/a0aefc6b233ace0a82a8631d67b6854e6aeb014b/substrate/client/rpc-servers/src/utils.rs#L192

@@ -18,6 +18,7 @@ use std::sync::Arc;
 mod metrics;
 mod middleware;
 mod server;
+mod tracked_requests;
 
 #[derive(Clone)]
 pub enum RpcType {
@@ -118,14 +119,14 @@ impl Service for RpcService {
 
         let (stop_handle, server_handle) = jsonrpsee::server::stop_channel();
 
-        self.server_handle = Some(server_handle);
+        self.server_handle = Some(server_handle.clone());
         let block_prod_handle = self.block_prod_handle.clone();
         let mempool = self.mempool.clone();
 
         let pre_v0_9_preconfirmed_as_pending = self.config.rpc_pre_v0_9_preconfirmed_as_pending;
         let rpc_unsafe_enabled = self.config.rpc_unsafe;
 
-        runner.service_loop(move |ctx| async move {
+        runner.service_loop_with_graceful_shutdown(move |ctx| async move {
             // The private bundle endpoint must never forward a transaction to an upstream node
             // after importing its dataset only into this node's RocksDB.
             let submit_tx: Arc<dyn SubmitTransaction> = match committed_data_local_submitter {
@@ -228,7 +229,7 @@ impl Service for RpcService {
                 }
             };
 
-            start_server(server_config, ctx.clone(), stop_handle, Arc::new(starknet)).await?;
+            start_server(server_config, ctx.clone(), stop_handle, server_handle, Arc::new(starknet)).await?;
 
             anyhow::Ok(())
         });

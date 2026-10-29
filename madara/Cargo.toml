@@ -102,7 +102,7 @@ serde_with.workspace = true
 serde_yaml.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-tokio-util.workspace = true
+tokio-util = { workspace = true, features = ["rt"] }
 tower.workspace = true
 tower-http.workspace = true
 url.workspace = true

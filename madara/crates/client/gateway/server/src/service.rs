@@ -14,13 +14,13 @@ use mc_db::MadaraBackend;
 use mc_submit_tx::{SubmitTransaction, SubmitValidatedTransaction, TransactionLookup};
 use mp_utils::service::ServiceContext;
 use std::{
-    convert::Infallible,
     io::{self, Write},
     net::{Ipv4Addr, SocketAddr},
     sync::Arc,
     time::Instant,
 };
-use tokio::{net::TcpListener, sync::Semaphore};
+use tokio::{net::TcpListener, sync::Semaphore, task::JoinSet};
+use tokio_util::task::TaskTracker;
 
 const MAX_CONCURRENT_GZIP_COMPRESSIONS: usize = 4;
 
@@ -75,8 +75,12 @@ pub async fn start_server(
     let committed_data_reads = Arc::new(Semaphore::new(config.committed_data_max_concurrent_reads));
     let gzip_compression_semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_GZIP_COMPRESSIONS));
     let gateway_metrics = GatewayMetrics::register();
+    let requests = TaskTracker::new();
+    let mut connections = JoinSet::new();
 
     while let Some(res) = ctx.run_until_cancelled(listener.accept()).await {
+        // Reap finished connections rather than retaining their results until shutdown.
+        while connections.try_join_next().is_some() {}
         // Handle new incoming connections
         if let Ok((stream, _)) = res {
             let io = TokioIo::new(stream);
@@ -90,7 +94,8 @@ pub async fn start_server(
             let committed_data_reads = Arc::clone(&committed_data_reads);
             let gateway_metrics = gateway_metrics.clone();
 
-            tokio::task::spawn(async move {
+            let requests = requests.clone();
+            connections.spawn(async move {
                 let service = service_fn(move |req| {
                     let db_backend = Arc::clone(&db_backend);
                     let transaction_submitter = transaction_submitter.clone();
@@ -100,7 +105,9 @@ pub async fn start_server(
                     let gzip_compression_semaphore = Arc::clone(&gzip_compression_semaphore);
                     let committed_data_reads = Arc::clone(&committed_data_reads);
                     let gateway_metrics = gateway_metrics.clone();
-                    async move {
+                    // A disconnected socket must not drop the owner awaiting a blocking DB
+                    // rebuild (or trace). The server drains these request tasks on shutdown.
+                    let request = requests.spawn(async move {
                         let path = req
                             .uri()
                             .path()
@@ -156,8 +163,9 @@ pub async fn start_server(
                             response_stats.compression_duration,
                         );
 
-                        Ok::<_, Infallible>(res)
-                    }
+                        res
+                    });
+                    async move { request.await.map_err(io::Error::other) }
                 });
 
                 if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
@@ -167,7 +175,17 @@ pub async fn start_server(
         }
     }
 
+    drop(listener);
+    stop_gateway(&mut connections, &requests).await;
     Ok(())
+}
+
+/// Close every connection, including keep-alive request intake, before draining admitted work.
+/// Request tasks own their blocking children even when their connection has disappeared.
+pub(crate) async fn stop_gateway(connections: &mut JoinSet<()>, requests: &TaskTracker) {
+    connections.shutdown().await;
+    requests.close();
+    requests.wait().await;
 }
 
 #[derive(Debug, PartialEq, Eq)]

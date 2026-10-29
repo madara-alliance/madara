@@ -38,7 +38,7 @@ impl Service for GatewayService {
             submit_validated_tx_provider,
         } = self.clone();
 
-        runner.service_loop(move |ctx| {
+        runner.service_loop_with_graceful_shutdown(move |ctx| {
             let submit_tx = Arc::new(submit_tx_provider.make(ctx.clone()));
             let transaction_lookup = Arc::new(transaction_lookup_provider.make(ctx.clone()));
             let submit_validated_tx = submit_validated_tx_provider.map(|s| Arc::new(s.make(ctx.clone())) as _);
