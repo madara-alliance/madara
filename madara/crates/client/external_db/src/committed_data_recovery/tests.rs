@@ -306,3 +306,154 @@ async fn remote_restore_acknowledges_matching_pending_payload_and_rejects_confli
     assert!(backend.db.get_recovery_record(&id).unwrap().is_none());
     assert_eq!(backend.db.get_recovery_manifest(&id).unwrap().unwrap().id().unwrap(), id);
 }
+
+/// Recover a history longer than the local delta checkpoint interval using only Mongo backups.
+/// A missing final chunk interrupts restore after valid ancestors commit; retry after restart
+/// must resume without losing earlier roots, admitting an incomplete root, or needing upload space.
+#[rstest::rstest]
+#[tokio::test]
+#[ignore = "requires disposable MongoDB in the isolated recovery worker"]
+async fn mongo_historical_recovery_resumes_after_partial_restore_and_pruned_restart(
+    #[values(0usize, 1, 33)] local_versions: usize,
+    #[values(false, true)] prune_local: bool,
+) {
+    use mc_db::MadaraStorageWrite;
+    let uri = std::env::var("RECOVERY_TEST_MONGO_URI").expect("isolated Mongo URI required");
+    let client = mongodb::Client::with_uri_str(uri).await.unwrap();
+    let mongo = client.database(&format!("history_matrix_{}", uuid::Uuid::new_v4().simple()));
+    let archive = CommittedDataArchive::new(&mongo, "transactions");
+    let directory = tempfile::tempdir().unwrap();
+    let open = || {
+        MadaraBackend::open_rocksdb(
+            directory.path(),
+            ChainConfig::madara_test().into(),
+            mc_db::MadaraBackendConfig {
+                committed_data_retention: mc_db::committed_data_retention::CommittedDataRetentionConfig {
+                    cache_bytes: 0,
+                    memory_blocks: 0,
+                    pending_backup_bytes: 1,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            Default::default(),
+            Default::default(),
+        )
+        .unwrap()
+    };
+    let namespace = CommittedDataUpdate { application_id: Felt::ONE, dataset_id: Felt::TWO, base_root: None };
+    let mut versions = Vec::new();
+    let mut records = Vec::new();
+    {
+        let source = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+        let mut values = vec![(Felt::ZERO, Felt::ZERO), (Felt::ONE, Felt::MAX), (Felt::MAX, Felt::TWO)];
+        for version in 0..67u64 {
+            values[0].1 = Felt::from(version);
+            let tree = CommittedDataSet::new(values.clone()).unwrap();
+            let update = CommittedDataUpdate { base_root: versions.last().copied(), ..namespace };
+            let payload = if version == 0 { values.clone() } else { vec![values[0]] };
+            source.update_committed_data(update, tree.root(), payload.clone()).await.unwrap();
+            let id = source.journal_committed_data(Some(update), tree.root(), payload).await.unwrap();
+            let record = source.db.get_recovery_record(&id).unwrap().unwrap();
+            archive.upload(&record).await.unwrap();
+            source.db.mark_recovery_exported(&id).unwrap();
+            assert!(source.db.get_recovery_record(&id).unwrap().is_none());
+            versions.push(tree.root());
+            records.push(record);
+        }
+        while source.db.maintain_committed_data_history(Some(u64::MAX)).unwrap() {}
+    } // The original source and every queued local backup payload are now unavailable.
+    {
+        let target = open();
+        for record in records.iter().take(local_versions) {
+            restore_record(&target, record.manifest.id().unwrap(), record.clone()).await.unwrap();
+        }
+        if prune_local {
+            while target.db.maintain_committed_data_history(Some(u64::MAX)).unwrap() {}
+        }
+    }
+    let last = records.last().unwrap();
+    let target_id = last.manifest.id().unwrap();
+    archive.chunks.delete_one(doc! {"_id":&last.manifest.chunks[0]}).await.unwrap();
+    {
+        let target = open();
+        let error = archive.restore(&target, std::slice::from_ref(&target_id)).await.unwrap_err();
+        assert!(error.to_string().contains("Missing recovery chunk"));
+        assert!(target.db.get_committed_data_count(*versions.last().unwrap()).unwrap().is_none());
+        assert!(target.db.get_recovery_manifest(&target_id).unwrap().is_none());
+        for (version, root) in versions.iter().take(versions.len() - 1).enumerate() {
+            let witness = target.committed_data_witness(*root, Felt::ZERO).unwrap().unwrap();
+            assert_eq!(witness.value, Felt::from(version));
+            assert!(witness.verify());
+        }
+        assert_eq!(target.db.recovery_pending_bytes().unwrap(), 0);
+    }
+    archive.upload(last).await.unwrap();
+    {
+        let target = open();
+        archive.restore(&target, std::slice::from_ref(&target_id)).await.unwrap();
+        archive.restore(&target, std::slice::from_ref(&target_id)).await.unwrap();
+        while target.db.maintain_committed_data_history(Some(u64::MAX)).unwrap() {}
+        assert_eq!(target.db.recovery_pending_bytes().unwrap(), 0);
+    }
+    let target = open();
+    for (version, root) in versions.iter().enumerate() {
+        for (key, expected) in [(Felt::ZERO, Felt::from(version)), (Felt::ONE, Felt::MAX), (Felt::MAX, Felt::TWO)] {
+            let witness = target.committed_data_witness(*root, key).unwrap().unwrap();
+            assert_eq!(witness.value, expected);
+            assert!(witness.verify());
+        }
+    }
+    assert!(target.db.get_recovery_record(&target_id).unwrap().is_none());
+    assert_eq!(target.db.get_recovery_manifest(&target_id).unwrap().unwrap().root, *versions.last().unwrap());
+    mongo.drop().await.unwrap();
+}
+
+/// Archive corruption is an operator recovery event, not permission to serve unauthenticated data.
+/// Preserve the damaged DB for diagnosis and restore into a fresh DB from verified remote records.
+#[tokio::test]
+#[ignore = "requires disposable MongoDB in the isolated recovery worker"]
+async fn mongo_historical_recovery_rejects_damaged_local_archive_and_restores_fresh_database() {
+    let uri = std::env::var("RECOVERY_TEST_MONGO_URI").expect("isolated Mongo URI required");
+    let client = mongodb::Client::with_uri_str(uri).await.unwrap();
+    let mongo = client.database(&format!("history_damage_{}", uuid::Uuid::new_v4().simple()));
+    let archive = CommittedDataArchive::new(&mongo, "transactions");
+    let record = checkpoint();
+    let id = record.manifest.id().unwrap();
+    archive.upload(&record).await.unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let open = || {
+        MadaraBackend::open_rocksdb(
+            directory.path(),
+            ChainConfig::madara_test().into(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+        )
+        .unwrap()
+    };
+    let history_key = [b"cdh/v1/".as_slice(), &record.manifest.root.to_bytes_be()].concat();
+    {
+        let target = open();
+        archive.restore(&target, std::slice::from_ref(&id)).await.unwrap();
+        while target.db.maintain_committed_data_history(Some(u64::MAX)).unwrap() {}
+        let cf = target.db.inner_db().cf_handle("meta").unwrap();
+        target.db.inner_db().put_cf(&cf, &history_key, b"damaged archive").unwrap();
+    }
+    {
+        let target = open();
+        assert!(target.committed_data_witness(record.manifest.root, Felt::ONE).is_err());
+        assert!(archive.restore(&target, std::slice::from_ref(&id)).await.is_err());
+        let cf = target.db.inner_db().cf_handle("meta").unwrap();
+        assert_eq!(target.db.inner_db().get_cf(&cf, &history_key).unwrap().unwrap(), b"damaged archive");
+    }
+    let fresh = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+    archive.restore(&fresh, std::slice::from_ref(&id)).await.unwrap();
+    while fresh.db.maintain_committed_data_history(Some(u64::MAX)).unwrap() {}
+    for (key, value) in record.decode().unwrap() {
+        let witness = fresh.committed_data_witness(record.manifest.root, key).unwrap().unwrap();
+        assert_eq!(witness.value, value);
+        assert!(witness.verify());
+    }
+    mongo.drop().await.unwrap();
+}

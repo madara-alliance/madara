@@ -460,3 +460,225 @@ fn full_snapshot_reuse_does_not_merge_different_key_sets() {
     let snapshot = SnapshotWithDBArc::new(Arc::clone(&backend.db.inner));
     assert_eq!(history_chain(&snapshot, replacement.root()).unwrap().0, vec![replacement.root()]);
 }
+
+/// Cross dictionary/page and checkpoint boundaries, then discard every proof node and reopen.
+/// Full imports model a replica; explicit patches model ingestion on the sequencer.
+#[rstest::rstest]
+fn historical_proofs_rebuild_across_size_depth_and_import_modes(
+    #[values(1usize, 17, 1024, 4097)] entries: usize,
+    #[values(0u64, 1, 64, 65)] updates: u64,
+    #[values(false, true)] full_import: bool,
+) {
+    let directory = tempfile::tempdir().unwrap();
+    let mut values: Vec<_> = (0..entries).map(|key| (Felt::from(key), Felt::from(key))).collect();
+    values.last_mut().unwrap().0 = Felt::MAX; // Exercise the full key domain, including a singleton.
+    let mut versions = vec![CommittedDataSet::new(values.clone()).unwrap()];
+    {
+        let backend = open(directory.path());
+        let db = &backend.db;
+        db.write_committed_data_dataset(&versions[0], Some(0)).unwrap();
+        for version in 1..=updates {
+            values[0].1 = if version % 2 == 0 { Felt::MAX - Felt::from(version) } else { Felt::from(version) };
+            let next = CommittedDataSet::new(values.clone()).unwrap();
+            if full_import {
+                db.write_committed_data_dataset(&next, Some(version)).unwrap();
+            } else {
+                db.patch_committed_data_dataset(
+                    versions.last().unwrap().root(),
+                    next.root(),
+                    vec![values[0]],
+                    Some(version),
+                )
+                .unwrap();
+            }
+            versions.push(next);
+        }
+        drain(db, Some(u64::MAX));
+        assert!(rows(db, b"cdm/n/").is_empty());
+        assert!(rows(db, b"cdh/ref/").is_empty());
+    }
+    let backend = open(directory.path());
+    let db = &backend.db;
+    for expected in &versions {
+        let sorted = expected.entries();
+        let keys = [sorted[entries - 1].0, sorted[0].0, sorted[entries / 2].0, sorted[0].0];
+        let actual = db.get_committed_data_batch(expected.root(), &keys).unwrap();
+        assert_eq!(actual, CommittedDataBatchProof::from_dataset(expected, &keys).unwrap());
+        for (key, witness) in keys.iter().zip(db.get_committed_data_witnesses(expected.root(), &keys).unwrap()) {
+            assert_eq!(witness, expected.witness(*key).unwrap());
+            assert!(witness.verify());
+        }
+        let mut assembled = Vec::new();
+        for start in (0..entries).step_by(mp_gateway::committed_data::VALUES_PER_PAGE) {
+            let (count, page) = db.get_committed_data_page(expected.root(), start as u32).unwrap().unwrap();
+            assert_eq!(count as usize, entries);
+            assembled.extend(page);
+        }
+        assert_eq!(assembled, sorted);
+        assert_eq!(pointer(db, expected.root()), 0, "Read paths must not repopulate the proof arena");
+    }
+    assert!(rows(db, b"cdm/n/").is_empty());
+    assert!(rows(db, b"cdh/ref/").is_empty());
+}
+
+/// Kill a real writer while pruning races with imports. Every acknowledged root must survive;
+/// a write racing the kill may be absent or complete, but must never expose a partial tree.
+#[test]
+fn historical_proofs_survive_killed_writer_and_concurrent_pruning() {
+    use std::io::{BufRead, Write};
+    const CHILD_DIRECTORY: &str = "MADARA_HISTORY_KILL_FIXTURE";
+    const TEST: &str =
+        "rocksdb::committed_history::tests::historical_proofs_survive_killed_writer_and_concurrent_pruning";
+    if let Ok(directory) = std::env::var(CHILD_DIRECTORY) {
+        let backend = open(std::path::Path::new(&directory));
+        let pruning = Arc::clone(&backend);
+        std::thread::spawn(move || loop {
+            pruning.db.maintain_history(Some(u64::MAX)).unwrap();
+            std::thread::yield_now();
+        });
+        for version in 0..1000u64 {
+            backend.db.write_committed_data_dataset(&dataset(version), Some(version)).unwrap();
+            println!("HISTORY_ACK {version}");
+            std::io::stdout().flush().unwrap();
+        }
+        panic!("Parent must kill the child before the workload finishes");
+    }
+    for acknowledged in [0u64, 1, 10, 65] {
+        let directory = tempfile::tempdir().unwrap();
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", TEST, "--nocapture"])
+            .env(CHILD_DIRECTORY, directory.path())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let output = std::io::BufReader::new(child.stdout.take().unwrap());
+        let marker = format!("HISTORY_ACK {acknowledged}");
+        let mut reached = false;
+        for line in output.lines() {
+            if line.unwrap() == marker {
+                reached = true;
+                child.kill().unwrap(); // SIGKILL on Unix: no Drop, flush, or graceful service shutdown.
+                break;
+            }
+        }
+        let status = child.wait().unwrap();
+        assert!(reached && !status.success(), "Fixture must really be killed after acknowledgement");
+        let backend = open(directory.path());
+        let db = &backend.db;
+        for version in 0..=acknowledged {
+            assert_dataset(db, &dataset(version));
+        }
+        // The kill may race a later complete write. Authenticate every published root as well.
+        let mut after = None;
+        loop {
+            let roots = db.list_committed_data_roots(after).unwrap();
+            if roots.is_empty() {
+                break;
+            }
+            for root in &roots {
+                let (_, values) = db.get_committed_data_page(*root, 0).unwrap().unwrap();
+                let expected = CommittedDataSet::new(values).unwrap();
+                assert_eq!(expected.root(), *root);
+                assert_dataset(db, &expected);
+            }
+            after = roots.last().copied();
+        }
+        drain(db, Some(u64::MAX));
+        assert!(rows(db, b"cdm/n/").is_empty());
+        assert!(rows(db, b"cdh/ref/").is_empty());
+        for version in 0..=acknowledged {
+            assert_dataset(db, &dataset(version));
+        }
+    }
+}
+
+/// Disk damage must yield an error, never an unauthenticated witness or a partial repair.
+/// Recomputed checksums model internally consistent bad data; the commitment remains authoritative.
+#[rstest::rstest]
+#[case::missing_record("missing_record")]
+#[case::missing_checksum("missing_checksum")]
+#[case::wrong_checksum("wrong_checksum")]
+#[case::missing_dictionary("missing_dictionary")]
+#[case::wrong_dictionary("wrong_dictionary")]
+#[case::invalid_compressed_frame("invalid_frame")]
+#[case::wrong_values_with_valid_checksum("wrong_values")]
+#[case::truncated_checkpoint("truncated_checkpoint")]
+#[case::duplicate_index("duplicate_index")]
+#[case::cycle("cycle")]
+#[case::wrong_identity("wrong_identity")]
+fn historical_corruption_fails_closed_without_mutating_other_roots(#[case] corruption: &str) {
+    let directory = tempfile::tempdir().unwrap();
+    let first = dataset(10);
+    let unaffected = CommittedDataSet::new(vec![(Felt::MAX, Felt::ONE)]).unwrap();
+    {
+        let backend = open(directory.path());
+        backend.db.write_committed_data_dataset(&first, Some(0)).unwrap();
+        backend.db.write_committed_data_dataset(&unaffected, Some(0)).unwrap();
+        drain(&backend.db, Some(u64::MAX));
+    }
+    let backend = open(directory.path());
+    let db = &backend.db;
+    let cf = db.inner.get_column(meta::META_COLUMN);
+    let key = root_key(HISTORY, first.root());
+    let checksum = root_key(archive::HISTORY_HASH, first.root());
+    let bytes = db.inner.db.get_cf(&cf, &key).unwrap().unwrap();
+    let mut history: ValueHistory = deserialize(&bytes).unwrap();
+    match corruption {
+        "missing_record" => db.inner.db.delete_cf(&cf, &key).unwrap(),
+        "missing_checksum" => db.inner.db.delete_cf(&cf, checksum).unwrap(),
+        "wrong_checksum" => db.inner.db.put_cf(&cf, checksum, b"bad checksum").unwrap(),
+        "missing_dictionary" | "wrong_dictionary" => {
+            let encoded = serde_json::to_value(&history).unwrap();
+            let dictionary: Vec<u8> = serde_json::from_value(encoded["dictionary"].clone()).unwrap();
+            let key = named(archive::DICTIONARY, &dictionary);
+            if corruption == "missing_dictionary" {
+                db.inner.db.delete_cf(&cf, key).unwrap();
+            } else {
+                let mut bytes = db.inner.db.get_cf(&cf, &key).unwrap().unwrap();
+                bytes[0] ^= 1;
+                db.inner.db.put_cf(&cf, key, bytes).unwrap();
+            }
+        }
+        _ => {
+            match corruption {
+                "invalid_frame" => history.data = vec![0xff],
+                "wrong_values" => {
+                    let raw = codec::encode(
+                        first
+                            .entries()
+                            .iter()
+                            .enumerate()
+                            .map(|(index, (_, value))| (index, Felt::ZERO, *value + Felt::ONE)),
+                    );
+                    history.data = zstd::stream::encode_all(raw.as_slice(), 3).unwrap();
+                }
+                "truncated_checkpoint" => {
+                    let raw = codec::encode([(0, Felt::ZERO, Felt::from(10))]);
+                    history.data = zstd::stream::encode_all(raw.as_slice(), 3).unwrap();
+                }
+                "duplicate_index" => history.data = zstd::stream::encode_all(&[0u8, 1][..], 3).unwrap(),
+                "cycle" => {
+                    history.base = Some(first.root());
+                    history.depth = 1;
+                }
+                "wrong_identity" => {
+                    let mut encoded = serde_json::to_value(&history).unwrap();
+                    encoded["root"] = serde_json::to_value(Felt::ZERO).unwrap();
+                    history = serde_json::from_value(encoded).unwrap();
+                }
+                _ => unreachable!(),
+            }
+            let bytes = serialize(&history).unwrap();
+            db.inner.db.put_cf(&cf, checksum, crate::committed_data_recovery::digest(&bytes)).unwrap();
+            db.inner.db.put_cf(&cf, key, bytes).unwrap();
+        }
+    }
+    let before = rows(db, b"");
+    assert!(db.get_committed_data_witness(first.root(), Felt::ZERO).is_err());
+    assert!(db.get_committed_data_witnesses(first.root(), &[Felt::ZERO]).is_err());
+    assert!(db.get_committed_data_batch(first.root(), &[Felt::ZERO]).is_err());
+    assert_eq!(rows(db, b""), before, "Failed reads cannot write repaired or partial state");
+    let witness = db.get_committed_data_witness(unaffected.root(), Felt::MAX).unwrap().unwrap();
+    assert_eq!(witness.value, Felt::ONE);
+    assert!(witness.verify(), "A failed reconstruction must not poison the next request");
+}
