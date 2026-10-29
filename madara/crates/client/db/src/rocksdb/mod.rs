@@ -279,6 +279,7 @@ pub struct RocksDBStorage {
     inner: Arc<RocksDBStorageInner>,
     backup: BackupManager,
     snapshots: Arc<Snapshots>,
+    contract_storage_hot_cache: Arc<trie::LazySharedContractStorageTrie>,
     metrics: DbMetrics,
 }
 

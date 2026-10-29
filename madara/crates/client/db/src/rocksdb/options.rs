@@ -377,9 +377,10 @@ pub fn rocksdb_global_options(config: &RocksDBConfig) -> Result<Options> {
     options.increase_parallelism(cores);
     options.set_max_background_jobs(cores);
 
-    // Atomic flush ensures all column families are flushed together,
-    // maintaining consistency across the database.
-    options.set_atomic_flush(true);
+    // WAL-backed WriteBatch operations are already consistent across column
+    // families. Without WAL, keep atomic flush enabled so related column
+    // families cannot reach disk independently after a crash.
+    options.set_atomic_flush(!config.write_mode.wal);
 
     // Allow compaction jobs to be split across multiple threads.
     // A single large compaction can use up to `cores` threads.
@@ -438,9 +439,6 @@ pub fn rocksdb_global_options(config: &RocksDBConfig) -> Result<Options> {
     // wal_bytes_per_sync: Sync WAL every 512KB.
     // WAL writes are smaller but more frequent; smaller sync interval is appropriate.
     options.set_wal_bytes_per_sync(512 * KiB as u64);
-
-    // Note: enable_pipelined_write is NOT used because it's incompatible with
-    // atomic_flush, which we need for cross-column-family consistency.
 
     // ═══════════════════════════════════════════════════════════════════════════
     // LOGGING & FILE MANAGEMENT
@@ -502,7 +500,7 @@ impl Column {
     ///   drains L0 -> L1 as soon as `level0_file_num_compaction_trigger=4` is exceeded.
     ///   Required for append-only log CFs where universal's size-ratio / size-amp
     ///   heuristics fail to fire and L0 SSTs accumulate past the stop trigger,
-    ///   stalling the entire DB via `atomic_flush`.
+    ///   backpressuring writes to that column family.
     ///
     /// ## Compression
     ///
@@ -660,5 +658,26 @@ mod tests {
             options.contains(&format!("max_open_files={configured_max_open_files}")),
             "maximum open SST files should use the configured value"
         );
+    }
+
+    #[test]
+    fn atomic_flush_is_enabled_only_without_wal() {
+        for (wal, expected) in [(true, false), (false, true)] {
+            let directory = tempfile::tempdir().unwrap();
+            let config = RocksDBConfig { write_mode: DbWriteMode { wal, fsync: false }, ..RocksDBConfig::default() };
+            let _storage = RocksDBStorage::open(directory.path(), config).unwrap();
+
+            let options_path = fs::read_dir(directory.path())
+                .unwrap()
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .find(|path| {
+                    path.file_name().and_then(|name| name.to_str()).is_some_and(|name| name.starts_with("OPTIONS-"))
+                })
+                .expect("RocksDB should persist an OPTIONS file");
+            let options = fs::read_to_string(options_path).unwrap();
+
+            assert!(options.contains(&format!("atomic_flush={expected}")));
+        }
     }
 }

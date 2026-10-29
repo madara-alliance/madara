@@ -169,6 +169,7 @@ pub fn flush_overlay_and_checkpoint(
     let write_started = Instant::now();
     backend.inner.db.write_opt(batch, &backend.inner.writeopts)?;
     let write_duration = write_started.elapsed();
+    backend.reset_cached_contract_storage_trie();
 
     if write_duration >= SLOW_BOUNDARY_FLUSH_WARNING {
         tracing::warn!(

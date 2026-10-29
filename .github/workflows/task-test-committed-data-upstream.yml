@@ -32,22 +32,22 @@ jobs:
           import os, re
           from pathlib import Path
           manifest = Path("Cargo.toml").read_text()
-          revisions = set(re.findall(r'git = "https://github.com/karnotxyz/sequencer", rev = "([0-9a-f]{40})"', manifest))
+          revisions = set(re.findall(r'git = "https://github.com/madara-alliance/sequencer", rev = "([0-9a-f]{40})"', manifest))
           assert len(revisions) == 1, "expected one coherent Sequencer revision"
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
               output.write(f"sha={revisions.pop()}\n")
-              snos = re.findall(r'git = "https://github.com/karnotxyz/snos", rev = "([0-9a-f]{40})"', manifest)
+              snos = re.findall(r'git = "https://github.com/madara-alliance/snos.git", rev = "([0-9a-f]{40})"', manifest)
               assert len(set(snos)) == 1, "expected one coherent SNOS revision"
               output.write(f"snos_sha={snos[0]}\n")
           PY
       - uses: actions/checkout@v5
         with:
-          repository: karnotxyz/sequencer
+          repository: madara-alliance/sequencer
           ref: ${{ steps.revision.outputs.sha }}
           path: upstream-sequencer
       - uses: actions/checkout@v5
         with:
-          repository: karnotxyz/snos
+          repository: madara-alliance/snos
           ref: ${{ steps.revision.outputs.snos_sha }}
           path: upstream-snos
       - uses: ./.github/actions/setup-rust
