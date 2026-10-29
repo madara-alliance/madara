@@ -402,6 +402,9 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
     /// Makes executor rejection terminal before releasing the consumed reservation.
     /// Rejection rows and saved-transaction deletion commit atomically before retention pruning.
     pub async fn finish_rejected_transactions(&self, rejected: &[(Felt, String)]) -> anyhow::Result<()> {
+        if rejected.is_empty() {
+            return Ok(());
+        }
         let durable_rejections: Vec<_> = rejected
             .iter()
             .map(|(hash, reason)| (*hash, mc_db::RejectedMempoolTransaction::new(reason.clone())))
