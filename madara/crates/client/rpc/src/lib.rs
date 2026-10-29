@@ -877,6 +877,8 @@ impl Default for StorageProofConfig {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TxStatusSnapshot {
+    /// Terminal local admission failure. This is intentionally internal because the Starknet
+    /// v0.9/v0.10 `TXN_STATUS` schema has no rejected variant.
     Rejected,
     Received,
     Candidate,

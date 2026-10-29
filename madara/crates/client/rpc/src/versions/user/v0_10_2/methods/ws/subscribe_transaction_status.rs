@@ -41,6 +41,12 @@ pub async fn subscribe_transaction_status(
             SubscriptionUpdate::Snapshot(snapshot) => {
                 allow_current = false;
 
+                if snapshot == crate::TxStatusSnapshot::Rejected {
+                    // Rejection is terminal locally, but it cannot be serialized as a standard
+                    // Starknet TXN_STATUS. End with a subscription error instead of emitting a
+                    // non-standard enum value or leaving the subscriber waiting indefinitely.
+                    return Err(crate::errors::StarknetWsApiError::SubscriptionClosed);
+                }
                 send_txn_status(starknet, &sink, transaction_hash, snapshot).await?;
                 if matches!(snapshot, crate::TxStatusSnapshot::AcceptedOnL1) {
                     crate::close_ws_subscription(
@@ -119,7 +125,11 @@ async fn send_txn_status(
     snapshot: crate::TxStatusSnapshot,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
     let finality_status = match snapshot {
-        crate::TxStatusSnapshot::Rejected => mp_rpc::v0_10_2::TxnStatus::Rejected,
+        crate::TxStatusSnapshot::Rejected => {
+            return Err(crate::errors::StarknetWsApiError::internal_server_error(
+                "SubscribeTransactionStatus attempted to serialize a non-standard rejected status",
+            ));
+        }
         crate::TxStatusSnapshot::Received => mp_rpc::v0_10_2::TxnStatus::Received,
         crate::TxStatusSnapshot::Candidate => mp_rpc::v0_10_2::TxnStatus::Candidate,
         crate::TxStatusSnapshot::PreConfirmed => mp_rpc::v0_10_2::TxnStatus::PreConfirmed,

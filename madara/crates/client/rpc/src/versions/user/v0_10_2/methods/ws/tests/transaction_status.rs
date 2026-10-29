@@ -37,7 +37,6 @@ async fn subscribe_transaction_status_full_flow_v0_10_2() {
         .expect("Failed subscription");
 
     for (snapshot, expected) in [
-        (crate::TxStatusSnapshot::Rejected, mp_rpc::v0_10_2::TxnStatus::Rejected),
         (crate::TxStatusSnapshot::Received, mp_rpc::v0_10_2::TxnStatus::Received),
         (crate::TxStatusSnapshot::Candidate, mp_rpc::v0_10_2::TxnStatus::Candidate),
         (crate::TxStatusSnapshot::PreConfirmed, mp_rpc::v0_10_2::TxnStatus::PreConfirmed),
@@ -52,6 +51,25 @@ async fn subscribe_transaction_status_full_flow_v0_10_2() {
             .expect("Failed to retrieve status");
         assert_eq!(item, expected_txn_status(expected));
     }
+}
+
+#[tokio::test]
+async fn subscribe_transaction_status_closes_promptly_on_non_standard_rejection_v0_10_2() {
+    let (_backend, mut starknet) = rpc_test_setup();
+    let watcher = TestTxStatusWatcher::new();
+    starknet.set_tx_status_watcher(Some(watcher.clone()));
+
+    let (_handle, server_url) = start_server(starknet).await;
+    let client = WsClientBuilder::default().build(&server_url).await.expect("Building client");
+    let mut sub = StarknetWsRpcApiV0_10_2Client::subscribe_transaction_status(&client, TX_HASH)
+        .await
+        .expect("Failed subscription");
+
+    watcher.set_status(Some(crate::TxStatusSnapshot::Rejected));
+    let item = tokio::time::timeout(Duration::from_secs(5), sub.next())
+        .await
+        .expect("Timed out waiting for terminal subscription close");
+    assert!(item.is_none(), "Rejected status must close without emitting a non-standard status value");
 }
 
 #[tokio::test]

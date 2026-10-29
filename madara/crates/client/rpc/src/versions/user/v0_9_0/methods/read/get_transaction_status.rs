@@ -8,14 +8,12 @@ use starknet_types_core::felt::Felt;
 ///
 /// Supported statuses are:
 ///
-/// - [`Rejected`]: tx failed block-construction admission.
 /// - [`Received`]: tx has been inserted into the mempool.
 /// - [`Candidate`]: tx is a candidate for the pre-confirmed block.
 /// - [`PreConfirmed`]: tx is executed in the pre-confirmed block.
 /// - [`AcceptedOnL2`]: tx has been saved to the pending block.
 /// - [`AcceptedOnL1`]: tx has been finalized on L1.
 ///
-/// [`Rejected`]: mp_rpc::v0_9_0::TxnStatus::Rejected
 /// [`Received`]: mp_rpc::v0_9_0::TxnStatus::Received
 /// [`Candidate`]: mp_rpc::v0_9_0::TxnStatus::Candidate
 /// [`PreConfirmed`]: mp_rpc::v0_9_0::TxnStatus::PreConfirmed
@@ -49,18 +47,6 @@ pub async fn get_transaction_status(
             finality_status: TxnStatus::Received,
             execution_status: None,
             failure_reason: None,
-        })
-    } else if let Some(status) = starknet
-        .transaction_lookup
-        .feeder_transaction_status(transaction_hash)
-        .await
-        .map_err(|error| StarknetRpcApiError::ErrUnexpectedError { error: error.to_string().into() })?
-        .filter(|status| status.tx_status == mp_gateway::feeder::TransactionStatus::Rejected)
-    {
-        Ok(TxnFinalityAndExecutionStatus {
-            finality_status: TxnStatus::Rejected,
-            execution_status: None,
-            failure_reason: status.tx_failure_reason.map(|failure| failure.error_message),
         })
     } else {
         Err(StarknetRpcApiError::TxnHashNotFound)
@@ -263,7 +249,7 @@ mod tests {
 
     #[tokio::test]
     #[rstest::rstest]
-    async fn get_transaction_status_reports_durable_proof_size_rejection(_logs: (), starknet: Starknet) {
+    async fn get_transaction_status_keeps_durable_rejection_out_of_the_standard_enum(_logs: (), starknet: Starknet) {
         starknet
             .backend
             .write_rejected_mempool_transaction(
@@ -272,16 +258,11 @@ mod tests {
             )
             .unwrap();
 
-        let status = get_transaction_status(&starknet, TX_HASH).await.unwrap();
+        assert_eq!(get_transaction_status(&starknet, TX_HASH).await, Err(StarknetRpcApiError::TxnHashNotFound));
 
-        assert_eq!(
-            status,
-            TxnFinalityAndExecutionStatus {
-                finality_status: TxnStatus::Rejected,
-                execution_status: None,
-                failure_reason: Some("transaction too large for proof".into()),
-            }
-        );
+        let feeder = starknet.transaction_lookup.feeder_transaction_status(TX_HASH).await.unwrap().unwrap();
+        assert_eq!(feeder.tx_status, mp_gateway::feeder::TransactionStatus::Rejected);
+        assert_eq!(feeder.tx_failure_reason.unwrap().error_message, "transaction too large for proof");
     }
 
     /// Reverted transactions must carry the failure reason in the status result.
