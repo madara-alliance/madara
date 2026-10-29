@@ -171,6 +171,20 @@ jobs:
             -E 'package(mc-external-db) & (test(mongo_recovery_restores_bases_and_rejects_corruption) | test(mongo_duplicate_retry_requires_matching_recovery_data) | test(mongo_historical_recovery_) | test(mongo_transaction_recovery_))' \
             --no-fail-fast
 
+      - name: Test committed-data disk-full recovery
+        if: ${{ !cancelled() && steps.runtime_tests.outcome != 'skipped' }}
+        run: |
+          fault_disk="$(mktemp -d "$RUNNER_TEMP/committed-data-enospc.XXXXXX")"
+          trap 'sudo umount "$fault_disk"; rmdir "$fault_disk"' EXIT
+          sudo mount -t tmpfs -o size=64M,mode=1777 tmpfs "$fault_disk"
+          export MADARA_COMMITTED_DATA_FAULT_DISK="$fault_disk"
+          cargo nextest run \
+            --archive-file target/nextest/madara-tests.tar.zst \
+            --workspace-remap "$GITHUB_WORKSPACE" \
+            --run-ignored only \
+            --test-threads 1 \
+            -E 'package(mc-db) & test(disk_full_during_reconstruction_preserves_archive_and_recovers_after_restart)'
+
       - name: Kill Anvil
         if: always()
         run: |

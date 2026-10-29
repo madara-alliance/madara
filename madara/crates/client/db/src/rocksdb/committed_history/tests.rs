@@ -1,3 +1,5 @@
+mod adversarial;
+
 use super::*;
 use crate::persistent_committed_data::{node_key, Tree};
 use crate::{MadaraBackend, MadaraBackendConfig, MadaraStorageRead, MadaraStorageWrite};

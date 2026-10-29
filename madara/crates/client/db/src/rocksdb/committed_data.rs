@@ -1,6 +1,6 @@
 //! Immutable shared Patricia nodes and namespace catalogs.
 use super::*;
-use crate::persistent_committed_data::{node_key, Tree, NEXT_KEY};
+use crate::persistent_committed_data::{node_key, Tree, NEXT_KEY, NODE_PREFIX};
 use crate::storage::CommittedDataPageEntries;
 use blockifier::execution::syscalls::committed_data::{
     CommittedDataSet, CommittedDataWitness, MAX_COMMITTED_DATA_VALUES,
@@ -342,12 +342,21 @@ impl RocksDBStorage {
             .transpose()?
             .unwrap_or(1);
         anyhow::ensure!(first_id > 0, "Invalid persistent allocator");
-        // IDs are never reused, including after pruning. A rewound allocator must not
-        // overwrite an immutable node that another root may still reference.
-        anyhow::ensure!(
-            self.inner.db.get_pinned_cf(&cf, node_key(first_id))?.is_none(),
-            "Persistent allocator overlaps existing nodes"
-        );
+        // A pruned gap at first_id does not make the following IDs available. Check both
+        // indexes from this ID onward: ownership survives a damaged/missing node payload.
+        for prefix in [NODE_PREFIX, super::proof_references::REFERENCES] {
+            let start = [prefix, &first_id.to_be_bytes()].concat();
+            let next = self
+                .inner
+                .db
+                .iterator_cf(&cf, rocksdb::IteratorMode::From(&start, rocksdb::Direction::Forward))
+                .next()
+                .transpose()?;
+            anyhow::ensure!(
+                next.is_none_or(|(key, _)| !key.starts_with(prefix)),
+                "Persistent allocator overlaps existing nodes or references"
+            );
+        }
         Ok(first_id)
     }
 
