@@ -107,7 +107,7 @@ impl Snapshots {
     #[tracing::instrument(skip(self))]
     pub fn set_new_head(&self, block_n: u64) {
         let mut inner = self.inner.write().expect("Poisoned lock");
-        if inner.head_block_n.is_some_and(|head| head > block_n) {
+        if inner.head_block_n.is_some_and(|head| head >= block_n) {
             return;
         }
         let snapshot = Arc::new(SnapshotWithDBArc::new(Arc::clone(&self.db)));

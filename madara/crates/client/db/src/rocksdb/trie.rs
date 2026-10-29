@@ -790,6 +790,14 @@ mod tests {
             roots.push(reference.class_trie().root_hash(super::super::global_trie::bonsai_identifier::CLASS).unwrap());
         }
         storage.apply_to_global_trie(0, &diffs, StarknetVersion::V0_14_2).unwrap();
+        // The next trie write can race delayed confirmed-head notifications, including
+        // one for the same head. Refreshing that snapshot would relabel newer state.
+        use bitvec::{order::Msb0, view::BitView};
+        let key = Felt::from(7u64).to_bytes_be();
+        let mut next = storage.class_trie();
+        next.insert(super::super::global_trie::bonsai_identifier::CLASS, &key.view_bits::<Msb0>()[5..], &Felt::MAX)
+            .unwrap();
+        next.commit(BasicId::new(6)).unwrap();
         // Sync computes the whole trie batch before publishing its confirmed blocks.
         for block in 0..=5 {
             storage.on_new_confirmed_head(block).unwrap();
