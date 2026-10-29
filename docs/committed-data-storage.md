@@ -12,7 +12,7 @@ Batch proofs expand only branches containing requested keys. An unrequested subt
 
 ### Prover dependency revisions
 
-This implementation pins SNOS `fdaf50c0969d07044f13f6cb8ab5b9393576718a` and Sequencer `30a1e8a80975f92127dc5ef3773c054a039a838b`. SNOS itself uses that same Sequencer revision. These revisions share batch verification within each accepted block and reject insufficient verification gas at transaction level, including caught-error paths. Committed-data proving remains explicitly enabled by the orchestrator configuration.
+This implementation pins SNOS `2b7c054741018aa4fe76a9a60edf910c83d73e39` and Sequencer `3fe9f3d9606fb640a915fe9793d021966d309a2a`. Both pins use the Madara Alliance forks and include their current `dev` integration changes. SNOS itself uses that same Sequencer revision. These revisions share batch verification within each accepted block and reject insufficient verification gas at transaction level, including caught-error paths. Committed-data proving remains explicitly enabled by the orchestrator configuration.
 
 The Sequencer build compiles the OS from its pinned Cairo sources. The aggregator runner obtains the child OS hash from that dependency's embedded `PROGRAM_HASHES`; there is no separate Madara hash override. The compiled program identities are:
 
@@ -28,6 +28,8 @@ Deployment must use the matching OS program and accepted child-program hash. Upd
 ### Shared batch verification and gas
 
 Each block starts with an empty read set. A batch authenticates its host witnesses and charges for every requested output plus newly read leaves and newly expanded branches. The transaction owns a fork of the block read set and publishes it only after successful admission. Rejected transactions and fee-estimation probes cannot warm later calls. Canonically reverted execution is discarded because SNOS omits it; caught nested execution that SNOS replays retains its paid work. The set resets at the next block. Committed-data-enabled block execution currently uses the sequential executor; speculative parallel sharing is not implemented.
+
+Both single and batch reads count toward the 65,536 distinct `(root, key)` witnesses allowed per block. Single reads do not warm the batch-discount set. A transaction that exceeds the remaining block allowance is deferred to the next block; exceeding the limit on an empty block is a transaction error. SNOS collects each admitted block's witnesses separately, so a multi-block PIE may exceed 65,536 total witnesses. Its bounded HTTP cache evicts old entries independently of this admission limit. The OS indexes witnesses by block, root and key, and rejects duplicate or oversized block inputs. Legacy job-wide inputs remain supported, but cannot be mixed with per-block inputs.
 
 For `N` requested outputs, `U` newly read leaves and `B` newly expanded branches, the extra Sierra charge is `81,400 + 8,280 × N`. When `U > 0`, add `10,540 + 25,268 × U + 17,402 × B`. Ordinary `CallContract` gas is charged separately. These are conservative bounded resources, not input-specific minimum execution costs.
 
@@ -47,6 +49,8 @@ New versions share immutable Patricia nodes in the metadata column family. A roo
 - Leaf value: tag 0, key (32 bytes), value (32 bytes), totaling 65 bytes. Its hash is recomputed when loaded.
 - Branch value: tag 1, critical bit (1), left/right IDs (8 each), hash (32), entry count (4), totaling 54 bytes. Children precede their parent.
 - Root metadata: entry count (4), checkpoint-present flag (1), confirmed-head checkpoint (8), root node ID (8), totaling 21 bytes. ID zero means the proof index has been reclaimed; the values remain archived.
+
+Full-node complete-map imports also share unchanged nodes. A `cdh/reuse/` hint maps the sorted key dictionary hash to its last imported root. Under the writer lock, an import may reuse that root if its proof index is retained; the complete submitted map and expected root are still authenticated. Different dictionaries and pruned candidates create checkpoints. The hint is updated atomically with history and is not namespace or publication authority.
 
 Root metadata uses `committed_data_mpt/ | root (32 bytes) | 255 | 0 (4-byte big-endian)`. Only the shared-node format is supported; unreleased paged snapshots must be recreated.
 
@@ -71,7 +75,7 @@ The `cdh/v1/` archive stores one content-addressed, sorted key dictionary per ke
 
 This is the feature's first storage format. There is no reader or migration for earlier PR1261 drafts. Each archive and dictionary is authenticated before releasing proof nodes. Missing or corrupt history prevents pruning that root. Archive verification runs outside the import write lock, then eligibility is rechecked under that lock. Reclamation evicts only deleted nodes from the bounded cache. Historical values and dictionaries are never deleted; a future value-retention policy must account for dictionary and checkpoint dependencies.
 
-Older proofs remain available without an age cutoff. Madara reconstructs the canonical tree from retained values, verifies its root, then produces the requested proof. A batch reconstructs once for all requested keys. Only one reconstruction runs per backend at a time, and ordinary old-proof requests do not repopulate the durable index. Older paginated value reads also reconstruct; repeated pages or single-key calls can therefore be slow. This is a correctness-first cold path, not a cold-query throughput guarantee.
+Older proofs remain available without an age cutoff. Madara reconstructs the canonical tree from retained values, verifies its root, then produces the requested proof. A batch reconstructs once for all requested keys. Only one reconstruction runs per backend at a time, and ordinary old-proof requests do not repopulate the durable index. Paginated value reads decode the checksummed archive without building a proof tree; consumers authenticate the complete assembled root. Bulk feeder witness requests reconstruct once for up to 1,024 requested keys. Repeated pages still decode archive values and separate proof requests may repeat reconstruction; this is not a cold-query throughput guarantee.
 
 ### Memory and backup controls
 
@@ -107,7 +111,9 @@ Private RPC imports take `entries: [[key, value], ...]`, bounded by the pinned B
 
 The feeder gateway lists 64 roots per page, serves 4,096 sorted entries per page, and returns witnesses by `root` and felt `key`. Full nodes fetch all entries, recompute the root, then persist locally; they can serve witnesses after source loss. Lexical root cursors require rescanning. Enable `--madara-additional-data-sync` (or `MADARA_ADDITIONAL_DATA_SYNC=true`) to replicate bouncer weights. When `--use-committed-data` is also enabled, this additionally replicates committed datasets. This replaces the previous `--bouncer-config-sync-enable` / `MADARA_ENABLE_BOUNCER_CONFIG_SYNCING` setting; update deployment arguments and environment variables when upgrading.
 
-The dedicated listener default body limit is 128 MiB to accommodate full-width keys and values; the feeder response limit is 1 MiB and SNOS witness response limit is 32 KiB. These are transport/allocation bounds, not total DB quotas.
+Catalog replication runs in an owned background task independently of latest-header probes and retries five seconds after each pass. An unavailable historical dataset does not starve later available roots. A missing dataset required for actual execution still fails closed. SNOS uses the read-only bulk witness route, falls back to legacy single reads only on HTTP 404/405, and records network/body waits in the ordinary shared RPC timing recorder.
+
+The dedicated listener default body limit is 128 MiB to accommodate full-width keys and values; the feeder page response limit is 1 MiB and SNOS witness response limit is 32 KiB per requested witness (up to 1,024 in a bulk response). These are transport/allocation bounds, not total DB quotas.
 
 Databases created with earlier PR1261 drafts must be regenerated; those drafts are not supported upgrade sources. SNOS, Blockifier, the OS program hash, Madara and client dataset generation must be upgraded together. No new application-specific configuration is introduced.
 
@@ -158,7 +164,7 @@ Backup chunks are a separate format: sorted submitted `(key, value)` pairs, 64 b
 | Older full node, upgraded sequencer                             | Existing block and bouncer routes remain available. The old node can sync blocks/state and receipts, but does not discover datasets and cannot execute or trace the new syscall.            |
 | Upgraded full node, additional-data sync disabled               | No dataset catalog calls are made. Ordinary synchronization continues; committed-data execution still requires the necessary local values. |
 | Upgraded full node, additional-data sync enabled, feature disabled | Only the existing bouncer extension is synchronized. No catalog endpoint is required, including against older sequencers. |
-| Upgraded full node, both feature and additional-data sync enabled, old sequencer | Missing catalog endpoints prevent advancing the latest probe; a chain using the feature requires a compatible source. |
+| Upgraded full node, both feature and additional-data sync enabled, old sequencer | Missing catalogs are retried independently; latest-header probes continue. Executing a committed-data call still requires an available authenticated dataset. |
 | Upgraded full node, enabled sync, empty catalog                 | Empty catalogs are valid and do not prevent advancement. A later missing required dataset fails closed during execution.                   |
 
 The gateway read budget is per listener: `--committed-data-max-concurrent-reads` / `MADARA_COMMITTED_DATA_MAX_CONCURRENT_READS`, default 4, minimum 1. A permit stays with admitted blocking work even if the client disconnects. This limits concurrent work; it does not cap dataset storage or guarantee cold-read latency.
@@ -173,6 +179,65 @@ The optional Mongo `committed_data` field defaults to an empty list when reading
 
 `--restore-committed-data-records` supplies manifest IDs to restore into an older chain snapshot. `--restore-committed-data-transactions` supplies transaction hashes; restore authenticates their complete dependencies first, then saves admissions for normal mempool reconciliation. Both lists default to empty. Ordinary external export keeps its existing asynchronous retry behavior during Mongo outages.
 
+After authenticating and importing a remote record, restore writes its manifest and namespace identity atomically without enqueueing the payload in the local upload backlog. An identical pending local record is acknowledged in the same batch; conflicting namespace identities are rejected. Unrelated pending records and their byte accounting remain unchanged, even when the configured upload budget is full.
+
 An explicitly requested restore is a startup prerequisite. Mongo unavailability or corrupt/missing dependencies therefore stops that startup attempt. Continuing services after ignoring an incomplete operator-requested restore could admit a partially recovered chain. Retry the same command when the archive is available; completed immutable imports are idempotent.
 
 The private listener's HTTP Host restriction protects a loopback-only ingestion interface against DNS rebinding. Browser-origin policy alone does not provide that protection. This restriction is scoped to the committed-data listener; public and admin listener behavior is unchanged.
+
+
+## Review-fix data flow
+
+```mermaid
+sequenceDiagram
+    participant Probe as Latest-header probe
+    participant Sync as Dataset replication task
+    participant Gateway as Source feeder
+    participant DB as Replica RocksDB
+    Probe->>Gateway: Fetch latest header independently
+    Sync->>Gateway: Scan roots and fetch bounded value pages
+    Gateway-->>Sync: Retained-tree pages or decoded historical values
+    Sync->>DB: Authenticate complete map and expected root
+    DB->>DB: Find retained root with identical key dictionary
+    DB->>DB: Share unchanged nodes; stage value delta or checkpoint
+    DB->>DB: Atomically sync nodes, archive, metadata and reuse hint
+    Sync->>DB: Notify settlement-gated proof cleanup
+    Note over Sync,DB: A failed root is retried; later roots may still import
+```
+
+```mermaid
+sequenceDiagram
+    participant Replay as SNOS block replay
+    participant Cache as Bounded witness cache
+    participant Feeder as Replica feeder
+    participant OS as Cairo OS
+    loop Each block
+        Replay->>Replay: Start empty block read set
+        Replay->>Cache: Authenticate single or batch reads
+        Cache->>Feeder: Fetch missing witnesses in bounded batches
+        Feeder->>Feeder: Reconstruct cold root once per batch
+        Feeder-->>Cache: Ordered authenticated witnesses
+        Replay->>Replay: Keep admitted work; discard omitted reverted work
+        Replay->>Cache: Collect this block's surviving witness keys
+        Cache-->>Replay: Per-block witnesses (refetch evicted entries if needed)
+        Replay->>OS: Block input with at most 65,536 witnesses
+        OS->>OS: Resolve by block/root/key; constrain verification and billing
+    end
+    Note over Cache,OS: The transport cache limit is not a multi-block PIE limit
+```
+
+```mermaid
+sequenceDiagram
+    participant Operator
+    participant Mongo as Remote archive
+    participant Restore
+    participant DB as Local RocksDB
+    Operator->>Restore: Select immutable manifests or transactions
+    Restore->>Mongo: Fetch exact dependencies and chunks
+    Restore->>Restore: Validate chain, parent, checksums, encoding and root
+    Restore->>DB: Import authenticated map
+    Restore->>DB: Atomically retain manifest and namespace identity
+    DB->>DB: Acknowledge identical pending record if present
+    Note over Restore,DB: No remote payload enters the bounded upload queue
+    Restore-->>Operator: Complete before normal transaction reconciliation
+```
