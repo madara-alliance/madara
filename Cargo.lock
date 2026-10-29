@@ -10499,6 +10499,7 @@ dependencies = [
  "mockall_double",
  "mockito",
  "mongodb",
+ "mp-gateway",
  "num-bigint",
  "num-integer",
  "num-traits",

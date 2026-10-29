@@ -6,11 +6,9 @@ use cairo_vm::types::layout_name::LayoutName;
 use futures::TryStreamExt;
 use generate_pie::{generate_pie, ChainConfig, OsHintsConfiguration, PieGenerationInput};
 use mongodb::bson::{doc, Document};
+use mp_gateway::committed_data::VALUES_PER_PAGE;
 use serde_json::{json, Value};
 use std::time::{Duration, Instant};
-
-// Feeder protocol page width; assert the full final page as well as every preceding page.
-const VALUES_PER_PAGE: usize = 4096;
 
 /// Wait for the ordinary exporter to publish complete manifests before destroying the source.
 /// The fixture owns a unique Mongo database, so unrelated backups cannot satisfy this barrier.
