@@ -338,6 +338,7 @@ async fn committed_data_real_madara_snos_fullnode_and_revert() -> Result<()> {
     let mut replica = Node::start(Some(&source)).await?;
     let target = accepted.last().unwrap().1;
     replica.wait_for_block(target).await?;
+    replica.wait_for_datasets(&[tree.root(), deep.root()]).await?;
     for (hash, _) in &accepted {
         let original = rpc(&source.rpc, "starknet_traceTransaction", json!([hash])).await?;
         let replicated = rpc(&replica.rpc, "starknet_traceTransaction", json!([hash])).await?;

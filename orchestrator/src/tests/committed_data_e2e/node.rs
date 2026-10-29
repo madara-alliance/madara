@@ -190,6 +190,29 @@ impl Node {
         anyhow::bail!("full-node sync did not reach block {target}")
     }
 
+    /// Block sync intentionally does not wait for the off-chain catalog. A root is advertised
+    /// only after its complete map has been authenticated and persisted; wait for that separate
+    /// readiness condition before testing traces, without retrying or masking trace failures.
+    pub async fn wait_for_datasets(&mut self, roots: &[starknet_types_core::felt::Felt]) -> Result<()> {
+        let client = reqwest::Client::builder().timeout(Duration::from_secs(30)).build()?;
+        for _ in 0..180 {
+            let status = self.child.try_wait()?;
+            ensure!(status.is_none(), "Madara exited during dataset replication: {status:?}; see saved node log");
+            let available: Vec<starknet_types_core::felt::Felt> = client
+                .get(format!("{}get_committed_data_roots", self.feeder))
+                .send()
+                .await?
+                .error_for_status()?
+                .json()
+                .await?;
+            if roots.iter().all(|root| available.contains(root)) {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+        anyhow::bail!("full-node dataset replication did not publish the acceptance roots")
+    }
+
     /// Sample the child process, not the test runner (which also constructs reference trees and
     /// executes SNOS). On Linux VmHWM is peak RSS since this child started; a restart resets it.
     /// Disk bytes include every file currently in the isolated directory, including WAL/logs.
