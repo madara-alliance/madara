@@ -122,10 +122,10 @@ starknet-types-core = { version = "0.2.4", default-features = false, features = 
 ] }
 
 # Pin Madara's direct execution dependencies to the reviewed admission-accounting implementation.
-blockifier = { git = "https://github.com/madara-alliance/sequencer", rev = "79d505342471c1cab58bcd3fa0b48fe3a521cde6", features = [
+blockifier = { git = "https://github.com/madara-alliance/sequencer", rev = "6a32a055a8daf37723e279b6acd91110948ac4b1", features = [
   "node_api",
 ] }
-starknet_api = { git = "https://github.com/madara-alliance/sequencer", rev = "79d505342471c1cab58bcd3fa0b48fe3a521cde6" }
+starknet_api = { git = "https://github.com/madara-alliance/sequencer", rev = "6a32a055a8daf37723e279b6acd91110948ac4b1" }
 cairo-lang-starknet-classes = "=2.17.0"
 cairo-lang-utils = "=2.17.0"
 casm-classes-v2 = { package = "cairo-lang-starknet-classes", version = "=2.17.0" }
@@ -321,7 +321,7 @@ async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 # Keep SNOS on the same exact Sequencer execution graph as Madara's Blockifier pin.
-generate-pie = { git = "https://github.com/madara-alliance/snos.git", rev = "7f022be6b348723ef7d811f2be085f847799fd59" }
+generate-pie = { git = "https://github.com/madara-alliance/snos.git", rev = "0646ecfe206cb9024c7f1aad77d1af6417287741" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
@@ -331,8 +331,8 @@ orchestrator-ethereum-settlement-client = { path = "orchestrator/crates/settleme
 orchestrator-starknet-settlement-client = { path = "orchestrator/crates/settlement-clients/starknet" }
 orchestrator-utils = { path = "orchestrator/crates/utils" }
 orchestrator-aggregator-runner = { path = "orchestrator/crates/aggregator-runner" }
-apollo_starknet_os_program = { git = "https://github.com/madara-alliance/sequencer", rev = "79d505342471c1cab58bcd3fa0b48fe3a521cde6" }
-starknet_os = { git = "https://github.com/madara-alliance/sequencer", rev = "79d505342471c1cab58bcd3fa0b48fe3a521cde6" }
+apollo_starknet_os_program = { git = "https://github.com/madara-alliance/sequencer", rev = "6a32a055a8daf37723e279b6acd91110948ac4b1" }
+starknet_os = { git = "https://github.com/madara-alliance/sequencer", rev = "6a32a055a8daf37723e279b6acd91110948ac4b1" }
 orchestrator-prover-client-interface = { path = "orchestrator/crates/prover-clients/prover-client-interface" }
 orchestrator-gps-fact-checker = { path = "orchestrator/crates/prover-clients/gps-fact-checker" }
 orchestrator-sharp-service = { path = "orchestrator/crates/prover-clients/sharp-service" }
@@ -354,9 +354,9 @@ rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", rev = "75f1
 librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", rev = "75f13c78fdf970b0afd2f21f52caf3317341341c" }
 
 [patch."https://github.com/starkware-libs/sequencer"]
-apollo_infra_utils = { git = "https://github.com/madara-alliance/sequencer", rev = "79d505342471c1cab58bcd3fa0b48fe3a521cde6" }
-apollo_proc_macros = { git = "https://github.com/madara-alliance/sequencer", rev = "79d505342471c1cab58bcd3fa0b48fe3a521cde6" }
-apollo_sizeof = { git = "https://github.com/madara-alliance/sequencer", rev = "79d505342471c1cab58bcd3fa0b48fe3a521cde6" }
-apollo_sizeof_macros = { git = "https://github.com/madara-alliance/sequencer", rev = "79d505342471c1cab58bcd3fa0b48fe3a521cde6" }
-blockifier = { git = "https://github.com/madara-alliance/sequencer", rev = "79d505342471c1cab58bcd3fa0b48fe3a521cde6" }
-starknet_api = { git = "https://github.com/madara-alliance/sequencer", rev = "79d505342471c1cab58bcd3fa0b48fe3a521cde6" }
+apollo_infra_utils = { git = "https://github.com/madara-alliance/sequencer", rev = "6a32a055a8daf37723e279b6acd91110948ac4b1" }
+apollo_proc_macros = { git = "https://github.com/madara-alliance/sequencer", rev = "6a32a055a8daf37723e279b6acd91110948ac4b1" }
+apollo_sizeof = { git = "https://github.com/madara-alliance/sequencer", rev = "6a32a055a8daf37723e279b6acd91110948ac4b1" }
+apollo_sizeof_macros = { git = "https://github.com/madara-alliance/sequencer", rev = "6a32a055a8daf37723e279b6acd91110948ac4b1" }
+blockifier = { git = "https://github.com/madara-alliance/sequencer", rev = "6a32a055a8daf37723e279b6acd91110948ac4b1" }
+starknet_api = { git = "https://github.com/madara-alliance/sequencer", rev = "6a32a055a8daf37723e279b6acd91110948ac4b1" }

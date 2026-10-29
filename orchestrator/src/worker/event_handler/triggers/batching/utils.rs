@@ -3,7 +3,7 @@ use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::utils::rest_client::RestClient;
 use crate::worker::event_handler::triggers::snos::fetch_block_starknet_version;
-use blockifier::bouncer::BouncerWeights;
+use blockifier::bouncer::{snos_full_output_cells_from_counts, BouncerWeights};
 use color_eyre::eyre::eyre;
 use serde::Deserialize;
 use starknet::core::types::MaybePreConfirmedStateUpdate;
@@ -13,11 +13,6 @@ use starknet::providers::{JsonRpcClient, Provider};
 use std::collections::HashSet;
 use std::sync::Arc;
 use tracing::debug;
-
-const SNOS_OUTPUT_FIXED_CELLS: usize = 14;
-const SNOS_CONTRACT_CELLS: usize = 6;
-const SNOS_STORAGE_CELLS: usize = 3;
-const SNOS_CLASS_CELLS: usize = 3;
 
 #[derive(Deserialize)]
 struct SnosOutputLimit {
@@ -72,11 +67,7 @@ fn snos_output_cells(state_update: &StateUpdate, message_segment_length: usize) 
         + state_diff.deprecated_declared_classes.len()
         + state_diff.migrated_compiled_classes.as_ref().map_or(0, Vec::len);
 
-    SNOS_OUTPUT_FIXED_CELLS
-        .checked_add(message_segment_length)
-        .and_then(|cells| cells.checked_add(contracts.len().checked_mul(SNOS_CONTRACT_CELLS)?))
-        .and_then(|cells| cells.checked_add(storage_updates.checked_mul(SNOS_STORAGE_CELLS)?))
-        .and_then(|cells| cells.checked_add(declared_classes.checked_mul(SNOS_CLASS_CELLS)?))
+    snos_full_output_cells_from_counts(message_segment_length, contracts.len(), storage_updates, declared_classes)
         .ok_or_else(|| JobError::Other(OtherError(eyre!("SNOS output cell count overflow"))))
 }
 
