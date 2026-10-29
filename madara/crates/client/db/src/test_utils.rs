@@ -13,6 +13,8 @@ use mp_transactions::{
 use starknet_core::types::contract::SierraClass;
 use std::sync::Arc;
 
+pub use crate::committed_data::committed_data_import_in_flight;
+
 pub fn add_test_block(
     backend: &Arc<MadaraBackend>,
     block_number: u64,

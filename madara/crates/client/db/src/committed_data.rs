@@ -72,6 +72,12 @@ impl SnapshotCache {
     }
 }
 
+#[cfg(any(test, feature = "testing"))]
+/// Observe import admission so shutdown tests can stop while blocking work is queued.
+pub fn committed_data_import_in_flight(backend: &MadaraBackend) -> bool {
+    backend.committed_data_cache.import.available_permits() == 0
+}
+
 impl<D: MadaraStorageRead> MadaraBackend<D> {
     /// Node-local execution switch; dataset imports and reads do not require activation.
     pub fn use_committed_data(&self) -> bool {

@@ -1,4 +1,11 @@
 use super::*;
+
+fn replication_context() -> ServiceContext {
+    let ctx = ServiceContext::default().with_id(mp_utils::service::MadaraServiceId::L2Sync);
+    ctx.service_add(mp_utils::service::MadaraServiceId::L2Sync);
+    ctx
+}
+
 #[tokio::test]
 async fn committed_data_http_replication_authenticates_pages_and_survives_source_loss_and_reopen() {
     use blockifier::execution::syscalls::committed_data::CommittedDataSet;
@@ -69,12 +76,12 @@ async fn committed_data_http_replication_authenticates_pages_and_survives_source
         let replica = open();
         let mut cleanup = Box::pin(replica.wait_for_committed_data_cleanup());
         assert!(futures::poll!(&mut cleanup).is_pending());
-        sync_available(&replica, &client).await.unwrap();
+        sync_available(&replica, &client, &mut replication_context()).await.unwrap();
         assert!(futures::poll!(&mut cleanup).is_ready());
         drop(cleanup);
         let mut cleanup = Box::pin(replica.wait_for_committed_data_cleanup());
         assert!(futures::poll!(&mut cleanup).is_pending());
-        sync_available(&replica, &client).await.unwrap();
+        sync_available(&replica, &client, &mut replication_context()).await.unwrap();
         assert!(futures::poll!(&mut cleanup).is_pending(), "Already-present datasets do not trigger cleanup");
         for page in &pages {
             page.assert_hits_async(1).await;
@@ -133,7 +140,7 @@ async fn committed_data_http_corruption_is_never_persisted() {
     let client =
         GatewayProvider::new(server.url("/gateway/").parse().unwrap(), server.url("/feeder_gateway/").parse().unwrap());
     let replica = MadaraBackend::open_for_testing(Arc::new(mp_chain_config::ChainConfig::madara_test()));
-    assert!(sync_available(&replica, &client).await.is_err());
+    assert!(sync_available(&replica, &client, &mut replication_context()).await.is_err());
     assert!(replica.db.list_committed_data_roots(None).unwrap().is_empty());
 }
 
@@ -200,7 +207,11 @@ async fn missing_dataset_does_not_publish_a_root_or_namespace() {
     let client =
         GatewayProvider::new(server.url("/gateway/").parse().unwrap(), server.url("/feeder_gateway/").parse().unwrap());
     let replica = MadaraBackend::open_for_testing(Arc::new(mp_chain_config::ChainConfig::madara_test()));
-    assert!(sync_available(&replica, &client).await.unwrap_err().to_string().contains("unavailable"));
+    assert!(sync_available(&replica, &client, &mut replication_context())
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("unavailable"));
     assert!(replica.db.list_committed_data_roots(None).unwrap().is_empty());
     assert!(replica.db.list_committed_data_versions(None).unwrap().is_empty());
     versions.assert_hits_async(0).await;
@@ -250,24 +261,34 @@ async fn committed_data_latest_probe_compatibility(
         server.url("/gateway/").parse().unwrap(),
         server.url("/feeder_gateway/").parse().unwrap(),
     ));
-    let probe = Arc::new(super::super::GatewayLatestProbe::new(client, backend, enabled));
-    let previous = mp_gateway::block::ProviderBlockHeader { block_number: 9, block_hash: Felt::ONE };
-    assert_eq!(
-        probe.clone().probe(Some(previous.clone())).await.unwrap(),
-        Some(if advances { latest } else { previous })
-    );
-    if enabled && use_committed_data {
-        tokio::time::timeout(Duration::from_secs(5), async {
-            while catalogs.hits_async().await < if supported { 2 } else { 1 } {
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .unwrap();
-    } else {
-        catalogs.assert_hits_async(0).await;
-    }
-    drop(probe); // Aborts the owned history worker; no detached replication task survives sync.
+    let probe = Arc::new(super::super::GatewayLatestProbe { client: client.clone() });
+    let ctx = replication_context();
+    let replication_ctx = ctx.clone();
+    let replication = async {
+        if enabled && use_committed_data {
+            run(&backend, &client, replication_ctx).await;
+        }
+    };
+    let check_probe = async {
+        let previous = mp_gateway::block::ProviderBlockHeader { block_number: 9, block_hash: Felt::ONE };
+        assert_eq!(
+            probe.clone().probe(Some(previous.clone())).await.unwrap(),
+            Some(if advances { latest } else { previous })
+        );
+        if enabled && use_committed_data {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while catalogs.hits_async().await < if supported { 2 } else { 1 } {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+        } else {
+            catalogs.assert_hits_async(0).await;
+        }
+        ctx.cancel_local();
+    };
+    tokio::join!(check_probe, replication);
 }
 
 #[tokio::test]
@@ -297,7 +318,92 @@ async fn unavailable_historical_root_does_not_starve_available_datasets() {
     let client =
         GatewayProvider::new(server.url("/gateway/").parse().unwrap(), server.url("/feeder_gateway/").parse().unwrap());
     let replica = MadaraBackend::open_for_testing(Arc::new(mp_chain_config::ChainConfig::madara_test()));
-    assert!(sync_available(&replica, &client).await.is_err());
+    assert!(sync_available(&replica, &client, &mut replication_context()).await.is_err());
     assert!(replica.db.get_committed_data_count(Felt::ZERO).unwrap().is_none());
     assert!(replica.committed_data_witness(root, Felt::ONE).unwrap().unwrap().verify());
+}
+
+/// Cancellation stops further HTTP work but must drain an import already queued on Tokio's
+/// blocking pool. Reopening the real DB proves completion includes durable publication.
+#[test]
+fn committed_data_shutdown_drains_queued_import_before_returning() {
+    use blockifier::execution::syscalls::committed_data::CommittedDataSet;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    tokio::runtime::Builder::new_current_thread().enable_all().max_blocking_threads(1).build().unwrap().block_on(async {
+        let directory = tempfile::tempdir().unwrap();
+        let open = || MadaraBackend::open_rocksdb(
+            directory.path(), mp_chain_config::ChainConfig::madara_test().into(),
+            Default::default(), Default::default(), Default::default(),
+        ).unwrap();
+        let backend = open();
+        let values = vec![(Felt::ONE, Felt::MAX)];
+        let root = CommittedDataSet::new(values.clone()).unwrap().root();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/", listener.local_addr().unwrap());
+        let client = GatewayProvider::new(endpoint.parse().unwrap(), endpoint.parse().unwrap());
+        let (page_requested, page_ready) = tokio::sync::oneshot::channel();
+        let (release_page, wait_page) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(async move {
+            let responses = [serde_json::to_vec(&vec![root]).unwrap(), serde_json::to_vec(&Some(CommittedDataPage {
+                root, start: 0, count: 1, entries: values,
+            })).unwrap()];
+            let mut page_gate = Some((page_requested, wait_page));
+            for (index, body) in responses.into_iter().enumerate() {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                while !request.ends_with(b"\r\n\r\n") {
+                    request.push(socket.read_u8().await.unwrap());
+                }
+                if index == 1 {
+                    let (requested, wait) = page_gate.take().unwrap();
+                    requested.send(()).unwrap();
+                    wait.await.unwrap();
+                }
+                let header = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+                socket.write_all(header.as_bytes()).await.unwrap();
+                socket.write_all(&body).await.unwrap();
+            }
+        });
+        let ctx = replication_context();
+        let replica = backend.clone();
+        let worker_ctx = ctx.clone();
+        let mut worker = tokio::spawn(async move { run(&replica, &client, worker_ctx).await });
+        tokio::time::timeout(Duration::from_secs(5), page_ready).await.unwrap().unwrap(); // Presence lookup finished.
+        let (release_blocker, wait_blocker) = std::sync::mpsc::channel::<()>();
+        let (started, ready) = tokio::sync::oneshot::channel();
+        let blocker = tokio::task::spawn_blocking(move || {
+            started.send(()).unwrap();
+            // Dropping the sender on panic also releases the worker.
+            let _ = wait_blocker.recv_timeout(Duration::from_secs(10));
+        });
+        ready.await.unwrap();
+        release_page.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !mc_db::test_utils::committed_data_import_in_flight(&backend) {
+                tokio::task::yield_now().await;
+            }
+        }).await.unwrap();
+        ctx.cancel_local();
+        assert!(tokio::time::timeout(Duration::from_millis(50), &mut worker).await.is_err(),
+            "Sync must not acknowledge shutdown while its admitted import is queued");
+        assert!(backend.db.get_committed_data_count(root).unwrap().is_none());
+        drop(release_blocker);
+        blocker.await.unwrap();
+        tokio::time::timeout(Duration::from_secs(5), worker).await.unwrap().unwrap();
+        server.await.unwrap();
+        assert!(!mc_db::test_utils::committed_data_import_in_flight(&backend));
+        drop(backend);
+        let reopened = open();
+        assert_eq!(reopened.committed_data_witness(root, Felt::ONE).unwrap().unwrap().value, Felt::MAX);
+    });
+}
+
+#[tokio::test]
+async fn committed_data_shutdown_cancels_unfinished_download() {
+    let ctx = replication_context();
+    let mut request_ctx = ctx.clone();
+    let mut request = Box::pin(download(&mut request_ctx, std::future::pending::<()>()));
+    assert!(futures::poll!(&mut request).is_pending());
+    ctx.cancel_local();
+    assert!(tokio::time::timeout(Duration::from_secs(1), request).await.unwrap().is_err());
 }

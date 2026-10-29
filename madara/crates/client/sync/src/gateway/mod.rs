@@ -17,8 +17,6 @@ pub(crate) mod blocks;
 pub(crate) mod classes;
 mod committed_data;
 
-const COMMITTED_DATA_RESCAN_INTERVAL: Duration = Duration::from_secs(5);
-
 pub struct ForwardSyncConfig {
     pub block_parallelization: usize,
     pub block_batch_size: usize,
@@ -77,7 +75,32 @@ impl ForwardSyncConfig {
     }
 }
 
-pub type GatewaySync = SyncController<GatewayForwardSync>;
+/// Owns chain sync and optional dataset replication through graceful shutdown.
+pub struct GatewaySync {
+    controller: SyncController<GatewayForwardSync>,
+    backend: Arc<MadaraBackend>,
+    client: Arc<GatewayProvider>,
+    replicate: bool,
+}
+
+impl GatewaySync {
+    /// Cancel downloads when chain sync stops, then drain admitted storage work before returning.
+    pub async fn run(&mut self, ctx: mp_utils::service::ServiceContext) -> anyhow::Result<()> {
+        if !self.replicate {
+            return self.controller.run(ctx).await;
+        }
+        let replication_ctx = ctx.child();
+        let (result, ()) = tokio::join!(
+            async {
+                let result = self.controller.run(ctx).await;
+                replication_ctx.cancel_local();
+                result
+            },
+            committed_data::run(&self.backend, &self.client, replication_ctx.clone()),
+        );
+        result
+    }
+}
 pub fn forward_sync(
     backend: Arc<MadaraBackend>,
     importer: Arc<BlockImporter>,
@@ -85,7 +108,7 @@ pub fn forward_sync(
     controller_config: SyncControllerConfig,
     config: ForwardSyncConfig,
 ) -> GatewaySync {
-    let probe = Arc::new(GatewayLatestProbe::new(client.clone(), backend.clone(), config.madara_additional_data_sync));
+    let probe = Arc::new(GatewayLatestProbe { client: client.clone() });
     let probe = ThrottledRepeatedFuture::new(move |val| probe.clone().probe(val), Duration::from_secs(1));
     let get_pending_block = gateway_preconfirmed_block_sync(
         client.clone(),
@@ -93,13 +116,15 @@ pub fn forward_sync(
         backend.clone(),
         config.disable_reorg_preconfirmed,
     );
-    SyncController::new(
+    let replicate = config.madara_additional_data_sync && backend.use_committed_data();
+    let controller = SyncController::new(
         backend.clone(),
-        GatewayForwardSync::new(backend, importer, client, config),
+        GatewayForwardSync::new(backend.clone(), importer, client.clone(), config),
         probe,
         controller_config,
         Some(get_pending_block),
-    )
+    );
+    GatewaySync { controller, backend, client, replicate }
 }
 
 pub struct GatewayForwardSync {
@@ -338,38 +363,9 @@ impl ForwardPipeline for GatewayForwardSync {
 
 struct GatewayLatestProbe {
     client: Arc<GatewayProvider>,
-    replication: Option<tokio::task::JoinHandle<()>>,
-}
-
-impl Drop for GatewayLatestProbe {
-    fn drop(&mut self) {
-        if let Some(task) = &self.replication {
-            task.abort();
-        }
-    }
 }
 
 impl GatewayLatestProbe {
-    pub fn new(client: Arc<GatewayProvider>, backend: Arc<MadaraBackend>, additional_data_sync: bool) -> Self {
-        // Bouncer replication predates committed data. Enabling that existing behavior must
-        // not make ordinary full nodes depend on catalog routes absent from older sequencers.
-        let sync_committed_data = additional_data_sync && backend.use_committed_data();
-        let replication = sync_committed_data.then(|| {
-            let client = client.clone();
-            tokio::spawn(async move {
-                loop {
-                    if let Err(error) = committed_data::sync_available(&backend, &client).await {
-                        tracing::warn!(
-                            "Committed-data replication failed; will retry independently of chain sync: {error:#}"
-                        );
-                    }
-                    tokio::time::sleep(COMMITTED_DATA_RESCAN_INTERVAL).await;
-                }
-            })
-        });
-        Self { client, replication }
-    }
-
     async fn probe(
         self: Arc<Self>,
         highest_known_block: Option<ProviderBlockHeader>,

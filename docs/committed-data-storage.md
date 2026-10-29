@@ -167,6 +167,8 @@ Backup chunks are a separate format: sorted submitted `(key, value)` pairs, 64 b
 | Upgraded full node, both feature and additional-data sync enabled, old sequencer | Missing catalogs are retried independently; latest-header probes continue. Executing a committed-data call still requires an available authenticated dataset. |
 | Upgraded full node, enabled sync, empty catalog                 | Empty catalogs are valid and do not prevent advancement. A later missing required dataset fails closed during execution.                   |
 
+Dataset replication is owned by the L2 sync service. Shutdown cancels downloads and retry waits, then awaits any admitted dataset or namespace write before reporting the service stopped. Header probing remains independent of catalog availability.
+
 The gateway read budget is per listener: `--committed-data-max-concurrent-reads` / `MADARA_COMMITTED_DATA_MAX_CONCURRENT_READS`, default 4, minimum 1. A permit stays with admitted blocking work even if the client disconnects. This limits concurrent work; it does not cap dataset storage or guarantee cold-read latency.
 
 Historical transaction and block traces use the same committed-data provider as execution. Proof pruning keeps permanent values, so a sequencer or replica can reconstruct an old root and execute the read. Historical execution below the retention cutoff does not reactivate the durable proof index. Tracing still needs the canonical transaction, historical chain state and classes, and the dataset; this feature does not turn an otherwise pruned chain database into a full archive.
