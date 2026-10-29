@@ -22,7 +22,6 @@ pub struct SyncMetrics {
     pub starting_block: u64,
     pub starting_time: Instant,
     pub last_update_instant: Option<Instant>,
-    pub last_db_metrics_update_instant: Option<Instant>,
 
     // L2 network metrics
     pub l2_block_number: Histogram<f64>,
@@ -121,7 +120,6 @@ impl SyncMetrics {
             starting_block,
             starting_time: Instant::now(),
             last_update_instant: Default::default(),
-            last_db_metrics_update_instant: Default::default(),
 
             l2_block_number,
             l2_sync_time,
