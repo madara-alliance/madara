@@ -354,12 +354,13 @@ impl RunCmd {
 
 #[cfg(test)]
 mod tests {
-    use super::{RunCmd, DEFAULT_MAX_RETAINED_FRONTIER_NODES_TOTAL};
+    use super::RunCmd;
     use clap::Parser;
     use figment::{
         providers::{Format, Json},
         Figment,
     };
+    use mc_db::rocksdb::DEFAULT_MAX_RETAINED_FRONTIER_NODES_TOTAL;
 
     #[test]
     fn full_node_does_not_run_or_save_mempool() {
