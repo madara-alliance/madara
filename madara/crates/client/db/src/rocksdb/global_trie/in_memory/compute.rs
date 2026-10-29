@@ -50,6 +50,7 @@ fn bonsai_storage_config(backend: &RocksDBStorage, retain_trie_logs: bool) -> Re
         max_saved_trie_logs: if retain_trie_logs { backend.inner.config.max_saved_trie_logs } else { Some(0) },
         max_saved_snapshots: Some(0),
         snapshot_interval: backend.inner.config.snapshot_interval,
+        max_retained_frontier_nodes_total: backend.inner.config.max_retained_frontier_nodes_total,
     })
 }
 

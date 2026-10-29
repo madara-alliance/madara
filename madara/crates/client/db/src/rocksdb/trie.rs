@@ -152,6 +152,7 @@ impl RocksDBStorage {
                 max_saved_trie_logs: self.inner.config.max_saved_trie_logs,
                 max_saved_snapshots: self.inner.config.max_kept_snapshots,
                 snapshot_interval: self.inner.config.snapshot_interval,
+                max_retained_frontier_nodes_total: self.inner.config.max_retained_frontier_nodes_total,
             },
             // Every global tree has keys of 251 bits.
             251,

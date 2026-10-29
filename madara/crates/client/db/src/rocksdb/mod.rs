@@ -71,6 +71,7 @@ type DB = DBWithThreadMode<MultiThreaded>;
 
 pub use options::{
     DbWriteMode, RocksDBConfig, StatsLevel, DEFAULT_DELETE_OBSOLETE_FILES_PERIOD_MICROS, DEFAULT_MAX_OPEN_FILES,
+    DEFAULT_MAX_RETAINED_FRONTIER_NODES_TOTAL,
 };
 
 const DB_UPDATES_BATCH_SIZE: usize = 1024;

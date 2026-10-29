@@ -109,6 +109,8 @@ pub const DEFAULT_DELETE_OBSOLETE_FILES_PERIOD_MICROS: u64 = 60 * 60 * 1_000_000
 /// Default number of SST table readers RocksDB may retain across the database.
 /// Operators can lower this for large databases when index/filter memory is constrained.
 pub const DEFAULT_MAX_OPEN_FILES: i32 = 2048;
+/// Default retained Bonsai frontier budget shared across all contract identifiers.
+pub const DEFAULT_MAX_RETAINED_FRONTIER_NODES_TOTAL: usize = bonsai_trie::DEFAULT_MAX_RETAINED_FRONTIER_NODES_TOTAL;
 
 pub use rocksdb::statistics::StatsLevel;
 
@@ -209,6 +211,8 @@ pub struct RocksDBConfig {
     /// Number of block revisions for which global trie logs are retained.
     /// Parallel Merkle writes sparse boundary logs but uses the same block-based retention window.
     pub max_saved_trie_logs: Option<usize>,
+    /// Maximum total number of retained Bonsai frontier nodes across trie identifiers.
+    pub max_retained_frontier_nodes_total: usize,
     /// Maximum number of kept snapshots
     pub max_kept_snapshots: Option<usize>,
     /// Number of blocks between snapshots
@@ -267,6 +271,7 @@ impl Default for RocksDBConfig {
             memtable_other_budget_bytes: 128 * MiB,
             memtable_prefix_bloom_filter_ratio: 0.0,
             max_saved_trie_logs: None,
+            max_retained_frontier_nodes_total: DEFAULT_MAX_RETAINED_FRONTIER_NODES_TOTAL,
             max_kept_snapshots: Some(0),
             snapshot_interval: 5,
             backup_dir: None,
