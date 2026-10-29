@@ -8,13 +8,11 @@ use crate::worker::event_handler::triggers::batching::utils::{
     get_block_builtin_weights, get_block_snos_output_budget, get_block_version,
 };
 use crate::worker::event_handler::triggers::batching::BlockProcessingResult;
-use blockifier::bouncer::BouncerWeights;
+use blockifier::bouncer::{accumulate_snos_full_output_cells, BouncerWeights, SNOS_OUTPUT_FIXED_CELLS};
 use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::eyre;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
-
-const SNOS_OUTPUT_FIXED_CELLS: usize = 14;
 
 fn ensure_block_fits_output_limit(
     block_num: u64,
@@ -438,9 +436,8 @@ impl NonEmptySnosState {
         if self.batch.max_snos_output_cells != max_output_cells {
             return SnosBatchCheckResult::SnosOutputLimitChanged;
         }
-        let Some(combined_output_cells) = block_output_cells
-            .checked_sub(SNOS_OUTPUT_FIXED_CELLS)
-            .and_then(|additional| self.batch.snos_output_cells.checked_add(additional))
+        let Some(combined_output_cells) =
+            accumulate_snos_full_output_cells(self.batch.snos_output_cells, block_output_cells)
         else {
             return SnosBatchCheckResult::SnosOutputLimitExceeded;
         };
@@ -493,11 +490,9 @@ impl NonEmptySnosState {
         );
         match check_result {
             SnosBatchCheckResult::CanAdd(combined_weights) => {
-                let combined_output_cells = self
-                    .batch
-                    .snos_output_cells
-                    .checked_add(block_output_cells - SNOS_OUTPUT_FIXED_CELLS)
-                    .expect("SNOS output arithmetic was checked above");
+                let combined_output_cells =
+                    accumulate_snos_full_output_cells(self.batch.snos_output_cells, block_output_cells)
+                        .expect("SNOS output arithmetic was checked above");
                 Ok(Some(NonEmptySnosState::new(
                     self.batch
                         .update(block_num, combined_weights, None)
@@ -505,11 +500,9 @@ impl NonEmptySnosState {
                 )))
             }
             SnosBatchCheckResult::CanAddFixedSize => {
-                let combined_output_cells = self
-                    .batch
-                    .snos_output_cells
-                    .checked_add(block_output_cells - SNOS_OUTPUT_FIXED_CELLS)
-                    .expect("SNOS output arithmetic was checked above");
+                let combined_output_cells =
+                    accumulate_snos_full_output_cells(self.batch.snos_output_cells, block_output_cells)
+                        .expect("SNOS output arithmetic was checked above");
                 warn!(
                     "Using MADARA_ORCHESTRATOR_FIXED_BLOCKS_PER_SNOS_BATCH env variable to close snos batch with max blocks = {:?}",
                     batch_limits.fixed_batch_size
