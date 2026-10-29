@@ -457,6 +457,7 @@ mod tests {
         let defaults = RunCmd::parse_from(["madara", "--sequencer", "--preset", "devnet"]);
         let original = defaults.backend_params.backend_config().committed_data_retention;
         assert_eq!(original.proof_retention_secs, None);
+        assert_eq!(original.rebuilt_proof_idle_secs, 6 * 60 * 60);
         assert_eq!(original.memory_blocks, 7200);
         assert_eq!(original.cache_bytes, 256 * 1024 * 1024);
         assert_eq!(original.pending_backup_bytes, 512 * 1024 * 1024);
@@ -467,6 +468,8 @@ mod tests {
             "devnet",
             "--committed-data-proof-retention-secs",
             "172800",
+            "--committed-data-rebuilt-proof-idle-secs",
+            "3600",
             "--committed-data-memory-blocks",
             "4320",
             "--committed-data-cache-mib",
@@ -476,12 +479,14 @@ mod tests {
         ]);
         let config = configured.backend_params.backend_config().committed_data_retention;
         assert_eq!(config.proof_retention_secs, Some(172800));
+        assert_eq!(config.rebuilt_proof_idle_secs, 3600);
         assert_eq!(config.memory_blocks, 4320);
         assert_eq!(config.cache_bytes, 64 * 1024 * 1024);
         assert_eq!(config.pending_backup_bytes, 1024 * 1024 * 1024);
         let mut json = serde_json::to_value(&defaults.backend_params).unwrap();
         for name in [
             "committed_data_proof_retention_secs",
+            "committed_data_rebuilt_proof_idle_secs",
             "committed_data_memory_blocks",
             "committed_data_cache_mib",
             "committed_data_pending_backup_mib",
@@ -489,6 +494,10 @@ mod tests {
             json.as_object_mut().unwrap().remove(name);
         }
         let restored: super::BackendParams = serde_json::from_value(json).unwrap();
+        assert_eq!(
+            restored.backend_config().committed_data_retention.rebuilt_proof_idle_secs,
+            original.rebuilt_proof_idle_secs
+        );
         assert_eq!(restored.backend_config().committed_data_retention.cache_bytes, original.cache_bytes);
         assert_eq!(restored.backend_config().committed_data_retention.memory_blocks, original.memory_blocks);
         assert!(RunCmd::try_parse_from(["madara", "--committed-data-memory-blocks", "-1"]).is_err());

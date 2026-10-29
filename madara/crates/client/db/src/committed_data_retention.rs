@@ -1,11 +1,17 @@
 //! Operational proof retention. Values never expire; age only selects the proof-serving index.
 use std::time::Duration;
 
+/// Disk-backed historical proof indexes remain reusable for six idle hours by default.
+pub const DEFAULT_REBUILT_PROOF_IDLE_SECS: u64 = 6 * 60 * 60;
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct CommittedDataRetentionConfig {
     /// None retains all proof nodes. Otherwise prune strictly before settled height minus this buffer.
     pub proof_retention_secs: Option<u64>,
+    /// Idle lease for reconstructed proof indexes on disk, renewed by proof/page reads.
+    /// Expiry permits pruning only outside the settled-block buffer. Zero disables new leases.
+    pub rebuilt_proof_idle_secs: u64,
     /// Recent block distance for reusable in-memory nodes; zero disables reuse across operations.
     pub memory_blocks: u64,
     /// Estimated reusable-cache budget, split equally between decoded nodes and full imports.
@@ -18,6 +24,7 @@ impl Default for CommittedDataRetentionConfig {
     fn default() -> Self {
         Self {
             proof_retention_secs: None,
+            rebuilt_proof_idle_secs: DEFAULT_REBUILT_PROOF_IDLE_SECS,
             memory_blocks: 7200,
             cache_bytes: 256 * 1024 * 1024,
             pending_backup_bytes: crate::committed_data_recovery::DEFAULT_PENDING_BACKUP_BYTES,

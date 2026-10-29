@@ -7,6 +7,7 @@ use blockifier::execution::syscalls::committed_data::{CommittedDataSet, MAX_COMM
 use rocksdb::WriteBatch;
 mod archive;
 mod codec;
+mod leases;
 #[cfg(test)]
 mod measurement;
 #[cfg(test)]
@@ -38,7 +39,7 @@ pub(super) fn sync_options() -> WriteOptions {
     options
 }
 
-/// Rebuild only in memory: an old proof request must not repopulate the durable proof window.
+/// Transient rebuild for mutations or reads with disk reuse disabled. No tree is kept in RAM.
 pub(super) fn with_reconstructed<T>(
     snapshot: &SnapshotWithDBArc,
     root: Felt,
@@ -84,8 +85,8 @@ impl RocksDBStorage {
             .get_cf(&cf, metadata_key(root, METADATA_LEVEL, 0))?
             .context("Cannot retain unknown dataset")?;
         if persistent_id(&metadata)? == 0 {
-            // A genuinely recent execution reactivates a cold root once. Historical RPC proof
-            // reads never take this path; the provider filters executions below the cutoff.
+            // Execution advances the block-based retention age. Historical reads instead use
+            // a wall-clock lease and must not change this root's original execution history.
             let snapshot = SnapshotWithDBArc::new(Arc::clone(&self.inner));
             let values = with_reconstructed(&snapshot, root, |tree| Ok(tree.entries().to_vec()))?;
             return self.store_persistent_patch_locked(
@@ -109,9 +110,18 @@ impl RocksDBStorage {
 impl RocksDBStorage {
     /// One root per call lets the maintenance service check cancellation between roots.
     pub(super) fn maintain_history(&self, cutoff: Option<u64>) -> Result<bool> {
+        self.maintain_history_at(cutoff, leases::unix_seconds()?)
+    }
+
+    fn maintain_history_at(&self, cutoff: Option<u64>, now: u64) -> Result<bool> {
         let cache =
             self.inner.committed_data.tree.lock().map_err(|_| anyhow::anyhow!("Committed-data lock poisoned"))?;
         let cf = self.inner.get_column(meta::META_COLUMN);
+        // Return expired roots to the block-age queue one at a time. Active leases are absent
+        // from that queue, so an old leased root cannot prevent other roots being reclaimed.
+        if self.expire_proof_lease(now)? {
+            return Ok(true);
+        }
         let Some(cutoff) = cutoff else { return Ok(false) };
         let candidate =
             self.inner.db.iterator_cf(&cf, IteratorMode::From(AGE, rocksdb::Direction::Forward)).next().transpose()?;
@@ -156,6 +166,7 @@ impl RocksDBStorage {
             batch.put_cf(&cf, metadata_key(root, METADATA_LEVEL, 0), metadata);
         }
         batch.delete_cf(&cf, key);
+        batch.delete_cf(&cf, root_key(leases::LEASE, root));
         self.inner.db.write_opt(batch, &sync_options())?;
         Ok(true)
     }
@@ -170,9 +181,10 @@ impl RocksDBStorage {
             .get_cf(&cf, &key)?
             .map(|b| -> Result<u64> { Ok(u64::from_be_bytes(b.as_slice().try_into()?)) })
             .transpose()?;
+        let leased = self.has_proof_lease(root)?;
         if let Some(previous) = previous.filter(|previous| *previous >= block) {
             let age = age_key(previous, root);
-            if self.inner.db.get_cf(&cf, &age)?.is_none() {
+            if !leased && self.inner.db.get_cf(&cf, &age)?.is_none() {
                 batch.put_cf(&cf, age, []);
             }
             return Ok(());
@@ -181,7 +193,9 @@ impl RocksDBStorage {
             batch.delete_cf(&cf, age_key(previous, root));
         }
         batch.put_cf(&cf, key, block.to_be_bytes());
-        batch.put_cf(&cf, age_key(block, root), []);
+        if !leased {
+            batch.put_cf(&cf, age_key(block, root), []);
+        }
         Ok(())
     }
 }

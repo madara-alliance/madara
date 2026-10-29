@@ -58,7 +58,7 @@ A retained-index witness read follows only the requested branch path, reads sibl
 
 ## Settlement-gated proof retention
 
-Successful durable ingestion wakes one background proof-cleanup worker. Private imports notify it after the local recovery journal is durable; full-node replication notifies it after persisting a dataset. Triggers during an active sweep are discarded, not queued. There is no periodic cleanup timer or additional cadence setting. Reads do not trigger cleanup. Without new ingestion, cleanup stays idle even if L1 settlement advances; another successful ingestion starts the next eligible sweep. The worker checks shutdown between roots and awaits each admitted DB mutation. Capacity planning must include settlement lag, time until another ingestion, and sweep duration.
+Successful durable ingestion wakes one background proof-cleanup worker. Private imports notify it after the local recovery journal is durable; full-node replication notifies it after persisting a dataset. Triggers during an active sweep are discarded, not queued. A 60-second periodic tick also starts a sweep, including after restart or while ingestion is idle. The worker checks shutdown between roots and awaits each admitted DB mutation. Cleanup depends on settlement, the configured buffer, idle leases and sweep duration, never on Mongo availability.
 
 Historical values never expire. Enable `--committed-data-proof-retention-secs 172800` for a two-day buffer behind the latest L1-confirmed **L2** height. Omission retains every proof index. The cutoff is:
 
@@ -67,7 +67,7 @@ cutoff = min(L1-confirmed L2 height, local confirmed height)
        - ceil(buffer seconds / configured block time)
 ```
 
-Only roots last imported/used **strictly before** the cutoff are eligible. No settlement or insufficient history means no pruning. Stalled settlement extends the retained window; this is not a wall-clock TTL. Imports conservatively mark the next block after the observed head; account execution records its actual execution height. Historical execution below the cutoff does not prolong retention. Reusing a pruned root in recent execution restores its proof index once.
+Only roots last imported/used **strictly before** the cutoff and without an active reconstruction lease are eligible. These conditions are ANDed. No settlement or insufficient history means no pruning. Stalled settlement extends the retained window. Imports conservatively mark the next block after the observed head; account execution records its actual execution height. Historical execution does not advance that block marker, but a historical proof/page read renews a rebuilt index's idle lease. Reusing a pruned root in recent execution restores its proof index once.
 
 The first-import checkpoint remains unchanged and is not used as a last-use marker. Shared nodes carry reference counts for branch edges and retained roots. Releasing one root removes only nodes with no remaining references, in the same WAL-synced batch that marks that root cold. Readers hold RocksDB snapshots, so pruning cannot tear an in-flight read.
 
@@ -75,17 +75,18 @@ The `cdh/v1/` archive stores one content-addressed, sorted key dictionary per ke
 
 This is the feature's first storage format. There is no reader or migration for earlier PR1261 drafts. Each archive and dictionary is authenticated before releasing proof nodes. Missing or corrupt history prevents pruning that root. Archive verification runs outside the import write lock, then eligibility is rechecked under that lock. Reclamation evicts only deleted nodes from the bounded cache. Historical values and dictionaries are never deleted; a future value-retention policy must account for dictionary and checkpoint dependencies.
 
-Older proofs remain available without an age cutoff. Madara reconstructs the canonical tree from retained values, verifies its root, then produces the requested proof. A batch reconstructs once for all requested keys. Only one reconstruction runs per backend at a time, and ordinary old-proof requests do not repopulate the durable index. Paginated value reads decode the checksummed archive without building a proof tree; consumers authenticate the complete assembled root. Bulk feeder witness requests reconstruct once for up to 1,024 requested keys. Repeated pages still decode archive values and separate proof requests may repeat reconstruction; this is not a cold-query throughput guarantee.
+Older proofs remain available without an age cutoff. On the first historical proof or page request for a pruned root, Madara decodes permanent values, rebuilds the complete canonical tree, verifies its root, and atomically persists nodes, ownership, root pointer and idle lease with a synchronous WAL write. Subsequent pages, proofs and traces reuse that disk index, including after restart. Responses stay bounded: a page contains at most 4,096 values, a witness contains one path, and a bulk witness request accepts at most 1,024 keys. Reconstructing the whole index never makes the response contain the whole dataset.
 
 ### Memory and backup controls
 
-An old-proof rebuild is temporary and is dropped before its read returns, including on error. It is not inserted into a reusable tree cache or persisted for a later sweep. One rebuild per backend bounds concurrent reconstruction; repeated old reads may repeat the work. Dropping a tree releases its allocations, but the allocator may retain pages, so process RSS need not fall immediately. A recent execution that deliberately reuses an old root is different: its restored durable index follows the normal last-use retention cutoff.
+The default reconstructed-index idle window is six hours, refreshed on reads. Leases (`cdh/lease/`) and their expiry index (`cdh/expiry/`) live in RocksDB. Active leases remove roots from the block-age queue, so one leased root cannot block unrelated cleanup. Expiry returns a root to that queue; deletion still requires the settled cutoff. An expired marker survives until deletion so a read between expiry and deletion can renew it. Nodes shared with another retained root are preserved. Rebuild staging is temporary: the whole tree is not retained in a RAM cache. Existing bounded caches remain unchanged; allocator retention can keep RSS elevated after staging is dropped.
 
+- `--committed-data-rebuilt-proof-idle-secs 21600`: disk lease for rebuilt indexes. Zero disables new disk reuse; existing leases expire at their recorded deadline. Repeated reads can keep an index alive beyond six hours. There is no separate disk-byte cap: size for distinct historical roots requested in the idle window.
 - `--committed-data-memory-blocks 7200`: cached objects expire after this many observed blocks; zero disables reuse. At a five-second block time, 7200 blocks is ten hours.
 - `--committed-data-cache-mib 256`: estimated reusable-cache ceiling, split equally between decoded Patricia nodes and the existing two-snapshot-import cache. Namespaced imports use the persistent nodes rather than retaining a second full-tree snapshot. Both portions also obey the block window. Zero disables caching. It is **not** a process RSS limit.
 - `--committed-data-pending-backup-mib 512`: serialized pending dataset upload budget. Exhaustion applies backpressure; it never discards pending records. This queue is on disk, not a 512 MiB RAM reservation.
 
-Equivalent environment variables are `MADARA_COMMITTED_DATA_PROOF_RETENTION_SECS`, `MADARA_COMMITTED_DATA_MEMORY_BLOCKS`, `MADARA_COMMITTED_DATA_CACHE_MIB`, and `MADARA_COMMITTED_DATA_PENDING_BACKUP_MIB`.
+Equivalent environment variables are `MADARA_COMMITTED_DATA_PROOF_RETENTION_SECS`, `MADARA_COMMITTED_DATA_REBUILT_PROOF_IDLE_SECS`, `MADARA_COMMITTED_DATA_MEMORY_BLOCKS`, `MADARA_COMMITTED_DATA_CACHE_MIB`, and `MADARA_COMMITTED_DATA_PENDING_BACKUP_MIB`.
 
 ### Sizing and measurement
 
@@ -94,6 +95,7 @@ Permanent values continue growing with updates, even after proof pruning. Approx
 ```text
 permanent checkpoints + permanent upserts + metadata
 + shared proof nodes for (L1 settlement lag + retention buffer)
++ rebuilt proof indexes accessed within the idle lease window
 + reference edges + pending backups
 ```
 
@@ -171,7 +173,7 @@ Dataset replication is owned by the L2 sync service. Shutdown cancels downloads 
 
 The gateway read budget is per listener: `--committed-data-max-concurrent-reads` / `MADARA_COMMITTED_DATA_MAX_CONCURRENT_READS`, default 4, minimum 1. A permit stays with admitted blocking work even if the client disconnects. This limits concurrent work; it does not cap dataset storage or guarantee cold-read latency.
 
-Historical transaction and block traces use the same committed-data provider as execution. Proof pruning keeps permanent values, so a sequencer or replica can reconstruct an old root and execute the read. Historical execution below the retention cutoff does not reactivate the durable proof index. Tracing still needs the canonical transaction, historical chain state and classes, and the dataset; this feature does not turn an otherwise pruned chain database into a full archive.
+Historical transaction and block traces use the same committed-data provider as execution. Proof pruning keeps permanent values, so a sequencer or replica can reconstruct an old root and execute the read. Historical reads can temporarily restore its disk proof index under an idle lease, without advancing its execution-height marker. Tracing still needs the canonical transaction, historical chain state and classes, and the dataset; this feature does not turn an otherwise pruned chain database into a full archive.
 
 A chain revert rolls back canonical blocks and state, including the application's authorized root. It does not delete immutable imported maps, namespace labels, recovery manifests or shared-node allocator state. Explicit-base updates can branch from an older imported root after a revert. Last-use markers may retain indexes conservatively for longer after a height rewind; the retention cutoff is clamped to the available chain height. Regression tests exercise the real `revert_to` path with retained and pruned roots, verify both tips, write a branch, and reopen RocksDB.
 
@@ -198,7 +200,7 @@ sequenceDiagram
     participant DB as Replica RocksDB
     Probe->>Gateway: Fetch latest header independently
     Sync->>Gateway: Scan roots and fetch bounded value pages
-    Gateway-->>Sync: Retained-tree pages or decoded historical values
+    Gateway-->>Sync: Pages from retained or leased rebuilt indexes
     Sync->>DB: Authenticate complete map and expected root
     DB->>DB: Find retained root with identical key dictionary
     DB->>DB: Share unchanged nodes; stage value delta or checkpoint
@@ -217,7 +219,7 @@ sequenceDiagram
         Replay->>Replay: Start empty block read set
         Replay->>Cache: Authenticate single or batch reads
         Cache->>Feeder: Fetch missing witnesses in bounded batches
-        Feeder->>Feeder: Reconstruct cold root once per batch
+        Feeder->>Feeder: Rebuild cold root once; persist and renew disk lease
         Feeder-->>Cache: Ordered authenticated witnesses
         Replay->>Replay: Keep admitted work; discard omitted reverted work
         Replay->>Cache: Collect this block's surviving witness keys
@@ -242,4 +244,28 @@ sequenceDiagram
     DB->>DB: Acknowledge identical pending record if present
     Note over Restore,DB: No remote payload enters the bounded upload queue
     Restore-->>Operator: Complete before normal transaction reconciliation
+```
+
+### Historical index reuse and cleanup
+
+```mermaid
+sequenceDiagram
+    participant Reader
+    participant DB as RocksDB
+    participant Worker as Cleanup worker
+    Reader->>DB: Request historical proof or bounded page
+    alt Proof index pruned
+        DB->>DB: Decode permanent values and authenticate rebuilt root
+        DB->>DB: Sync nodes, root pointer, references and idle lease atomically
+    else Rebuilt index already present
+        DB->>DB: Renew idle lease; preserve execution-age marker
+    end
+    DB-->>Reader: Requested subset under a stable snapshot
+    Worker->>DB: Ingestion notification or 60-second tick
+    DB->>DB: Return expired leases to block-age queue
+    alt Outside settled buffer AND lease expired
+        DB->>DB: Authenticate archive; recheck eligibility under writer lock
+        DB->>DB: Release root and unreferenced nodes atomically
+    end
+    Note over Reader,DB: Permanent values survive; snapshots protect in-flight readers
 ```

@@ -203,7 +203,7 @@ impl RocksDBStorage {
             "Invalid committed-data page offset"
         );
         let cf = self.inner.get_column(meta::META_COLUMN);
-        let snapshot = rocksdb_snapshot::SnapshotWithDBArc::new(Arc::clone(&self.inner));
+        let snapshot = self.historical_proof_snapshot(root)?;
         let Some(metadata) = snapshot.get_pinned_cf(&cf, metadata_key(root, METADATA_LEVEL, 0))? else {
             return Ok(None);
         };
@@ -236,7 +236,7 @@ impl RocksDBStorage {
     /// Reads and authenticates only the requested path under one snapshot.
     pub(super) fn read_committed_data_witness(&self, root: Felt, index: Felt) -> Result<Option<CommittedDataWitness>> {
         let cf = self.inner.get_column(meta::META_COLUMN);
-        let snapshot = rocksdb_snapshot::SnapshotWithDBArc::new(Arc::clone(&self.inner));
+        let snapshot = self.historical_proof_snapshot(root)?;
         let Some(metadata) = snapshot.get_pinned_cf(&cf, metadata_key(root, METADATA_LEVEL, 0))? else {
             return Ok(None);
         };
@@ -259,7 +259,7 @@ impl RocksDBStorage {
             "Invalid batch size"
         );
         let cf = self.inner.get_column(meta::META_COLUMN);
-        let snapshot = rocksdb_snapshot::SnapshotWithDBArc::new(Arc::clone(&self.inner));
+        let snapshot = self.historical_proof_snapshot(root)?;
         let metadata =
             snapshot.get_pinned_cf(&cf, metadata_key(root, METADATA_LEVEL, 0))?.context("Missing dataset")?;
         let id = persistent_id(&metadata)?;
@@ -275,7 +275,7 @@ impl RocksDBStorage {
         keys.iter().map(|key| tree.witness(id, root, *key)?.context("Missing committed-data key")).collect()
     }
 
-    /// Authenticate a bounded batch under one RocksDB snapshot; reconstruct pruned roots in memory.
+    /// Authenticate a bounded batch under one RocksDB snapshot; reuse reconstructed indexes on disk.
     pub(super) fn read_committed_data_batch(
         &self,
         root: Felt,
@@ -288,7 +288,7 @@ impl RocksDBStorage {
             "Invalid batch size"
         );
         let cf = self.inner.get_column(meta::META_COLUMN);
-        let snapshot = rocksdb_snapshot::SnapshotWithDBArc::new(Arc::clone(&self.inner));
+        let snapshot = self.historical_proof_snapshot(root)?;
         let metadata =
             snapshot.get_pinned_cf(&cf, metadata_key(root, METADATA_LEVEL, 0))?.context("Missing dataset")?;
         let id = persistent_id(&metadata)?;
@@ -332,7 +332,7 @@ impl RocksDBStorage {
     }
 
     /// Allocate monotonically; a rewound allocator must never overwrite another root's nodes.
-    fn next_committed_node_id(&self) -> Result<u64> {
+    pub(super) fn next_committed_node_id(&self) -> Result<u64> {
         let cf = self.inner.get_column(meta::META_COLUMN);
         let first_id = self
             .inner

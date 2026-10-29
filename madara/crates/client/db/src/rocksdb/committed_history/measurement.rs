@@ -151,7 +151,9 @@ fn committed_history_measure_storage_and_memory() {
         updates > 0 && updates <= entries && retained > 0 && retained < versions && versions <= MAX_MEASURED_VERSIONS
     );
     let dir = tempfile::tempdir().unwrap();
-    let config = MadaraBackendConfig::default();
+    let mut config = MadaraBackendConfig::default();
+    // Baseline archive-only measurement; durable rebuild reuse has a separate measurement.
+    config.committed_data_retention.rebuilt_proof_idle_secs = 0;
     let cache_bytes = config.committed_data_retention.cache_bytes;
     let backend = MadaraBackend::open_rocksdb(
         dir.path(),
@@ -398,6 +400,79 @@ fn committed_history_measure_full_snapshot_replication() {
         "restart_and_historical_proofs_verified": true,
         "limitations": "Synthetic storage API workload. Excludes HTTP transfer and block execution. RSS includes independent full-map reference construction. Live SST sizes exclude WAL and obsolete files. No capacity claim."
     });
+    println!("{}", serde_json::to_string_pretty(&report).unwrap());
+    if let Ok(path) = std::env::var("CD_MEASURE_REPORT") {
+        std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
+    }
+}
+
+/// Measure the actual RocksDB rebuild, reuse across restart, and expiry reclamation. Opt-in
+/// because the maximum map requires substantial temporary build memory; it is not an RSS SLA.
+#[test]
+#[ignore = "Opt-in real disk-backed reconstruction and restart measurement"]
+fn committed_history_measure_durable_rebuild_reuse() {
+    let entries = parameter("CD_MEASURE_ENTRIES", DEFAULT_ENTRIES);
+    assert!((1..=MAX_COMMITTED_DATA_VALUES).contains(&entries));
+    let directory = tempfile::tempdir().unwrap();
+    let open = || {
+        MadaraBackend::open_rocksdb(
+            directory.path(),
+            mp_chain_config::ChainConfig::madara_test().into(),
+            MadaraBackendConfig::default(),
+            RocksDBConfig::default(),
+            Default::default(),
+        )
+        .unwrap()
+    };
+    let mut backend = open();
+    let values: Vec<_> = (0..entries).map(|key| (value(key, usize::MAX), value(key, 0))).collect();
+    let keys: Vec<_> = values.iter().take(PROOF_SAMPLE_KEYS).map(|(key, _)| *key).collect();
+    let tree = CommittedDataSet::new(values).unwrap();
+    let root = tree.root();
+    let expected =
+        blockifier::execution::syscalls::committed_data::CommittedDataBatchProof::from_dataset(&tree, &keys).unwrap();
+    backend.db.write_committed_data_dataset(&tree, Some(0)).unwrap();
+    drop(tree);
+    while backend.db.maintain_history(Some(2)).unwrap() {}
+    compact(&backend.db);
+    let archive_only = footprint(&backend.db);
+    let started = Instant::now();
+    assert_eq!(backend.db.get_committed_data_batch(root, &keys).unwrap(), expected);
+    let rebuild_ms = started.elapsed().as_secs_f64() * 1000.;
+    let started = Instant::now();
+    assert_eq!(backend.db.get_committed_data_batch(root, &keys).unwrap(), expected);
+    let reuse_ms = started.elapsed().as_secs_f64() * 1000.;
+    let started = Instant::now();
+    let offset = if entries > 4096 { 4096 } else { 0 };
+    assert_eq!(
+        backend.db.get_committed_data_page(root, offset).unwrap().unwrap().1.len(),
+        (entries - offset as usize).min(4096)
+    );
+    let subsequent_page_ms = started.elapsed().as_secs_f64() * 1000.;
+    compact(&backend.db);
+    let rebuilt = footprint(&backend.db);
+    drop(backend);
+    backend = open();
+    let started = Instant::now();
+    assert_eq!(backend.db.get_committed_data_batch(root, &keys).unwrap(), expected);
+    let after_restart_ms = started.elapsed().as_secs_f64() * 1000.;
+    let after_restart = footprint(&backend.db);
+    let expires =
+        leases::unix_seconds().unwrap() + crate::committed_data_retention::DEFAULT_REBUILT_PROOF_IDLE_SECS + 1;
+    while backend.db.maintain_history_at(Some(2), expires).unwrap() {}
+    compact(&backend.db);
+    let expired = footprint(&backend.db);
+    assert!(expired[LOGICAL_ROWS_AND_BYTES].get(PROOF_NODES).is_none());
+    assert!(expired[LOGICAL_ROWS_AND_BYTES].get(REFERENCE_EDGES).is_none());
+    assert_eq!(
+        archive_only[LOGICAL_ROWS_AND_BYTES][PERMANENT_VALUES],
+        expired[LOGICAL_ROWS_AND_BYTES][PERMANENT_VALUES]
+    );
+    assert_eq!(rebuilt[LOGICAL_ROWS_AND_BYTES][PROOF_NODES], after_restart[LOGICAL_ROWS_AND_BYTES][PROOF_NODES]);
+    let report = serde_json::json!({"entries": entries, "rebuild_ms": rebuild_ms, "reuse_ms": reuse_ms,
+        "subsequent_page_ms": subsequent_page_ms, "after_restart_ms": after_restart_ms,
+        "archive_only": archive_only, "rebuilt": rebuilt, "after_restart": after_restart, "expired": expired,
+        "limitations": "Single-process functional build; RSS includes independent tree construction and allocator retention. Temporary rebuild memory is still needed. SST excludes WAL and obsolete files. No production latency SLA."});
     println!("{}", serde_json::to_string_pretty(&report).unwrap());
     if let Ok(path) = std::env::var("CD_MEASURE_REPORT") {
         std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();

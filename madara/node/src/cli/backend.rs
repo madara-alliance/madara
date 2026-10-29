@@ -101,6 +101,12 @@ pub struct BackendParams {
     #[serde(default)]
     pub committed_data_proof_retention_secs: Option<u64>,
 
+    /// Idle lifetime of rebuilt historical proof indexes on disk; zero disables disk reuse.
+    /// Expired indexes are pruned only outside the L1-settled proof-retention buffer.
+    #[arg(long, env = "MADARA_COMMITTED_DATA_REBUILT_PROOF_IDLE_SECS", default_value_t = default_rebuilt_proof_idle_secs())]
+    #[serde(default = "default_rebuilt_proof_idle_secs")]
+    pub committed_data_rebuilt_proof_idle_secs: u64,
+
     /// Recent block distance retained by the decoded tree-node cache.
     #[arg(long, env = "MADARA_COMMITTED_DATA_MEMORY_BLOCKS", default_value_t = 7200)]
     #[serde(default = "default_committed_data_memory_blocks")]
@@ -423,6 +429,7 @@ impl BackendParams {
             use_committed_data: self.use_committed_data,
             committed_data_retention: mc_db::committed_data_retention::CommittedDataRetentionConfig {
                 proof_retention_secs: self.committed_data_proof_retention_secs,
+                rebuilt_proof_idle_secs: self.committed_data_rebuilt_proof_idle_secs,
                 memory_blocks: self.committed_data_memory_blocks,
                 cache_bytes: self.committed_data_cache_mib.saturating_mul(MiB),
                 pending_backup_bytes: self.committed_data_pending_backup_mib.saturating_mul(MiB as u64),
@@ -466,6 +473,9 @@ impl BackendParams {
     }
 }
 
+fn default_rebuilt_proof_idle_secs() -> u64 {
+    mc_db::committed_data_retention::DEFAULT_REBUILT_PROOF_IDLE_SECS
+}
 fn default_committed_data_memory_blocks() -> u64 {
     7200
 }

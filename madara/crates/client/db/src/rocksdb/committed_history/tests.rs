@@ -3,11 +3,23 @@ use crate::persistent_committed_data::{node_key, Tree};
 use crate::{MadaraBackend, MadaraBackendConfig, MadaraStorageRead, MadaraStorageWrite};
 use blockifier::execution::syscalls::committed_data::CommittedDataBatchProof;
 
+// Existing archive-only matrices also cover the operator opt-out from durable rebuilds.
 fn open(path: &std::path::Path) -> Arc<MadaraBackend> {
+    open_with_idle(path, 0)
+}
+
+fn open_with_idle(path: &std::path::Path, idle_secs: u64) -> Arc<MadaraBackend> {
+    let config = MadaraBackendConfig {
+        committed_data_retention: crate::committed_data_retention::CommittedDataRetentionConfig {
+            rebuilt_proof_idle_secs: idle_secs,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
     MadaraBackend::open_rocksdb(
         path,
         mp_chain_config::ChainConfig::madara_test().into(),
-        MadaraBackendConfig::default(),
+        config,
         RocksDBConfig::default(),
         Default::default(),
     )
@@ -241,6 +253,7 @@ fn committed_history_no_settlement_stalls_and_boundary_controls_pruning() {
     let config = MadaraBackendConfig {
         committed_data_retention: crate::committed_data_retention::CommittedDataRetentionConfig {
             proof_retention_secs: Some(10),
+            rebuilt_proof_idle_secs: 0,
             ..Default::default()
         },
         ..Default::default()
@@ -468,13 +481,14 @@ fn historical_proofs_rebuild_across_size_depth_and_import_modes(
     #[values(1usize, 17, 1024, 4097)] entries: usize,
     #[values(0u64, 1, 64, 65)] updates: u64,
     #[values(false, true)] full_import: bool,
+    #[values(0u64, 21600)] idle_secs: u64,
 ) {
     let directory = tempfile::tempdir().unwrap();
     let mut values: Vec<_> = (0..entries).map(|key| (Felt::from(key), Felt::from(key))).collect();
     values.last_mut().unwrap().0 = Felt::MAX; // Exercise the full key domain, including a singleton.
     let mut versions = vec![CommittedDataSet::new(values.clone()).unwrap()];
     {
-        let backend = open(directory.path());
+        let backend = open_with_idle(directory.path(), idle_secs);
         let db = &backend.db;
         db.write_committed_data_dataset(&versions[0], Some(0)).unwrap();
         for version in 1..=updates {
@@ -497,7 +511,7 @@ fn historical_proofs_rebuild_across_size_depth_and_import_modes(
         assert!(rows(db, b"cdm/n/").is_empty());
         assert!(rows(db, b"cdh/ref/").is_empty());
     }
-    let backend = open(directory.path());
+    let backend = open_with_idle(directory.path(), idle_secs);
     let db = &backend.db;
     for expected in &versions {
         let sorted = expected.entries();
@@ -515,10 +529,10 @@ fn historical_proofs_rebuild_across_size_depth_and_import_modes(
             assembled.extend(page);
         }
         assert_eq!(assembled, sorted);
-        assert_eq!(pointer(db, expected.root()), 0, "Read paths must not repopulate the proof arena");
+        assert_eq!(pointer(db, expected.root()) == 0, idle_secs == 0, "Only enabled disk reuse republishes indexes");
     }
-    assert!(rows(db, b"cdm/n/").is_empty());
-    assert!(rows(db, b"cdh/ref/").is_empty());
+    assert_eq!(rows(db, b"cdm/n/").is_empty(), idle_secs == 0);
+    assert_eq!(rows(db, b"cdh/ref/").is_empty(), idle_secs == 0);
 }
 
 /// Kill a real writer while pruning races with imports. Every acknowledged root must survive;
@@ -681,4 +695,217 @@ fn historical_corruption_fails_closed_without_mutating_other_roots(#[case] corru
     let witness = db.get_committed_data_witness(unaffected.root(), Felt::MAX).unwrap().unwrap();
     assert_eq!(witness.value, Felt::ONE);
     assert!(witness.verify(), "A failed reconstruction must not poison the next request");
+}
+
+/// Every historical read entry point must publish the same complete index, while returning
+/// only its requested slice/proof. Subsequent pages and readers reuse the exact node IDs.
+#[rstest::rstest]
+#[case::page(0)]
+#[case::witness(1)]
+#[case::witnesses(2)]
+#[case::batch(3)]
+fn rebuilt_index_is_durable_and_all_read_paths_reuse_it(#[case] first_read: u8) {
+    let directory = tempfile::tempdir().unwrap();
+    let idle_secs = crate::committed_data_retention::DEFAULT_REBUILT_PROOF_IDLE_SECS;
+    let tree = CommittedDataSet::new((0..4097u32).map(|key| (Felt::from(key), Felt::from(key + 1))).collect()).unwrap();
+    let root = tree.root();
+    let keys = [Felt::ZERO, Felt::from(4096u32)];
+    let backend = open_with_idle(directory.path(), idle_secs);
+    let db = &backend.db;
+    db.write_committed_data_dataset(&tree, Some(10)).unwrap();
+    drain(db, Some(12));
+    let archives = rows(db, HISTORY);
+    let used = rows(db, USED);
+    assert_eq!(pointer(db, root), 0);
+    match first_read {
+        0 => assert_eq!(db.get_committed_data_page(root, 0).unwrap().unwrap().1, tree.entries()[..4096]),
+        1 => assert!(db.get_committed_data_witness(root, keys[0]).unwrap().unwrap().verify()),
+        2 => assert_eq!(db.get_committed_data_witnesses(root, &keys).unwrap().len(), 2),
+        3 => assert_eq!(
+            db.get_committed_data_batch(root, &keys).unwrap(),
+            CommittedDataBatchProof::from_dataset(&tree, &keys).unwrap()
+        ),
+        _ => unreachable!(),
+    }
+    let rebuilt = pointer(db, root);
+    assert_ne!(rebuilt, 0);
+    let nodes = rows(db, b"cdm/n/");
+    assert_eq!(nodes.len(), 2 * tree.entries().len() - 1);
+    assert_eq!(db.get_committed_data_page(root, 4096).unwrap().unwrap().1, tree.entries()[4096..]);
+    assert_eq!(rows(db, HISTORY), archives);
+    assert_eq!(rows(db, USED), used, "Historical reads never advance execution age");
+    drain(db, Some(u64::MAX));
+    assert_eq!(pointer(db, root), rebuilt, "An active idle lease vetoes block-age pruning");
+    drop(backend);
+    let backend = open_with_idle(directory.path(), idle_secs);
+    let db = &backend.db;
+    drain(db, Some(u64::MAX));
+    assert_eq!(
+        db.get_committed_data_batch(root, &keys).unwrap(),
+        CommittedDataBatchProof::from_dataset(&tree, &keys).unwrap()
+    );
+    assert_eq!(pointer(db, root), rebuilt, "Restart must reuse the durable index and lease");
+    assert_eq!(rows(db, b"cdm/n/"), nodes);
+}
+
+/// Expiry and the settlement buffer are independent vetoes. Leased roots must not block
+/// pruning other old roots, and access after expiry but before pruning renews protection.
+#[test]
+fn rebuilt_lease_refresh_expiry_and_settlement_buffer_are_independent() {
+    let directory = tempfile::tempdir().unwrap();
+    let backend = open_with_idle(directory.path(), 100);
+    let db = &backend.db;
+    let first = dataset(10);
+    let second = dataset(20);
+    db.write_committed_data_dataset(&first, Some(10)).unwrap();
+    drain(db, Some(12));
+    let now = leases::unix_seconds().unwrap();
+    db.historical_proof_snapshot_at(first.root(), now).unwrap();
+    let rebuilt = pointer(db, first.root());
+    db.write_committed_data_dataset(&second, Some(20)).unwrap();
+    drain(db, Some(22));
+    assert_eq!(pointer(db, first.root()), rebuilt);
+    assert_eq!(pointer(db, second.root()), 0, "Leases cannot starve the age queue");
+    db.historical_proof_snapshot_at(first.root(), now + 50).unwrap();
+    assert!(!db.maintain_history_at(Some(u64::MAX), now + 100).unwrap(), "Access refreshes the deadline");
+    assert!(db.maintain_history_at(Some(11), now + 150).unwrap(), "Expiry returns the root to the age queue");
+    assert!(!db.maintain_history_at(Some(11), now + 150).unwrap(), "The block buffer still protects it");
+    db.historical_proof_snapshot_at(first.root(), now + 151).unwrap();
+    assert!(
+        !db.maintain_history_at(Some(12), now + 151).unwrap(),
+        "Access between expiry and pruning renews the lease"
+    );
+    // A later execution changes the age, never discards the active lease.
+    db.note_root_use(first.root(), 200).unwrap();
+    assert!(db.maintain_history_at(Some(200), now + 251).unwrap());
+    assert!(!db.maintain_history_at(Some(200), now + 251).unwrap());
+    assert!(db.maintain_history_at(Some(201), now + 251).unwrap());
+    assert_eq!(pointer(db, first.root()), 0);
+    assert!(rows(db, leases::LEASE).is_empty());
+    assert!(rows(db, b"cdm/n/").is_empty());
+    assert_eq!(rows(db, HISTORY).len(), 2, "Pruning only deletes the proof index");
+    assert_dataset(db, &first);
+}
+
+/// Parallel cold misses build once. Snapshots retain the exact old nodes for in-flight readers
+/// after expiry/pruning, while a child root's shared nodes remain live through reference counts.
+#[test]
+fn concurrent_rebuilds_and_expiry_preserve_shared_nodes_and_read_snapshots() {
+    let directory = tempfile::tempdir().unwrap();
+    let backend = open_with_idle(directory.path(), 100);
+    let db = &backend.db;
+    let first = dataset(10);
+    db.write_committed_data_dataset(&first, Some(10)).unwrap();
+    drain(db, Some(12));
+    let allocator = rows(db, crate::persistent_committed_data::NEXT_KEY);
+    let before = u64::from_be_bytes(allocator[0].1.as_ref().try_into().unwrap());
+    let root = first.root();
+    std::thread::scope(|scope| {
+        let barrier = Arc::new(std::sync::Barrier::new(8));
+        for _ in 0..8 {
+            let barrier = Arc::clone(&barrier);
+            scope.spawn(move || {
+                barrier.wait();
+                assert!(db.get_committed_data_witness(root, Felt::ZERO).unwrap().unwrap().verify());
+            });
+        }
+    });
+    let allocator = rows(db, crate::persistent_committed_data::NEXT_KEY);
+    assert_eq!(u64::from_be_bytes(allocator[0].1.as_ref().try_into().unwrap()) - before, 15);
+    let snapshot = SnapshotWithDBArc::new(Arc::clone(&db.inner));
+    let old_id = pointer(db, first.root());
+    let second = dataset(20);
+    db.patch_committed_data_dataset(first.root(), second.root(), vec![(Felt::ZERO, Felt::from(20))], Some(200))
+        .unwrap();
+    let later = leases::unix_seconds().unwrap() + 101;
+    assert!(db.maintain_history_at(Some(12), later).unwrap());
+    assert!(db.maintain_history_at(Some(12), later).unwrap());
+    let cf = db.inner.get_column(meta::META_COLUMN);
+    let mut retained =
+        Tree::new(u64::MAX, MAX_COMMITTED_DATA_VALUES as u32, |id| Ok(snapshot.get_cf(&cf, node_key(id))?));
+    assert!(retained.witness(old_id, first.root(), Felt::ZERO).unwrap().unwrap().verify());
+    assert_eq!(pointer(db, first.root()), 0);
+    assert_dataset(db, &second);
+    assert_eq!(rows(db, b"cdm/n/").len(), 15);
+}
+
+/// Recomputed archive checksums are not proof authentication. A root mismatch must publish
+/// neither a partial index, allocator change nor lease, so a later repair remains possible.
+#[test]
+fn durable_reconstruction_authenticates_before_any_write() {
+    let directory = tempfile::tempdir().unwrap();
+    let backend = open_with_idle(directory.path(), 100);
+    let db = &backend.db;
+    let tree = dataset(10);
+    db.write_committed_data_dataset(&tree, Some(0)).unwrap();
+    drain(db, Some(2));
+    let cf = db.inner.get_column(meta::META_COLUMN);
+    let key = root_key(HISTORY, tree.root());
+    let bytes = db.inner.db.get_cf(&cf, &key).unwrap().unwrap();
+    let mut history: ValueHistory = deserialize(&bytes).unwrap();
+    let mut values = tree.entries().to_vec();
+    values[0].1 += Felt::ONE;
+    let encoded = codec::encode(values.iter().enumerate().map(|(index, (_, value))| (index, Felt::ZERO, *value)));
+    history.data = zstd::stream::encode_all(encoded.as_slice(), 3).unwrap();
+    let corrupt = serialize(&history).unwrap();
+    db.inner.db.put_cf(&cf, &key, &corrupt).unwrap();
+    db.inner
+        .db
+        .put_cf(&cf, root_key(archive::HISTORY_HASH, tree.root()), crate::committed_data_recovery::digest(&corrupt))
+        .unwrap();
+    let before = rows(db, b"");
+    assert!(db.get_committed_data_page(tree.root(), 0).is_err());
+    assert!(db.get_committed_data_witness(tree.root(), Felt::ZERO).is_err());
+    assert_eq!(rows(db, b""), before);
+    db.inner.db.put_cf(&cf, &key, &bytes).unwrap();
+    db.inner
+        .db
+        .put_cf(&cf, root_key(archive::HISTORY_HASH, tree.root()), crate::committed_data_recovery::digest(&bytes))
+        .unwrap();
+    assert_dataset(db, &tree);
+}
+
+/// A successfully returned cold read acknowledges a WAL-synced pointer, all reachable nodes and
+/// its lease together. SIGKILL must not turn that acknowledgement into a partial rebuilt index.
+#[test]
+fn rebuilt_index_and_lease_survive_killed_reader() {
+    use std::io::{BufRead, Write};
+    const DIRECTORY: &str = "MADARA_REBUILT_PROOF_CRASH_DIRECTORY";
+    const TEST: &str = "rocksdb::committed_history::tests::rebuilt_index_and_lease_survive_killed_reader";
+    let tree = dataset(10);
+    if let Ok(directory) = std::env::var(DIRECTORY) {
+        let backend = open_with_idle(std::path::Path::new(&directory), 100);
+        backend.db.write_committed_data_dataset(&tree, Some(0)).unwrap();
+        drain(&backend.db, Some(2));
+        assert_dataset(&backend.db, &tree);
+        println!("REBUILT_ACK {}", pointer(&backend.db, tree.root()));
+        std::io::stdout().flush().unwrap();
+        loop {
+            std::thread::park();
+        }
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", TEST, "--nocapture"])
+        .env(DIRECTORY, directory.path())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let output = std::io::BufReader::new(child.stdout.take().unwrap());
+    let mut acknowledged = None;
+    for line in output.lines() {
+        if let Some(id) = line.unwrap().strip_prefix("REBUILT_ACK ") {
+            acknowledged = Some(id.parse::<u64>().unwrap());
+            child.kill().unwrap();
+            break;
+        }
+    }
+    assert!(!child.wait().unwrap().success());
+    let rebuilt = acknowledged.expect("Child must acknowledge a rebuilt index before being killed");
+    let backend = open_with_idle(directory.path(), 100);
+    assert_eq!(pointer(&backend.db, tree.root()), rebuilt);
+    drain(&backend.db, Some(u64::MAX));
+    assert_eq!(pointer(&backend.db, tree.root()), rebuilt, "Lease survives abrupt process death");
+    assert_dataset(&backend.db, &tree);
+    assert_eq!(pointer(&backend.db, tree.root()), rebuilt);
 }
