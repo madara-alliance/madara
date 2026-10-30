@@ -340,9 +340,8 @@ pub(crate) fn format_rpc_versions(versions: &[RpcVersion]) -> String {
 mod tests {
     use super::{serve, ServerConfig};
     use async_trait::async_trait;
-    use jsonrpsee::{
-        core::client::ClientT, rpc_params, server::BatchRequestConfig, ws_client::WsClientBuilder, RpcModule,
-    };
+    use jsonrpsee::{core::client::ClientT, rpc_params, server::BatchRequestConfig, RpcModule};
+    use jsonrpsee_ws_client::WsClientBuilder;
     use mc_db::MadaraBackend;
     use mc_rpc::Starknet;
     use mc_submit_tx::{SubmitTransaction, SubmitTransactionError, TransactionLookup};
