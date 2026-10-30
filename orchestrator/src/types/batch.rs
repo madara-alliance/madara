@@ -349,6 +349,14 @@ pub struct SnosBatch {
     /// Weights for this SNOS batch
     pub builtin_weights: BouncerWeights,
 
+    /// Exact full-output cells for the blocks accumulated in this SNOS run.
+    #[serde(default)]
+    pub snos_output_cells: usize,
+
+    /// Chain-configured prover ceiling used when this batch was created.
+    #[serde(default)]
+    pub max_snos_output_cells: usize,
+
     /// Current status of the SNOS batch
     pub status: SnosBatchStatus,
 
@@ -422,6 +430,8 @@ impl SnosBatch {
             num_blocks: 1,
             status: SnosBatchStatus::Open,
             builtin_weights,
+            snos_output_cells: 0,
+            max_snos_output_cells: 0,
             created_at: Utc::now().round_subsecs(0),
             updated_at: Utc::now().round_subsecs(0),
         }
@@ -436,6 +446,12 @@ impl SnosBatch {
             updated_batch.status = status;
         }
         updated_batch
+    }
+
+    pub fn with_snos_output_budget(mut self, output_cells: usize, max_output_cells: usize) -> Self {
+        self.snos_output_cells = output_cells;
+        self.max_snos_output_cells = max_output_cells;
+        self
     }
 
     /// Validates the internal consistency of the SNOS batch

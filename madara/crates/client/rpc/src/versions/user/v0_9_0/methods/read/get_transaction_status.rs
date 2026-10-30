@@ -247,6 +247,24 @@ mod tests {
         assert_eq!(get_transaction_status(&starknet, TX_HASH).await, Err(StarknetRpcApiError::TxnHashNotFound));
     }
 
+    #[tokio::test]
+    #[rstest::rstest]
+    async fn get_transaction_status_keeps_durable_rejection_out_of_the_standard_enum(_logs: (), starknet: Starknet) {
+        starknet
+            .backend
+            .write_rejected_mempool_transaction(
+                &TX_HASH,
+                &mc_db::RejectedMempoolTransaction::new("transaction too large for proof"),
+            )
+            .unwrap();
+
+        assert_eq!(get_transaction_status(&starknet, TX_HASH).await, Err(StarknetRpcApiError::TxnHashNotFound));
+
+        let feeder = starknet.transaction_lookup.feeder_transaction_status(TX_HASH).await.unwrap().unwrap();
+        assert_eq!(feeder.tx_status, mp_gateway::feeder::TransactionStatus::Rejected);
+        assert_eq!(feeder.tx_failure_reason.unwrap().error_message, "transaction too large for proof");
+    }
+
     /// Reverted transactions must carry the failure reason in the status result.
     #[tokio::test]
     #[rstest::rstest]

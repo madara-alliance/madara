@@ -10,6 +10,7 @@ use std::sync::Arc;
 pub enum TransactionStatus {
     Preconfirmed(PreConfirmationStatus),
     Confirmed { block_number: u64, transaction_index: u64, is_on_l1: bool },
+    Rejected { reason: String },
 }
 
 impl TransactionStatus {
@@ -83,6 +84,9 @@ impl<D: MadaraStorageRead> Mempool<D> {
     pub fn get_transaction_status(&self, transaction_hash: &Felt) -> anyhow::Result<Option<TransactionStatus>> {
         if let Some(got) = self.preconfirmed_transactions_statuses.get(transaction_hash) {
             return Ok(Some(TransactionStatus::Preconfirmed(got.clone())));
+        }
+        if let Some(rejection) = self.backend.get_rejected_mempool_transaction(transaction_hash)? {
+            return Ok(Some(TransactionStatus::Rejected { reason: rejection.reason }));
         }
         Ok(self.find_transaction_by_hash(transaction_hash)?.map(
             |ExecutedTransactionWithBlockView { transaction_index, block }| TransactionStatus::Confirmed {

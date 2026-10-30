@@ -144,6 +144,7 @@ impl BlockProductionTask {
     ) -> anyhow::Result<AbortOnDrop<anyhow::Result<()>>> {
         let batch_sender = executor.send_batch.take().context("Channel sender already taken")?;
         let bypass_tx_input = self.bypass_tx_input.take().context("Bypass tx channel already taken")?;
+        let l1_retry_rx = self.l1_retry_rx.take().context("L1 retry receiver already taken")?;
         Ok(AbortOnDrop::spawn(
             Batcher::new(
                 Arc::clone(&self.backend),
@@ -154,6 +155,7 @@ impl BlockProductionTask {
                 batch_sender,
                 bypass_tx_input,
                 self.mempool_intake_rx.clone(),
+                l1_retry_rx,
             )
             .run(),
         ))

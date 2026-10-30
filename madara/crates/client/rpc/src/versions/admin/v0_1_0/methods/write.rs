@@ -360,6 +360,28 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .map_err(StarknetRpcApiError::from)?)
     }
 
+    async fn retry_l1_message(&self, nonce: u64) -> RpcResult<Option<String>> {
+        if !self.rpc_unsafe_enabled {
+            return Err(StarknetRpcApiError::ErrUnexpectedError {
+                error: "This method requires the --rpc-unsafe flag to be enabled".to_string().into(),
+            }
+            .into());
+        }
+        let block_prod_handle = self.block_prod_handle.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?;
+        let reason = self.backend.get_l1_message_proof_rejection(nonce).map_err(StarknetRpcApiError::from)?;
+        if let Some(reason) = reason.as_deref() {
+            self.backend.clear_l1_message_proof_rejection(nonce).map_err(StarknetRpcApiError::from)?;
+            if let Err(error) = block_prod_handle.retry_l1_message(nonce) {
+                // Clearing quarantine and waking the live consumer form one operator action. If
+                // the consumer is gone, restore the durable rejection so the retry can be issued
+                // again after block production restarts.
+                self.backend.write_l1_message_proof_rejection(nonce, reason).map_err(StarknetRpcApiError::from)?;
+                return Err(StarknetRpcApiError::from(error).into());
+            }
+        }
+        Ok(reason)
+    }
+
     async fn set_block_header(&self, custom_block_headers: CustomHeader) -> RpcResult<()> {
         // Check if unsafe RPC methods are enabled
         if !self.rpc_unsafe_enabled {
@@ -501,6 +523,54 @@ mod tests {
         let mut rpc = Starknet::new(backend, Arc::clone(&provider) as _, provider, Default::default(), None, ctx);
         rpc.set_rpc_unsafe_enabled(true);
         rpc
+    }
+
+    fn make_starknet_with_block_production(
+        backend: Arc<MadaraBackend>,
+    ) -> (mc_block_production::BlockProductionTask, Starknet) {
+        let mempool = Arc::new(Mempool::new(backend.clone(), MempoolConfig::default()));
+        let producer = mc_block_production::BlockProductionTask::new(
+            backend.clone(),
+            mempool.clone(),
+            Arc::new(mc_block_production::metrics::BlockProductionMetrics::register()),
+            Arc::new(mc_settlement_client::L1SyncDisabledClient),
+            false,
+            false,
+            false,
+        );
+        let provider = Arc::new(TestTransactionProvider);
+        let mut rpc = Starknet::new(
+            backend,
+            Arc::clone(&provider) as _,
+            provider,
+            Default::default(),
+            Some(producer.handle()),
+            ServiceContext::new_for_testing(),
+        );
+        rpc.set_rpc_unsafe_enabled(true);
+        rpc.set_mempool(mempool);
+        (producer, rpc)
+    }
+
+    #[tokio::test]
+    async fn retry_l1_message_clears_quarantine_and_signals_block_production() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        backend.write_l1_message_proof_rejection(55, "too large for proof").unwrap();
+        let (_producer, rpc) = make_starknet_with_block_production(backend.clone());
+
+        assert_eq!(rpc.retry_l1_message(55).await.unwrap(), Some("too large for proof".into()));
+        assert_eq!(backend.get_l1_message_proof_rejection(55).unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn retry_l1_message_restores_quarantine_when_consumer_is_closed() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        backend.write_l1_message_proof_rejection(55, "too large for proof").unwrap();
+        let (producer, rpc) = make_starknet_with_block_production(backend.clone());
+        drop(producer);
+
+        assert!(rpc.retry_l1_message(55).await.is_err());
+        assert_eq!(backend.get_l1_message_proof_rejection(55).unwrap().as_deref(), Some("too large for proof"));
     }
 
     fn make_starknet_with_mempool_and_unsafe(rpc_unsafe_enabled: bool) -> (Arc<Mempool>, Starknet) {

@@ -877,6 +877,9 @@ impl Default for StorageProofConfig {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TxStatusSnapshot {
+    /// Terminal local admission failure. This is intentionally internal because the Starknet
+    /// v0.9/v0.10 `TXN_STATUS` schema has no rejected variant.
+    Rejected,
     Received,
     Candidate,
     PreConfirmed,
@@ -957,6 +960,7 @@ fn tx_status_snapshot(status: Option<MempoolTransactionStatus>) -> Option<TxStat
         Some(MempoolTransactionStatus::Confirmed { is_on_l1, .. }) => {
             Some(if is_on_l1 { TxStatusSnapshot::AcceptedOnL1 } else { TxStatusSnapshot::AcceptedOnL2 })
         }
+        Some(MempoolTransactionStatus::Rejected { .. }) => Some(TxStatusSnapshot::Rejected),
         None => None,
     }
 }

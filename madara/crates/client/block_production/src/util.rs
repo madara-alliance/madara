@@ -1,6 +1,10 @@
 use anyhow::Context;
 use blockifier::{
-    blockifier::transaction_executor::TransactionExecutor, state::state_api::State,
+    blockifier::{
+        config::TransactionExecutorConfig,
+        transaction_executor::{TransactionExecutor, DEFAULT_STACK_SIZE},
+    },
+    state::{cached_state::CachedState, state_api::State},
     transaction::transaction_execution::Transaction,
 };
 use mc_db::MadaraBackend;
@@ -234,27 +238,26 @@ pub(crate) fn create_executor_with_block_n_min_10(
 ) -> anyhow::Result<TransactionExecutor<LayeredStateAdapter>> {
     use mc_exec::MadaraBackendExecutionExt;
 
-    // Use backend.new_executor_for_block_production() to create executor (reuses existing logic)
     let block_info = exec_ctx.to_blockifier()?;
-    let mut executor = backend
-        .clone()
-        .new_executor_for_block_production(state_adaptor, block_info.clone())
-        .context("Creating TransactionExecutor")?;
-
-    // If custom_chain_config is provided, override BlockContext to use it instead of backend's config
-    // This is needed for re-execution scenarios where we want to use saved config
-    if let Some(chain_config) = custom_chain_config {
-        // Get exec_constants from custom chain_config
+    let mut executor = if let Some(chain_config) = custom_chain_config {
         let exec_constants = chain_config
             .exec_constants_by_protocol_version(exec_ctx.protocol_version)
             .context("Failed to resolve execution constants for protocol version")?;
-
-        // Use to_block_context helper to create BlockContext (reuses existing logic)
         let block_context = exec_ctx.to_block_context(chain_config, &exec_constants)?;
-        executor.block_context = Arc::new(block_context);
-        // Override concurrency config as well
-        executor.config.concurrency_config = chain_config.block_production_concurrency.blockifier_config();
-    }
+        TransactionExecutor::new(
+            CachedState::new(state_adaptor),
+            block_context,
+            TransactionExecutorConfig {
+                concurrency_config: chain_config.block_production_concurrency.blockifier_config(),
+                stack_size: DEFAULT_STACK_SIZE,
+            },
+        )
+    } else {
+        backend
+            .clone()
+            .new_executor_for_block_production(state_adaptor, block_info)
+            .context("Creating TransactionExecutor")?
+    };
 
     // Prepare the block_n-10 state diff entry on the 0x1 contract
     if let Some((block_n_min_10, block_hash_n_min_10)) = get_block_n_min_10_hash(exec_ctx.block_number)? {
@@ -273,6 +276,10 @@ pub(crate) fn create_executor_with_block_n_min_10(
             key.to_felt()
         );
     }
+
+    executor
+        .seed_output_builtin_from_block_state()
+        .context("Seeding SNOS output predictor from pre-transaction state changes")?;
 
     Ok(executor)
 }

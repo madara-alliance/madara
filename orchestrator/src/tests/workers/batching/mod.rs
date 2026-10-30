@@ -82,6 +82,8 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
             end_block: 3,
             num_blocks: 4,
             builtin_weights: default_test_bouncer_weights(),
+            snos_output_cells: 2_814,
+            max_snos_output_cells: 49_000,
             starknet_version: StarknetVersion::V0_13_2,
             orchestrator_version: ORCHESTRATOR_VERSION.to_string(),
             status: SnosBatchStatus::Open,
@@ -180,6 +182,7 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
         when.path("/feeder_gateway/get_block_bouncer_weights");
         then.status(200).body(serde_json::to_vec(&builtin_weights).unwrap());
     });
+    mock_snos_output_limit(&server);
 
     let services = TestConfigBuilder::new()
         .configure_starknet_client(provider.into())
@@ -356,6 +359,7 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
         when.path("/feeder_gateway/get_block_bouncer_weights");
         then.status(200).body(serde_json::to_vec(&builtin_weights).unwrap());
     });
+    mock_snos_output_limit(&server);
 
     let services = TestConfigBuilder::new()
         .configure_starknet_client(provider.into())
@@ -460,6 +464,8 @@ async fn test_batching_worker_l3(#[case] has_existing_batch: bool) -> Result<(),
             end_block: 3,
             num_blocks: 4,
             builtin_weights: default_test_bouncer_weights(),
+            snos_output_cells: 2_814,
+            max_snos_output_cells: 49_000,
             starknet_version: StarknetVersion::V0_13_2,
             orchestrator_version: ORCHESTRATOR_VERSION.to_string(),
             status: SnosBatchStatus::Open,
@@ -484,6 +490,7 @@ async fn test_batching_worker_l3(#[case] has_existing_batch: bool) -> Result<(),
         when.method(httpmock::Method::GET).path("/feeder_gateway/get_block_bouncer_weights");
         then.status(200).header("Content-Type", "application/json").body(serde_json::to_vec(&builtin_weights).unwrap());
     });
+    mock_snos_output_limit(&server);
 
     // Mock starknet_getBlockWithTxHashes for version fetching
     // Mock starknet_getStateUpdate - separate mock for each block
@@ -496,6 +503,19 @@ async fn test_batching_worker_l3(#[case] has_existing_batch: bool) -> Result<(),
                     "jsonrpc":"2.0",
                     "result": get_dummy_block_with_tx_hashes(block_num, "0.13.2"),
                     "id":1
+                }))
+                .unwrap(),
+            );
+        });
+
+        let state_update = get_dummy_state_update(block_num);
+        server.mock(|when, then| {
+            when.path("/").body_includes("starknet_getStateUpdate");
+            then.status(200).body(
+                serde_json::to_vec(&json!({
+                    "jsonrpc": "2.0",
+                    "result": state_update,
+                    "id": 1
                 }))
                 .unwrap(),
             );
@@ -576,6 +596,15 @@ fn get_dummy_builtin_weights() -> serde_json::Value {
     };
 
     serde_json::to_value(response).unwrap()
+}
+
+fn mock_snos_output_limit(server: &MockServer) {
+    server.mock(|when, then| {
+        when.method(httpmock::Method::GET).path("/feeder_gateway/get_snos_output_limit");
+        then.status(200)
+            .header("Content-Type", "application/json")
+            .json_body(json!({ "max_snos_full_output_cells": 49_000 }));
+    });
 }
 
 // =============================================================================

@@ -107,7 +107,8 @@
 //! once consumed.
 //!
 //! ```ignore
-//! let mut consumer = settlement_client.create_message_to_l2_consumer();
+//! let (_retry_tx, retry_rx) = tokio::sync::mpsc::unbounded_channel();
+//! let mut consumer = settlement_client.create_message_to_l2_consumer(retry_rx);
 //! while let Some(Ok(message)) = consumer.next().await {
 //!     // Include message in block
 //! }
@@ -163,7 +164,7 @@ use mc_db::MadaraBackend;
 use mp_transactions::L1HandlerTransactionWithFee;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Notify;
+use tokio::sync::{mpsc, Notify};
 use url::Url;
 
 /// Base delay for reconnection attempts after stream failure.
@@ -186,7 +187,10 @@ mod utils;
 /// Interface consumed by downstream crates for opeations that they may want to do with the settlement layer.
 pub trait SettlementClient: Send + Sync + 'static {
     /// Create a stream consuming pending messages to l2.
-    fn create_message_to_l2_consumer(&self) -> BoxStream<'static, anyhow::Result<L1HandlerTransactionWithFee>>;
+    fn create_message_to_l2_consumer(
+        &self,
+        retry_rx: mpsc::UnboundedReceiver<u64>,
+    ) -> BoxStream<'static, anyhow::Result<L1HandlerTransactionWithFee>>;
 }
 
 pub struct L1ClientImpl {
@@ -242,11 +246,15 @@ impl L1ClientImpl {
 }
 
 impl SettlementClient for L1ClientImpl {
-    fn create_message_to_l2_consumer(&self) -> BoxStream<'static, anyhow::Result<L1HandlerTransactionWithFee>> {
+    fn create_message_to_l2_consumer(
+        &self,
+        retry_rx: mpsc::UnboundedReceiver<u64>,
+    ) -> BoxStream<'static, anyhow::Result<L1HandlerTransactionWithFee>> {
         let consumer = MessagesToL2Consumer::new(
             self.backend.clone(),
             self.provider.clone(),
             self.notify_new_message_to_l2.clone(),
+            retry_rx,
             self.unsafe_skip_l1_message_consumed_check,
         );
         stream::unfold(consumer, |mut consumer| async move { Some((consumer.consume_next_or_wait().await, consumer)) })
@@ -257,7 +265,10 @@ impl SettlementClient for L1ClientImpl {
 /// This is the implementation that is used when the L1 sync is disabled.
 pub struct L1SyncDisabledClient;
 impl SettlementClient for L1SyncDisabledClient {
-    fn create_message_to_l2_consumer(&self) -> BoxStream<'static, anyhow::Result<L1HandlerTransactionWithFee>> {
+    fn create_message_to_l2_consumer(
+        &self,
+        _retry_rx: mpsc::UnboundedReceiver<u64>,
+    ) -> BoxStream<'static, anyhow::Result<L1HandlerTransactionWithFee>> {
         stream::empty().boxed()
     }
 }
@@ -271,7 +282,10 @@ pub struct L1ClientMock {
 }
 #[cfg(feature = "testing")]
 impl SettlementClient for L1ClientMock {
-    fn create_message_to_l2_consumer(&self) -> BoxStream<'static, anyhow::Result<L1HandlerTransactionWithFee>> {
+    fn create_message_to_l2_consumer(
+        &self,
+        _retry_rx: mpsc::UnboundedReceiver<u64>,
+    ) -> BoxStream<'static, anyhow::Result<L1HandlerTransactionWithFee>> {
         stream::unfold(self.pending_l1_to_l2_messages.clone(), |recv| async move {
             let tx = recv.lock().await.recv().await;
             tx.map(|tx| (Ok(tx), recv))

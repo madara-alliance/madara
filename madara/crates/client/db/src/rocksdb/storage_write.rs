@@ -155,6 +155,16 @@ impl MadaraStorageWrite for RocksDBStorage {
             format!("Writing l1 handler l1 block by nonce nonce={core_contract_nonce} l1_block_n={l1_block_n}")
         })
     }
+    fn write_l1_message_proof_rejection(&self, core_contract_nonce: u64, reason: &str) -> Result<()> {
+        self.inner
+            .write_l1_message_proof_rejection(core_contract_nonce, reason)
+            .with_context(|| format!("Writing L1 message proof rejection for nonce {core_contract_nonce}"))
+    }
+    fn clear_l1_message_proof_rejection(&self, core_contract_nonce: u64) -> Result<()> {
+        self.inner
+            .clear_l1_message_proof_rejection(core_contract_nonce)
+            .with_context(|| format!("Clearing L1 message proof rejection for nonce {core_contract_nonce}"))
+    }
     fn write_pending_message_to_l2(&self, msg: &L1HandlerTransactionWithFee) -> Result<()> {
         tracing::debug!("Write pending message to l2 nonce={}", msg.tx.nonce);
         let nonce = msg.tx.nonce;
@@ -255,6 +265,23 @@ impl MadaraStorageWrite for RocksDBStorage {
         self.inner
             .write_mempool_transaction(tx)
             .with_context(|| format!("Writing mempool transaction from db for tx_hash={tx_hash:#x}"))
+    }
+    fn write_rejected_mempool_transaction(
+        &self,
+        tx_hash: &Felt,
+        rejection: &crate::storage::RejectedMempoolTransaction,
+    ) -> Result<()> {
+        self.inner
+            .write_rejected_mempool_transaction(tx_hash, rejection)
+            .with_context(|| format!("Writing rejected mempool transaction for tx_hash={tx_hash:#x}"))
+    }
+    fn reject_saved_mempool_transactions(
+        &self,
+        rejected: &[(Felt, crate::storage::RejectedMempoolTransaction)],
+    ) -> Result<()> {
+        self.inner
+            .reject_saved_mempool_transactions(rejected)
+            .context("Atomically rejecting saved mempool transactions")
     }
     fn write_external_outbox(&self, tx: &ValidatedTransaction) -> Result<external_outbox::ExternalOutboxId> {
         let tx_hash = tx.hash;

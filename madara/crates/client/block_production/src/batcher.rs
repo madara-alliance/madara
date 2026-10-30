@@ -54,11 +54,12 @@ impl Batcher {
         out: mpsc::Sender<BatchToExecute>,
         bypass_in: mpsc::Receiver<ValidatedTransaction>,
         mempool_intake_rx: watch::Receiver<MempoolIntakeMode>,
+        l1_retry_rx: mpsc::UnboundedReceiver<u64>,
     ) -> Self {
         Self {
             mempool,
             metrics,
-            l1_message_stream: l1_client.create_message_to_l2_consumer(),
+            l1_message_stream: l1_client.create_message_to_l2_consumer(l1_retry_rx),
             ctx,
             out,
             bypass_in,

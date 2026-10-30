@@ -88,6 +88,11 @@ pub trait MadaraWriteRpcApi {
         l1_handler_message: L1HandlerTransactionWithFee,
     ) -> RpcResult<L1HandlerTransactionResult>;
 
+    /// Clears a proof-size quarantine and rewinds the active L1-message consumer for retry.
+    /// Requires block production and unsafe RPC methods.
+    #[method(name = "retryL1Message")]
+    async fn retry_l1_message(&self, nonce: u64) -> RpcResult<Option<String>>;
+
     /// Sets custom headers to be used for a specific block number.
     /// Only available when unsafe RPC methods are enabled.
     #[method(name = "setCustomBlockHeader")]
@@ -130,6 +135,10 @@ pub trait MadaraReadRpcApi {
     /// Get the builtins  for the given block number
     #[method(name = "getBlockBuiltinWeights")]
     async fn get_block_builtin_weights(&self, block_number: u64) -> RpcResult<BouncerWeights>;
+
+    /// Returns the durable proof-size quarantine reason for an L1 message nonce.
+    #[method(name = "getL1MessageProofRejection")]
+    async fn get_l1_message_proof_rejection(&self, nonce: u64) -> RpcResult<Option<String>>;
 
     /// List mempool transaction hashes in oldest-first arrival order.
     /// Returns at most 100 entries by default; pass an explicit `limit` to request more.

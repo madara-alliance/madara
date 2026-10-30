@@ -47,6 +47,28 @@ pub enum L1ToL2MessageIndexEntry {
     Consumed(Felt),
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub struct RejectedMempoolTransaction {
+    pub reason: String,
+    rejected_at_unix_seconds: u64,
+}
+
+impl RejectedMempoolTransaction {
+    pub fn new(reason: impl Into<String>) -> Self {
+        let rejected_at_unix_seconds =
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+        Self { reason: reason.into(), rejected_at_unix_seconds }
+    }
+
+    pub(crate) fn new_at(reason: impl Into<String>, rejected_at_unix_seconds: u64) -> Self {
+        Self { reason: reason.into(), rejected_at_unix_seconds }
+    }
+
+    pub(crate) fn rejected_at_unix_seconds(&self) -> u64 {
+        self.rejected_at_unix_seconds
+    }
+}
+
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 pub struct StorageTxIndex {
     pub block_number: u64,
@@ -123,6 +145,9 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
     // State
 
     fn get_storage_at(&self, block_n: u64, contract_address: &Felt, key: &Felt) -> Result<Option<Felt>>;
+    fn get_storage_at_many(&self, block_n: u64, keys: &[(Felt, Felt)]) -> Result<Vec<Option<Felt>>> {
+        keys.iter().map(|(contract_address, key)| self.get_storage_at(block_n, contract_address, key)).collect()
+    }
     fn get_contract_nonce_at(&self, block_n: u64, contract_address: &Felt) -> Result<Option<Felt>>;
     fn get_contract_class_hash_at(&self, block_n: u64, contract_address: &Felt) -> Result<Option<Felt>>;
     fn is_contract_deployed_at(&self, block_n: u64, contract_address: &Felt) -> Result<bool>;
@@ -169,6 +194,7 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
     fn get_l1_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<mp_convert::L1TransactionHash>>;
     fn get_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<Felt>>;
     fn get_l1_handler_l1_block_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<u64>>;
+    fn get_l1_message_proof_rejection(&self, core_contract_nonce: u64) -> Result<Option<String>>;
     fn get_messages_to_l2_by_l1_tx_hash(
         &self,
         l1_tx_hash: &mp_convert::L1TransactionHash,
@@ -182,6 +208,7 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
     // Mempool
 
     fn get_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_;
+    fn get_rejected_mempool_transaction(&self, tx_hash: &Felt) -> Result<Option<RejectedMempoolTransaction>>;
     fn get_external_outbox_transactions(&self, limit: usize) -> impl Iterator<Item = Result<ExternalOutboxEntry>> + '_;
     /// Return an approximate count of entries in the external outbox.
     ///
@@ -233,6 +260,8 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
 
     fn write_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64, txn_hash: &Felt) -> Result<()>;
     fn write_l1_handler_l1_block_by_nonce(&self, core_contract_nonce: u64, l1_block_n: u64) -> Result<()>;
+    fn write_l1_message_proof_rejection(&self, core_contract_nonce: u64, reason: &str) -> Result<()>;
+    fn clear_l1_message_proof_rejection(&self, core_contract_nonce: u64) -> Result<()>;
     fn write_pending_message_to_l2(&self, msg: &L1HandlerTransactionWithFee) -> Result<()>;
     fn remove_pending_message_to_l2(&self, core_contract_nonce: u64) -> Result<()>;
     fn write_l1_txn_hash_by_nonce(
@@ -261,6 +290,8 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
 
     fn remove_mempool_transactions(&self, tx_hashes: impl IntoIterator<Item = Felt>) -> Result<()>;
     fn write_mempool_transaction(&self, tx: &ValidatedTransaction) -> Result<()>;
+    fn write_rejected_mempool_transaction(&self, tx_hash: &Felt, rejection: &RejectedMempoolTransaction) -> Result<()>;
+    fn reject_saved_mempool_transactions(&self, rejected: &[(Felt, RejectedMempoolTransaction)]) -> Result<()>;
     fn write_external_outbox(&self, tx: &ValidatedTransaction) -> Result<ExternalOutboxId>;
     fn delete_external_outbox(&self, id: ExternalOutboxId) -> Result<()>;
 

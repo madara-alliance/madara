@@ -59,6 +59,7 @@ async fn next_batch_limits_each_account_and_keeps_remaining_transactions(
     let (out, _out_rx) = mpsc::channel(1);
     let (_bypass_tx, bypass_in) = mpsc::channel(1);
     let (_intake_tx, mempool_intake_rx) = watch::channel(MempoolIntakeMode::Running);
+    let (_retry_tx, l1_retry_rx) = mpsc::unbounded_channel();
     let l1_client = Arc::new(L1ClientMock::new());
     let mut batcher = Batcher::new(
         backend,
@@ -69,6 +70,7 @@ async fn next_batch_limits_each_account_and_keeps_remaining_transactions(
         out,
         bypass_in,
         mempool_intake_rx,
+        l1_retry_rx,
     );
     let step = tokio::time::timeout(std::time::Duration::from_secs(5), batcher.next_batch()).await.unwrap().unwrap();
     let BatcherStep::Batch(batch) = step else { panic!("expected a transaction batch") };
@@ -131,6 +133,7 @@ impl Harness {
         let (out, output) = mpsc::channel(1);
         let (bypass, bypass_in) = mpsc::channel(1);
         let (intake, intake_rx) = watch::channel(MempoolIntakeMode::Running);
+        let (_retry, retry_rx) = mpsc::unbounded_channel();
         let l1 = Arc::new(L1ClientMock::new());
         let ctx = ServiceContext::new_for_testing();
         let batcher = Batcher::new(
@@ -142,6 +145,7 @@ impl Harness {
             out,
             bypass_in,
             intake_rx,
+            retry_rx,
         );
         Self { batcher, mempool, output, intake, ctx, _bypass: bypass, _l1: l1 }
     }

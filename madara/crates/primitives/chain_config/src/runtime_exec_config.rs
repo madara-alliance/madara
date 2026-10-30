@@ -69,6 +69,9 @@ pub struct RuntimeExecutionConfigSerializable {
     protocol_version: String,
     /// Fee charging flag
     no_charge_fee: bool,
+    /// Absent in databases written before SNOS admission enforcement existed.
+    #[serde(default)]
+    snos_output_limit_enforced: bool,
 }
 
 impl RuntimeExecutionConfig {
@@ -93,6 +96,7 @@ impl RuntimeExecutionConfig {
             chain_config_yaml,
             protocol_version: self.chain_config.latest_protocol_version.to_string(),
             no_charge_fee: self.no_charge_fee,
+            snos_output_limit_enforced: true,
         })
     }
 
@@ -103,6 +107,10 @@ impl RuntimeExecutionConfig {
         current_backend_config: &ChainConfig,
     ) -> Result<Self> {
         let mut chain_config = Self::deserialize_saved_chain_config(&saved.chain_config_yaml)?;
+
+        if !saved.snos_output_limit_enforced {
+            chain_config.bouncer_config.max_snos_full_output_cells = usize::MAX;
+        }
 
         // Reconstruct versioned_constants from current node (not serializable)
         chain_config.versioned_constants = current_backend_config.versioned_constants.clone();
@@ -177,6 +185,24 @@ mod tests {
         assert_eq!(deserialized.chain_config.chain_name, runtime_config.chain_config.chain_name);
         assert_eq!(deserialized.chain_config.chain_id, runtime_config.chain_config.chain_id);
         assert_eq!(deserialized.chain_config.block_time, runtime_config.chain_config.block_time);
+        assert_eq!(
+            deserialized.chain_config.bouncer_config.max_snos_full_output_cells,
+            runtime_config.chain_config.bouncer_config.max_snos_full_output_cells
+        );
         assert_eq!(deserialized.no_charge_fee, runtime_config.no_charge_fee);
+    }
+
+    #[test]
+    fn legacy_saved_config_does_not_gain_a_new_snos_limit() {
+        let config = Arc::new(load_mainnet_config());
+        let exec_constants = config.versioned_constants.0.get(&config.latest_protocol_version).cloned().unwrap();
+        let runtime_config = RuntimeExecutionConfig::from_current_config(&config, exec_constants, false).unwrap();
+        let mut value = serde_json::to_value(runtime_config.to_serializable().unwrap()).unwrap();
+        value.as_object_mut().unwrap().remove("snos_output_limit_enforced");
+        let legacy = serde_json::from_value(value).unwrap();
+
+        let restored = RuntimeExecutionConfig::from_saved_config(legacy, &config).unwrap();
+
+        assert_eq!(restored.chain_config.bouncer_config.max_snos_full_output_cells, usize::MAX);
     }
 }

@@ -42,6 +42,9 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     pub fn get_l1_handler_l1_block_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<u64>> {
         self.db.get_l1_handler_l1_block_by_nonce(core_contract_nonce)
     }
+    pub fn get_l1_message_proof_rejection(&self, core_contract_nonce: u64) -> Result<Option<String>> {
+        self.db.get_l1_message_proof_rejection(core_contract_nonce)
+    }
     /// Returns all messages sent by a given L1 transaction, as `(nonce, consumed_l2_tx_hash_if_known)`.
     pub fn get_messages_to_l2_by_l1_tx_hash(
         &self,
@@ -61,6 +64,12 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     /// Individual decoding failures are returned through the iterator.
     pub fn get_saved_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_ {
         self.db.get_mempool_transactions()
+    }
+    pub fn get_rejected_mempool_transaction(
+        &self,
+        tx_hash: &Felt,
+    ) -> Result<Option<crate::storage::RejectedMempoolTransaction>> {
+        self.db.get_rejected_mempool_transaction(tx_hash)
     }
     /// Streams at most `limit` transactions awaiting external publication.
     /// Entries retain their durable outbox identifiers for later deletion.
@@ -113,6 +122,12 @@ impl<D: MadaraStorage> MadaraBackend<D> {
     pub fn write_l1_handler_l1_block_by_nonce(&self, core_contract_nonce: u64, l1_block_n: u64) -> Result<()> {
         self.db.write_l1_handler_l1_block_by_nonce(core_contract_nonce, l1_block_n)
     }
+    pub fn write_l1_message_proof_rejection(&self, core_contract_nonce: u64, reason: &str) -> Result<()> {
+        self.db.write_l1_message_proof_rejection(core_contract_nonce, reason)
+    }
+    pub fn clear_l1_message_proof_rejection(&self, core_contract_nonce: u64) -> Result<()> {
+        self.db.clear_l1_message_proof_rejection(core_contract_nonce)
+    }
     /// Persists an L1-to-L2 message in the pending queue.
     /// The message remains pending until confirmation removes its nonce.
     pub fn write_pending_message_to_l2(&self, msg: &L1HandlerTransactionWithFee) -> Result<()> {
@@ -164,6 +179,19 @@ impl<D: MadaraStorage> MadaraBackend<D> {
     /// Validation is expected to have completed before this method is called.
     pub fn write_saved_mempool_transaction(&self, tx: &ValidatedTransaction) -> Result<()> {
         self.db.write_mempool_transaction(tx)
+    }
+    pub fn write_rejected_mempool_transaction(
+        &self,
+        tx_hash: &Felt,
+        rejection: &crate::storage::RejectedMempoolTransaction,
+    ) -> Result<()> {
+        self.db.write_rejected_mempool_transaction(tx_hash, rejection)
+    }
+    pub fn reject_saved_mempool_transactions(
+        &self,
+        rejected: &[(Felt, crate::storage::RejectedMempoolTransaction)],
+    ) -> Result<()> {
+        self.db.reject_saved_mempool_transactions(rejected)
     }
     /// Appends one validated transaction to the durable external outbox.
     /// The returned identifier is used to acknowledge and delete the entry later.

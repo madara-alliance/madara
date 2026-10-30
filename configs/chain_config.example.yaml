@@ -51,6 +51,8 @@ block_production_concurrency:
 # /!\ Only used for block production.
 # The bouncer is in charge of limiting block sizes. This is where the max number of step per block, gas etc are.
 bouncer_config:
+  # Maximum predicted full SNOS output size. Keep below the prover's hard limit.
+  max_snos_full_output_cells: 49000
   block_max_capacity:
     # Maximum gas limit per block
     sierra_gas: 5000000000

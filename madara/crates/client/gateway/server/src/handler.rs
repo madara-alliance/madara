@@ -330,6 +330,15 @@ pub async fn handle_get_block_bouncer_config(
     Ok(create_json_response(hyper::StatusCode::OK, &bouncer_weights))
 }
 
+pub async fn handle_get_snos_output_limit(backend: Arc<MadaraBackend>) -> Result<Response<String>, GatewayError> {
+    Ok(create_json_response(
+        hyper::StatusCode::OK,
+        &json!({
+            "max_snos_full_output_cells": backend.chain_config().bouncer_config.max_snos_full_output_cells
+        }),
+    ))
+}
+
 pub async fn handle_get_block(
     req: Request<Incoming>,
     backend: Arc<MadaraBackend>,
@@ -1093,6 +1102,19 @@ mod tests {
             err,
             GatewayError::StarknetError(StarknetError { code: StarknetErrorCode::MalformedRequest, .. })
         ));
+    }
+
+    #[tokio::test]
+    async fn get_snos_output_limit_uses_chain_config() {
+        let backend = backend_for_tests();
+
+        let response = handle_get_snos_output_limit(backend.clone()).await.unwrap();
+        let body: serde_json::Value = serde_json::from_str(response.body()).unwrap();
+
+        assert_eq!(
+            body["max_snos_full_output_cells"],
+            backend.chain_config().bouncer_config.max_snos_full_output_cells
+        );
     }
 
     #[tokio::test]

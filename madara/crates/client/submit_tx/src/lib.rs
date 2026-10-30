@@ -113,7 +113,10 @@ use async_trait::async_trait;
 use mc_db::{view::ExecutedTransactionWithBlockView, MadaraStorage, MadaraStorageRead};
 use mc_mempool::{Mempool, PreConfirmationStatus, TransactionStatus as MempoolTransactionStatus};
 use mp_gateway::{
-    feeder::{ProviderTransactionResponse, ProviderTransactionStatus, TransactionExecutionStatus, TransactionStatus},
+    feeder::{
+        ProviderTransactionResponse, ProviderTransactionStatus, TransactionExecutionStatus, TransactionStatus,
+        TxFailureReason,
+    },
     transaction::Transaction as GatewayTransaction,
 };
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
@@ -339,6 +342,17 @@ impl<D: MadaraStorage> TransactionLookup for Mempool<D> {
             Ok(Some(MempoolTransactionStatus::Confirmed { .. })) => {
                 Ok(Some(feeder_status_from_confirmed_mempool(hash, self)?))
             }
+            Ok(Some(MempoolTransactionStatus::Rejected { reason })) => Ok(Some(ProviderTransactionStatus {
+                tx_status: TransactionStatus::Rejected,
+                finality_status: TransactionStatus::Rejected,
+                execution_status: None,
+                block_hash: None,
+                tx_failure_reason: Some(TxFailureReason {
+                    code: "TRANSACTION_TOO_LARGE_FOR_PROOF".into(),
+                    error_message: reason,
+                }),
+                tx_revert_reason: None,
+            })),
             Ok(None) => Ok(Some(ProviderTransactionStatus::not_received())),
             Err(err) => Err(SubmitTransactionError::Internal(err)),
         }
@@ -354,6 +368,9 @@ impl<D: MadaraStorage> TransactionLookup for Mempool<D> {
             }
             Ok(Some(MempoolTransactionStatus::Confirmed { .. })) => {
                 Ok(Some(feeder_transaction_from_confirmed_mempool(hash, self)?))
+            }
+            Ok(Some(MempoolTransactionStatus::Rejected { .. })) => {
+                Ok(Some(ProviderTransactionResponse::not_received()))
             }
             Ok(None) => Ok(Some(ProviderTransactionResponse::not_received())),
             Err(err) => Err(SubmitTransactionError::Internal(err)),

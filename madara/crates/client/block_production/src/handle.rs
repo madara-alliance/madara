@@ -48,6 +48,7 @@ pub struct BlockProductionHandle {
     executor_commands: mpsc::UnboundedSender<executor::ExecutorCommand>,
     bypass_input: mpsc::Sender<ValidatedTransaction>,
     mempool_intake_tx: watch::Sender<MempoolIntakeMode>,
+    l1_retry_tx: mpsc::UnboundedSender<u64>,
     replay_mode_enabled: bool,
     /// We use TransactionValidator to handle conversion to blockifier, class compilation etc. Mostly for convenience.
     tx_converter: Arc<TransactionValidator>,
@@ -60,12 +61,14 @@ impl BlockProductionHandle {
         executor_commands: mpsc::UnboundedSender<executor::ExecutorCommand>,
         bypass_input: mpsc::Sender<ValidatedTransaction>,
         mempool_intake_tx: watch::Sender<MempoolIntakeMode>,
+        l1_retry_tx: mpsc::UnboundedSender<u64>,
         no_charge_fee: bool,
     ) -> Self {
         Self {
             executor_commands,
             bypass_input: bypass_input.clone(),
             mempool_intake_tx,
+            l1_retry_tx,
             replay_mode_enabled: false,
             tx_converter: TransactionValidator::new(
                 Arc::new(BypassInput(bypass_input)),
@@ -96,6 +99,11 @@ impl BlockProductionHandle {
             tracing::debug!(mode = ?mode, "mempool_intake_already_set");
         }
         Ok(())
+    }
+
+    /// Rewinds the active L1-message consumer so a cleared quarantine is retried.
+    pub fn retry_l1_message(&self, nonce: u64) -> anyhow::Result<()> {
+        self.l1_retry_tx.send(nonce).map_err(|_| anyhow::anyhow!("L1 message retry channel closed"))
     }
 
     /// Updates the local replay-mode guard used by replay-only handle methods.

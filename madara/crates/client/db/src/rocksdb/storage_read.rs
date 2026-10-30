@@ -52,6 +52,11 @@ impl MadaraStorageRead for RocksDBStorage {
             format!("Getting storage value for block_n={block_n} contract_address={contract_address:#x} key={key:#x}")
         })
     }
+    fn get_storage_at_many(&self, block_n: u64, keys: &[(Felt, Felt)]) -> Result<Vec<Option<Felt>>> {
+        self.inner
+            .get_storage_at_many(block_n, keys)
+            .with_context(|| format!("Getting {} storage values for block_n={block_n}", keys.len()))
+    }
     fn get_contract_nonce_at(&self, block_n: u64, contract_address: &Felt) -> Result<Option<Felt>> {
         self.inner
             .get_contract_nonce_at(block_n, contract_address)
@@ -156,6 +161,11 @@ impl MadaraStorageRead for RocksDBStorage {
             .get_l1_handler_l1_block_by_nonce(core_contract_nonce)
             .with_context(|| format!("Getting l1 handler l1 block by nonce={core_contract_nonce}"))
     }
+    fn get_l1_message_proof_rejection(&self, core_contract_nonce: u64) -> Result<Option<String>> {
+        self.inner
+            .get_l1_message_proof_rejection(core_contract_nonce)
+            .with_context(|| format!("Getting L1 message proof rejection for nonce {core_contract_nonce}"))
+    }
     fn get_messages_to_l2_by_l1_tx_hash(
         &self,
         l1_tx_hash: &mp_convert::L1TransactionHash,
@@ -181,6 +191,12 @@ impl MadaraStorageRead for RocksDBStorage {
 
     fn get_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_ {
         self.inner.get_mempool_transactions().map(|res| res.context("Getting mempool transactions"))
+    }
+    fn get_rejected_mempool_transaction(
+        &self,
+        tx_hash: &Felt,
+    ) -> Result<Option<crate::storage::RejectedMempoolTransaction>> {
+        self.inner.get_rejected_mempool_transaction(tx_hash).context("Getting rejected mempool transaction")
     }
     fn get_external_outbox_transactions(
         &self,

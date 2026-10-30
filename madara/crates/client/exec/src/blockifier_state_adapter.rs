@@ -76,6 +76,17 @@ impl<D: MadaraStorageRead> StateReader for BlockifierStateAdapter<D> {
         Ok(value)
     }
 
+    fn get_storage_many(&self, keys: &[(ContractAddress, StorageKey)]) -> StateResult<Vec<Felt>> {
+        let db_keys =
+            keys.iter().map(|(contract_address, key)| (contract_address.to_felt(), key.to_felt())).collect::<Vec<_>>();
+        self.view
+            .get_contract_storage_many(&db_keys)
+            .map_err(|error| {
+                StateError::StateReadError(format!("Failed to retrieve {} storage values: {error:#}", keys.len()))
+            })
+            .map(|values| values.into_iter().map(|value| value.unwrap_or(Felt::ZERO)).collect())
+    }
+
     fn get_nonce_at(&self, contract_address: ContractAddress) -> StateResult<Nonce> {
         let value = self
             .view

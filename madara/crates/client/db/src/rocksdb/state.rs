@@ -9,7 +9,10 @@ use mp_convert::Felt;
 use mp_state_update::{
     ContractStorageDiffItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff, StorageEntry,
 };
-use rayon::{iter::ParallelIterator, slice::ParallelSlice};
+use rayon::{
+    iter::{IntoParallelRefIterator, ParallelIterator},
+    slice::ParallelSlice,
+};
 use rocksdb::{IteratorMode, ReadOptions};
 use std::collections::HashMap;
 
@@ -134,6 +137,10 @@ impl RocksDBStorageInner {
         let block_n = u32::try_from(block_n).unwrap_or(u32::MAX); // We can't store blocks past u32::MAX.
         let prefix = make_storage_column_key(contract_address, key, block_n);
         self.db_history_kv_resolve(&prefix, CONTRACT_STORAGE_COLUMN)
+    }
+
+    pub(super) fn get_storage_at_many(&self, block_n: u64, keys: &[(Felt, Felt)]) -> Result<Vec<Option<Felt>>> {
+        keys.par_iter().map(|(contract_address, key)| self.get_storage_at(block_n, contract_address, key)).collect()
     }
 
     #[tracing::instrument(skip(self))]

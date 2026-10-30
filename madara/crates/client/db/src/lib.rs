@@ -113,7 +113,7 @@ pub use rocksdb::external_outbox::{ExternalOutboxEntry, ExternalOutboxId};
 pub use rocksdb::global_trie::MerklizationTimings;
 pub use storage::{
     DevnetPredeployedContractAccount, DevnetPredeployedKeys, EventFilter, MadaraStorage, MadaraStorageRead,
-    MadaraStorageWrite, StorageTxIndex,
+    MadaraStorageWrite, RejectedMempoolTransaction, StorageTxIndex,
 };
 pub use view::{MadaraBlockView, MadaraConfirmedBlockView, MadaraPreconfirmedBlockView, MadaraStateView};
 

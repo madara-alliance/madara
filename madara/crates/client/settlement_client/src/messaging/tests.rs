@@ -641,7 +641,9 @@ async fn test_metadata_only_flag_stores_metadata_but_not_pending(
     let mut mock_for_consumer = MockSettlementLayerProvider::new();
     mock_for_consumer.expect_get_client_type().returning(|| ClientType::Eth);
     let consumer_notify = Arc::new(Notify::new());
-    let mut consumer = MessagesToL2Consumer::new(db.clone(), Arc::new(mock_for_consumer), consumer_notify, false);
+    let (_retry_tx, retry_rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut consumer =
+        MessagesToL2Consumer::new(db.clone(), Arc::new(mock_for_consumer), consumer_notify, retry_rx, false);
     assert!(
         consumer.consume_next_or_wait().now_or_never().is_none(),
         "Consumer should have nothing to consume when metadata_only is true"
