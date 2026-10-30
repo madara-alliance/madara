@@ -23,4 +23,4 @@ jobs:
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
           jq -n --arg text "Dependabot PR: ${PR_TITLE} - ${PR_URL}" '{text: $text}' \
-            | curl -sf -X POST -H 'Content-type: application/json' --data @- "$SLACK_WEBHOOK_URL"
+            | curl --silent --show-error --fail-with-body -X POST -H 'Content-type: application/json' --data @- "$SLACK_WEBHOOK_URL"
