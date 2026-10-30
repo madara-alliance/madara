@@ -1,11 +1,9 @@
 #![allow(clippy::declare_interior_mutable_const)]
 #![allow(clippy::borrow_interior_mutable_const)]
 
-use super::http_connections::HttpConnections;
 use super::metrics::RpcMetrics;
 use super::middleware::{Metrics, RpcMiddlewareLayerMetrics};
-use super::tracked_requests::TrackedRpcRequests;
-use crate::service::rpc::middleware::RpcMiddlewareServiceVersion;
+use crate::service::rpc::middleware::RpcDispatcher;
 use anyhow::Context;
 use mc_rpc::versions::user::v0_7_1::methods::read::syncing::syncing;
 use mc_rpc::Starknet;
@@ -13,6 +11,7 @@ use mp_chain_config::RpcVersion;
 use mp_rpc::v0_7_1::SyncingStatus;
 use mp_utils::service::ServiceContext;
 use std::convert::Infallible;
+use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -23,6 +22,28 @@ use tower::Service;
 const MiB: u32 = 1024 * 1024;
 const WS_PING_INTERVAL_SECS: u64 = 30;
 const WS_MAX_PING_FAILURES: usize = 3;
+
+/// Use jsonrpsee's existing stop signal for HTTP sockets too. Hyper's graceful
+/// shutdown joins these connections; the RPC tracker separately drains admitted calls.
+#[derive(Clone)]
+struct RpcExecutor(jsonrpsee::server::StopHandle);
+
+impl<F> hyper::rt::Executor<F> for RpcExecutor
+where
+    F: Future + Send + 'static,
+    F::Output: Send,
+{
+    fn execute(&self, connection: F) {
+        let stop = self.0.clone();
+        tokio::spawn(async move {
+            tokio::select! {
+                biased;
+                _ = stop.shutdown() => {},
+                _ = connection => {},
+            }
+        });
+    }
+}
 
 /// RPC server configuration.
 #[derive(Debug, Clone)]
@@ -118,7 +139,7 @@ pub async fn start_server(
     let ctx1 = ctx.clone();
     let requests = TaskTracker::new();
     let admitted_requests = requests.clone();
-    let connections = HttpConnections::default();
+    let executor = RpcExecutor(stop_handle.clone());
 
     let make_service = hyper::service::make_service_fn(move |_| {
         let cfg = cfg.clone();
@@ -142,9 +163,8 @@ pub async fn start_server(
 
                 let requests = requests.clone();
                 let rpc_middleware = jsonrpsee::server::RpcServiceBuilder::new()
-                    .layer_fn(move |service| TrackedRpcRequests::new(service, requests.clone()))
                     .layer_fn(move |service| {
-                        RpcMiddlewareServiceVersion::new(service, path.clone(), rpc_version_default)
+                        RpcDispatcher::new(service, path.clone(), rpc_version_default, requests.clone())
                     })
                     .layer(metrics_layer.clone());
 
@@ -196,7 +216,7 @@ pub async fn start_server(
 
     let server = hyper::Server::from_tcp(listener.into_std()?)
         .with_context(|| format!("Creating hyper server at: {addr}"))?
-        .executor(connections.clone())
+        .executor(executor)
         .serve(make_service);
 
     tracing::info!(
@@ -227,16 +247,13 @@ pub async fn start_server(
         .with_graceful_shutdown(async {
             ctx.run_until_cancelled(stop_handle.shutdown()).await;
             requests.close();
-            connections.close();
             let _ = server_handle.stop(); // Stop existing WebSocket intake too.
         })
         .await;
     // Also drain on a listener error. A dropped HTTP/WS client must not detach a DB writer
     // across service stop/revert, including trace calls that lazily rebuild proof indexes.
     requests.close();
-    connections.close();
     let _ = server_handle.stop();
-    connections.wait().await;
     requests.wait().await;
     result.context("Running rpc server")
 }
@@ -329,4 +346,61 @@ pub(crate) fn format_cors(maybe_cors: Option<&Vec<String>>) -> String {
 }
 pub(crate) fn format_rpc_versions(versions: &[RpcVersion]) -> String {
     format!("{:?}", versions.iter().map(|v| format!("/rpc/v{v}/")).collect::<Vec<_>>())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{convert::Infallible, time::Duration};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[rstest::rstest]
+    #[case::unfinished_upload(true)]
+    #[case::unread_response(false)]
+    #[tokio::test]
+    async fn rpc_shutdown_closes_stalled_http_connections(#[case] unfinished_upload: bool) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = listener.local_addr().unwrap();
+        let (stop, handle) = jsonrpsee::server::stop_channel();
+        let (started, mut ready) = tokio::sync::mpsc::unbounded_channel();
+        let make_service = hyper::service::make_service_fn(move |_| {
+            let started = started.clone();
+            async move {
+                Ok::<_, Infallible>(hyper::service::service_fn(move |request: hyper::Request<hyper::Body>| {
+                    let started = started.clone();
+                    async move {
+                        started.send(()).unwrap();
+                        hyper::body::to_bytes(request.into_body()).await?;
+                        // Exceed the socket send buffer so the unread response cannot finish.
+                        Ok::<_, hyper::Error>(hyper::Response::new(hyper::Body::from(vec![0; 16 * 1024 * 1024])))
+                    }
+                }))
+            }
+        });
+        let executor = RpcExecutor(stop.clone());
+        let server = hyper::Server::from_tcp(listener)
+            .unwrap()
+            .executor(executor)
+            .serve(make_service)
+            .with_graceful_shutdown(async move { stop.shutdown().await });
+        let server = tokio::spawn(server);
+        let mut client = tokio::net::TcpStream::connect(address).await.unwrap();
+        if unfinished_upload {
+            // Keep the socket open after sending only one of the declared 10,000 bytes.
+            client.write_all(b"POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 10000\r\n\r\n{").await.unwrap();
+        } else {
+            client.write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n").await.unwrap();
+            client.read_exact(&mut [0; 1]).await.unwrap();
+        }
+        ready.recv().await.unwrap();
+        assert!(!server.is_finished());
+        handle.stop().unwrap();
+        tokio::time::timeout(Duration::from_secs(1), async {
+            server.await.unwrap().unwrap();
+        })
+        .await
+        .unwrap();
+        drop(client);
+    }
 }

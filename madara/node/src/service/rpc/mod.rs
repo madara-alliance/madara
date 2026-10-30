@@ -15,11 +15,9 @@ use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, Service
 use server::{start_server, ServerConfig};
 use std::sync::Arc;
 
-mod http_connections;
 mod metrics;
 mod middleware;
 mod server;
-mod tracked_requests;
 
 #[derive(Clone)]
 pub enum RpcType {
