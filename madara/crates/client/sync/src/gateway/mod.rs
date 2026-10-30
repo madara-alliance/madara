@@ -15,6 +15,7 @@ use std::{iter, sync::Arc, time::Duration};
 
 pub(crate) mod blocks;
 pub(crate) mod classes;
+mod committed_data;
 
 pub struct ForwardSyncConfig {
     pub block_parallelization: usize,
@@ -26,7 +27,8 @@ pub struct ForwardSyncConfig {
     pub disable_tries: bool,
     pub snap_sync: bool,
     pub keep_pre_v0_13_2_hashes: bool,
-    pub enable_bouncer_config_sync: bool,
+    /// Sync bouncer weights; also replicate datasets when committed-data execution is enabled.
+    pub madara_additional_data_sync: bool,
     pub disable_reorg: bool,
     pub disable_reorg_preconfirmed: bool,
 }
@@ -43,7 +45,7 @@ impl Default for ForwardSyncConfig {
             disable_tries: false,
             snap_sync: false,
             keep_pre_v0_13_2_hashes: false,
-            enable_bouncer_config_sync: false,
+            madara_additional_data_sync: false,
             disable_reorg: false,
             disable_reorg_preconfirmed: false,
         }
@@ -61,8 +63,9 @@ impl ForwardSyncConfig {
         Self { snap_sync: val, ..self }
     }
 
-    pub fn enable_bouncer_config_sync(self, val: bool) -> Self {
-        Self { enable_bouncer_config_sync: val, ..self }
+    /// Enables bouncer replication and, with the backend feature enabled, dataset replication.
+    pub fn madara_additional_data_sync(self, enabled: bool) -> Self {
+        Self { madara_additional_data_sync: enabled, ..self }
     }
     pub fn disable_reorg(self, val: bool) -> Self {
         Self { disable_reorg: val, ..self }
@@ -72,7 +75,32 @@ impl ForwardSyncConfig {
     }
 }
 
-pub type GatewaySync = SyncController<GatewayForwardSync>;
+/// Owns chain sync and optional dataset replication through graceful shutdown.
+pub struct GatewaySync {
+    controller: SyncController<GatewayForwardSync>,
+    backend: Arc<MadaraBackend>,
+    client: Arc<GatewayProvider>,
+    replicate: bool,
+}
+
+impl GatewaySync {
+    /// Cancel downloads when chain sync stops, then drain admitted storage work before returning.
+    pub async fn run(&mut self, ctx: mp_utils::service::ServiceContext) -> anyhow::Result<()> {
+        if !self.replicate {
+            return self.controller.run(ctx).await;
+        }
+        let replication_ctx = ctx.child();
+        let (result, ()) = tokio::join!(
+            async {
+                let result = self.controller.run(ctx).await;
+                replication_ctx.cancel_local();
+                result
+            },
+            committed_data::run(&self.backend, &self.client, replication_ctx.clone()),
+        );
+        result
+    }
+}
 pub fn forward_sync(
     backend: Arc<MadaraBackend>,
     importer: Arc<BlockImporter>,
@@ -80,7 +108,7 @@ pub fn forward_sync(
     controller_config: SyncControllerConfig,
     config: ForwardSyncConfig,
 ) -> GatewaySync {
-    let probe = Arc::new(GatewayLatestProbe::new(client.clone()));
+    let probe = Arc::new(GatewayLatestProbe { client: client.clone() });
     let probe = ThrottledRepeatedFuture::new(move |val| probe.clone().probe(val), Duration::from_secs(1));
     let get_pending_block = gateway_preconfirmed_block_sync(
         client.clone(),
@@ -88,13 +116,15 @@ pub fn forward_sync(
         backend.clone(),
         config.disable_reorg_preconfirmed,
     );
-    SyncController::new(
+    let replicate = config.madara_additional_data_sync && backend.use_committed_data();
+    let controller = SyncController::new(
         backend.clone(),
-        GatewayForwardSync::new(backend, importer, client, config),
+        GatewayForwardSync::new(backend.clone(), importer, client.clone(), config),
         probe,
         controller_config,
         Some(get_pending_block),
-    )
+    );
+    GatewaySync { controller, backend, client, replicate }
 }
 
 pub struct GatewayForwardSync {
@@ -124,7 +154,7 @@ impl GatewayForwardSync {
             config.block_parallelization,
             config.block_batch_size,
             config.keep_pre_v0_13_2_hashes,
-            config.enable_bouncer_config_sync,
+            config.madara_additional_data_sync,
             config.disable_reorg,
         );
         let classes_pipeline = classes::classes_pipeline(
@@ -336,10 +366,6 @@ struct GatewayLatestProbe {
 }
 
 impl GatewayLatestProbe {
-    pub fn new(client: Arc<GatewayProvider>) -> Self {
-        Self { client }
-    }
-
     async fn probe(
         self: Arc<Self>,
         highest_known_block: Option<ProviderBlockHeader>,

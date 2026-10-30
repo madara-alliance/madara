@@ -1,0 +1,913 @@
+mod adversarial;
+
+use super::*;
+use crate::persistent_committed_data::{node_key, Tree};
+use crate::{MadaraBackend, MadaraBackendConfig, MadaraStorageRead, MadaraStorageWrite};
+use blockifier::execution::syscalls::committed_data::CommittedDataBatchProof;
+
+// Existing archive-only matrices also cover the operator opt-out from durable rebuilds.
+fn open(path: &std::path::Path) -> Arc<MadaraBackend> {
+    open_with_idle(path, 0)
+}
+
+fn open_with_idle(path: &std::path::Path, idle_secs: u64) -> Arc<MadaraBackend> {
+    let config = MadaraBackendConfig {
+        committed_data_retention: crate::committed_data_retention::CommittedDataRetentionConfig {
+            rebuilt_proof_idle_secs: idle_secs,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    MadaraBackend::open_rocksdb(
+        path,
+        mp_chain_config::ChainConfig::madara_test().into(),
+        config,
+        RocksDBConfig::default(),
+        Default::default(),
+    )
+    .unwrap()
+}
+fn pointer(db: &RocksDBStorage, root: Felt) -> u64 {
+    persistent_id(
+        &db.inner
+            .db
+            .get_cf(&db.inner.get_column(meta::META_COLUMN), metadata_key(root, METADATA_LEVEL, 0))
+            .unwrap()
+            .unwrap(),
+    )
+    .unwrap()
+}
+type StoredRow = (Box<[u8]>, Box<[u8]>);
+
+fn rows(db: &RocksDBStorage, prefix: &[u8]) -> Vec<StoredRow> {
+    db.inner
+        .db
+        .iterator_cf(&db.inner.get_column(meta::META_COLUMN), IteratorMode::From(prefix, rocksdb::Direction::Forward))
+        .map(|row| row.unwrap())
+        .take_while(|(key, _)| key.starts_with(prefix))
+        .collect()
+}
+fn drain(db: &RocksDBStorage, cutoff: Option<u64>) {
+    for _ in 0..1000 {
+        if !db.maintain_history(cutoff).unwrap() {
+            return;
+        }
+    }
+    panic!("Maintenance did not converge");
+}
+fn dataset(value: u64) -> CommittedDataSet {
+    CommittedDataSet::new(
+        (0..8u64).map(|key| (Felt::from(key), Felt::from(if key == 0 { value } else { key }))).collect(),
+    )
+    .unwrap()
+}
+fn assert_dataset(db: &RocksDBStorage, expected: &CommittedDataSet) {
+    let root = expected.root();
+    assert_eq!(db.get_committed_data_page(root, 0).unwrap().unwrap(), (8, expected.entries().to_vec()));
+    for (key, value) in expected.entries() {
+        let witness = db.get_committed_data_witness(root, *key).unwrap().unwrap();
+        assert_eq!(witness.value, *value);
+        assert!(witness.verify());
+    }
+    assert!(db.get_committed_data_witness(root, Felt::from(99)).unwrap().is_none());
+    let keys = [Felt::ONE, Felt::ZERO, Felt::ONE, Felt::from(7)];
+    assert_eq!(
+        db.get_committed_data_batch(root, &keys).unwrap(),
+        CommittedDataBatchProof::from_dataset(expected, &keys).unwrap()
+    );
+}
+
+#[test]
+fn committed_history_prunes_only_old_references_and_reopens_cold_values() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = dataset(10);
+    let second = dataset(20);
+    {
+        let backend = open(dir.path());
+        let db = &backend.db;
+        db.write_committed_data_dataset(&first, Some(10)).unwrap(); // last observed block 11
+        db.patch_committed_data_dataset(first.root(), second.root(), vec![(Felt::ZERO, Felt::from(20))], Some(20))
+            .unwrap();
+        drain(db, None);
+        let before = rows(db, b"cdm/n/").len();
+        assert!(!db.maintain_history(Some(11)).unwrap(), "cutoff is exclusive");
+        let snapshot = SnapshotWithDBArc::new(Arc::clone(&db.inner));
+        let old_id = pointer(db, first.root());
+        assert!(db.maintain_history(Some(12)).unwrap());
+        let cf = db.inner.get_column(meta::META_COLUMN);
+        let mut concurrent =
+            Tree::new(u64::MAX, MAX_COMMITTED_DATA_VALUES as u32, |id| Ok(snapshot.get_cf(&cf, node_key(id))?));
+        assert!(concurrent.witness(old_id, first.root(), Felt::ZERO).unwrap().unwrap().verify());
+        drop(concurrent);
+        drop(snapshot);
+        assert_eq!(pointer(db, first.root()), 0);
+        assert_ne!(pointer(db, second.root()), 0);
+        let after = rows(db, b"cdm/n/").len();
+        assert!(after < before);
+        assert_eq!(after, 15, "Exactly the surviving eight-leaf tree remains");
+        for _ in 0..3 {
+            assert_dataset(db, &first);
+            assert_eq!(pointer(db, first.root()), 0, "Historical reads keep the root cold");
+            assert_eq!(rows(db, b"cdm/n/").len(), after, "Rebuilds never persist nodes for a later sweep");
+            assert!(!db.maintain_history(Some(12)).unwrap(), "A rebuild creates no new pruning work");
+        }
+        assert_dataset(db, &second);
+        assert_eq!(rows(db, b"cdm/n/").len(), after, "Cold reads do not repopulate proof nodes");
+        // Retention follows execution height, including an old root used in a new block.
+        backend.committed_data_provider_at(100).value(second.root(), Felt::ZERO).unwrap();
+        assert!(!db.maintain_history(Some(100)).unwrap());
+        assert!(db.maintain_history(Some(101)).unwrap());
+        assert!(rows(db, b"cdm/n/").is_empty());
+        assert!(rows(db, b"cdh/ref/").is_empty());
+    }
+    let backend = open(dir.path());
+    let db = &backend.db;
+    assert_dataset(db, &first);
+    assert_dataset(db, &second);
+    let fork = dataset(30);
+    db.patch_committed_data_dataset(first.root(), fork.root(), vec![(Felt::ZERO, Felt::from(30))], Some(200)).unwrap();
+    assert_dataset(db, &fork);
+    // Identical retries must not leak references or advance the allocator.
+    let before = rows(db, b"cdh/ref/");
+    db.patch_committed_data_dataset(first.root(), fork.root(), vec![(Felt::ZERO, Felt::from(30))], Some(200)).unwrap();
+    assert_eq!(rows(db, b"cdh/ref/"), before);
+    // An explicit full re-import restores its index and makes it eligible for later pruning.
+    db.write_committed_data_dataset(&first, Some(10)).unwrap();
+    assert_ne!(pointer(db, first.root()), 0);
+    drain(db, Some(202));
+    assert!(rows(db, b"cdm/n/").is_empty());
+    assert_dataset(db, &fork);
+}
+
+#[test]
+fn committed_history_batched_reclamation_preserves_shared_nodes_and_is_atomic() {
+    let dir = tempfile::tempdir().unwrap();
+    let backend = open(dir.path());
+    let db = &backend.db;
+    // A complete 2048-leaf tree crosses the reclamation read-batch boundary.
+    let values: Vec<_> = (0..2048u64).map(|key| (Felt::from(key), Felt::ONE)).collect();
+    let first = CommittedDataSet::new(values.clone()).unwrap();
+    let second = CommittedDataSet::new(values.iter().map(|(key, _)| (*key, Felt::TWO)).collect()).unwrap();
+    let mut fork_values = second.entries().to_vec();
+    fork_values[0].1 = Felt::from(3);
+    let fork = CommittedDataSet::new(fork_values).unwrap();
+    db.write_committed_data_dataset(&first, Some(0)).unwrap();
+    db.patch_committed_data_dataset(first.root(), second.root(), second.entries().to_vec(), Some(1)).unwrap();
+    db.patch_committed_data_dataset(second.root(), fork.root(), vec![(Felt::ZERO, Felt::from(3))], Some(2)).unwrap();
+    let cf = db.inner.get_column(meta::META_COLUMN);
+    let (key, original) = rows(db, b"cdh/ref/").remove(0);
+    // A corrupt leaf is reached after branches have already been staged for removal.
+    db.inner.db.put_cf(&cf, &key, [0u8; 24]).unwrap();
+    let nodes = rows(db, b"cdm/n/");
+    let references = rows(db, b"cdh/ref/");
+    assert!(db.maintain_history(Some(3)).is_err());
+    assert_eq!(rows(db, b"cdm/n/"), nodes);
+    assert_eq!(rows(db, b"cdh/ref/"), references);
+    assert_ne!(pointer(db, first.root()), 0);
+    db.inner.db.put_cf(&cf, key, original).unwrap();
+    drain(db, Some(3));
+    assert_eq!(rows(db, b"cdm/n/").len(), 4095, "Only the shared fork tree survives");
+    for tree in [&first, &second, &fork] {
+        let keys = [Felt::ZERO, Felt::ONE, Felt::from(2047)];
+        assert_eq!(
+            db.get_committed_data_batch(tree.root(), &keys).unwrap(),
+            CommittedDataBatchProof::from_dataset(tree, &keys).unwrap()
+        );
+    }
+    drain(db, Some(4));
+    assert!(rows(db, b"cdm/n/").is_empty());
+    assert!(rows(db, b"cdh/ref/").is_empty());
+}
+
+#[test]
+fn committed_history_checkpoints_bound_replay_without_expiring_values() {
+    let dir = tempfile::tempdir().unwrap();
+    let backend = open(dir.path());
+    let db = &backend.db;
+    let mut versions = vec![dataset(10)];
+    db.write_committed_data_dataset(&versions[0], None).unwrap();
+    for tick in 1..=70u64 {
+        let next = dataset(tick + 10);
+        db.patch_committed_data_dataset(
+            versions.last().unwrap().root(),
+            next.root(),
+            vec![(Felt::ZERO, Felt::from(tick + 10))],
+            Some(tick),
+        )
+        .unwrap();
+        versions.push(next);
+    }
+    let history = |root| -> ValueHistory {
+        deserialize(
+            db.inner.db.get_cf(&db.inner.get_column(meta::META_COLUMN), root_key(HISTORY, root)).unwrap().unwrap(),
+        )
+        .unwrap()
+    };
+    assert_eq!(history(versions[64].root()).depth, 64);
+    assert_eq!(history(versions[65].root()).depth, 0);
+    drain(db, Some(u64::MAX));
+    assert!(rows(db, b"cdm/n/").is_empty());
+    assert!(rows(db, b"cdh/ref/").is_empty());
+    assert_eq!(rows(db, HISTORY).len(), versions.len());
+    for expected in &versions {
+        assert_dataset(db, expected);
+    }
+}
+
+#[test]
+fn committed_history_archive_corruption_blocks_deletion() {
+    let dir = tempfile::tempdir().unwrap();
+    let datasets = [dataset(10), dataset(20), dataset(30)];
+    let backend = open(dir.path());
+    let db = &backend.db;
+    for tree in &datasets {
+        db.write_committed_data_dataset(tree, Some(1)).unwrap();
+    }
+    let cf = db.inner.get_column(meta::META_COLUMN);
+    // The lexically first root is the first candidate: every root has the same age.
+    let root = datasets.iter().map(CommittedDataSet::root).min().unwrap();
+    let key = root_key(HISTORY, root);
+    let original = db.inner.db.get_cf(&cf, &key).unwrap().unwrap();
+    let mut history: ValueHistory = deserialize(&original).unwrap();
+    history.data[0] ^= 1;
+    db.inner.db.put_cf(&cf, &key, serialize(&history).unwrap()).unwrap();
+    let nodes = rows(db, b"cdm/n/");
+    assert!(db.maintain_history(Some(100)).is_err());
+    assert_eq!(rows(db, b"cdm/n/"), nodes);
+    assert_ne!(pointer(db, root), 0);
+    db.inner.db.put_cf(&cf, key, original).unwrap();
+    drain(db, Some(100));
+    for tree in &datasets {
+        assert_dataset(db, tree);
+    }
+    // Cold requests fail closed on missing/corrupt archives too.
+    db.inner.db.delete_cf(&cf, root_key(HISTORY, root)).unwrap();
+    assert!(db.get_committed_data_witness(root, Felt::ZERO).is_err());
+    assert!(db.get_committed_data_page(root, 0).is_err());
+    assert!(db.get_committed_data_batch(root, &[Felt::ZERO]).is_err());
+}
+
+#[test]
+fn committed_history_no_settlement_stalls_and_boundary_controls_pruning() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut chain = mp_chain_config::ChainConfig::madara_test();
+    chain.block_time = std::time::Duration::from_secs(5);
+    let config = MadaraBackendConfig {
+        committed_data_retention: crate::committed_data_retention::CommittedDataRetentionConfig {
+            proof_retention_secs: Some(10),
+            rebuilt_proof_idle_secs: 0,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let backend =
+        MadaraBackend::open_rocksdb(dir.path(), chain.into(), config, RocksDBConfig::default(), Default::default())
+            .unwrap();
+    let tree = dataset(10);
+    backend.db.write_committed_data_dataset(&tree, Some(97)).unwrap();
+    backend.chain_head_state.send_modify(|state| state.confirmed_tip = Some(100));
+    assert!(!backend.maintain_committed_data_history().unwrap());
+    backend.set_latest_l1_confirmed(Some(100)).unwrap();
+    assert!(!backend.maintain_committed_data_history().unwrap()); // cutoff 98 == last use
+    backend.set_latest_l1_confirmed(Some(200)).unwrap();
+    assert!(!backend.maintain_committed_data_history().unwrap()); // clamp malformed future tip
+    backend.set_latest_l1_confirmed(Some(100)).unwrap();
+    backend.chain_head_state.send_modify(|state| state.confirmed_tip = Some(101));
+    assert!(!backend.maintain_committed_data_history().unwrap()); // stalled L1
+    backend.set_latest_l1_confirmed(Some(101)).unwrap();
+    assert!(backend.maintain_committed_data_history().unwrap());
+    assert_eq!(pointer(&backend.db, tree.root()), 0);
+    // An old execution remains cold; recent execution reactivates the index once.
+    assert_eq!(
+        backend.committed_data_provider_at(98).value(tree.root(), Felt::ZERO).unwrap().unwrap().0,
+        Felt::from(10)
+    );
+    assert_eq!(pointer(&backend.db, tree.root()), 0);
+    assert_eq!(
+        backend.committed_data_provider_at(102).value(tree.root(), Felt::ZERO).unwrap().unwrap().0,
+        Felt::from(10)
+    );
+    assert_ne!(pointer(&backend.db, tree.root()), 0);
+    assert!(!backend.maintain_committed_data_history().unwrap());
+    backend.set_latest_l1_confirmed(Some(90)).unwrap(); // regression cannot remove values
+    assert_dataset(&backend.db, &tree);
+}
+
+#[test]
+fn committed_history_concurrent_imports_pruning_and_reads_preserve_roots() {
+    let dir = tempfile::tempdir().unwrap();
+    let backend = open(dir.path());
+    drain(&backend.db, None);
+    let first = dataset(10);
+    backend.db.write_committed_data_dataset(&first, None).unwrap();
+    let start = std::sync::Barrier::new(2);
+    let done = std::sync::atomic::AtomicBool::new(false);
+    std::thread::scope(|scope| {
+        let pruner = scope.spawn(|| {
+            start.wait();
+            while !done.load(std::sync::atomic::Ordering::Acquire) {
+                backend.db.maintain_history(Some(u64::MAX)).unwrap();
+                std::thread::yield_now();
+            }
+        });
+        let writer = scope.spawn(|| {
+            start.wait();
+            let mut root = first.root();
+            for tick in 11..30u64 {
+                let next = dataset(tick);
+                backend
+                    .db
+                    .patch_committed_data_dataset(root, next.root(), vec![(Felt::ZERO, Felt::from(tick))], Some(tick))
+                    .unwrap();
+                assert_dataset(&backend.db, &next);
+                root = next.root();
+            }
+        });
+        let result = writer.join();
+        done.store(true, std::sync::atomic::Ordering::Release);
+        pruner.join().unwrap();
+        result.unwrap();
+    });
+    drain(&backend.db, Some(u64::MAX));
+    assert!(rows(&backend.db, b"cdm/n/").is_empty());
+    for value in 10..30 {
+        assert_dataset(&backend.db, &dataset(value));
+    }
+}
+
+#[test]
+fn committed_history_dictionary_key_additions_forks_and_corruption() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = dataset(10);
+    let mut added = first.entries().to_vec();
+    added.push((Felt::MAX, Felt::MAX));
+    let second = CommittedDataSet::new(added).unwrap();
+    let fork = dataset(999);
+    let mut wide_values = second.entries().to_vec();
+    wide_values.last_mut().unwrap().1 = Felt::MAX - Felt::ONE;
+    let wide = CommittedDataSet::new(wide_values.clone()).unwrap();
+    wide_values.last_mut().unwrap().1 = Felt::ZERO;
+    let zero = CommittedDataSet::new(wide_values).unwrap();
+    {
+        let backend = open(dir.path());
+        let db = &backend.db;
+        db.write_committed_data_dataset(&first, None).unwrap();
+        db.patch_committed_data_dataset(first.root(), second.root(), vec![(Felt::MAX, Felt::MAX)], Some(1)).unwrap();
+        db.patch_committed_data_dataset(first.root(), fork.root(), vec![(Felt::ZERO, Felt::from(999))], Some(2))
+            .unwrap();
+        db.patch_committed_data_dataset(second.root(), wide.root(), vec![(Felt::MAX, Felt::MAX - Felt::ONE)], Some(3))
+            .unwrap();
+        db.patch_committed_data_dataset(wide.root(), zero.root(), vec![(Felt::MAX, Felt::ZERO)], Some(4)).unwrap();
+        assert_eq!(rows(db, archive::DICTIONARY).len(), 2, "Fork reuses original dictionary");
+        let cf = db.inner.get_column(meta::META_COLUMN);
+        let (key, bytes) = rows(db, archive::DICTIONARY).remove(0);
+        let mut corrupt = bytes.to_vec();
+        corrupt[0] ^= 1;
+        db.inner.db.put_cf(&cf, &key, &corrupt).unwrap();
+        // Both cold reconstruction and reclamation authenticate dictionary bytes.
+        let snapshot = SnapshotWithDBArc::new(Arc::clone(&db.inner));
+        assert!([first.root(), second.root()].into_iter().any(|root| reconstruct(&snapshot, root).is_err()));
+        drain(db, None);
+        let mut rejected = false;
+        for _ in 0..3 {
+            if db.maintain_history(Some(u64::MAX)).is_err() {
+                rejected = true;
+                break;
+            }
+        }
+        assert!(rejected);
+        db.inner.db.put_cf(&cf, key, bytes).unwrap();
+        drain(db, Some(u64::MAX));
+    }
+    let backend = open(dir.path());
+    for expected in [&first, &second, &fork, &wide, &zero] {
+        let keys: Vec<_> = expected.entries().iter().map(|(key, _)| *key).collect();
+        assert_eq!(
+            backend.db.get_committed_data_batch(expected.root(), &keys).unwrap(),
+            CommittedDataBatchProof::from_dataset(expected, &keys).unwrap()
+        );
+        assert_eq!(backend.db.get_committed_data_page(expected.root(), 0).unwrap().unwrap().1, expected.entries());
+    }
+}
+
+#[test]
+fn committed_data_catalog_and_outbox_do_not_wait_for_proof_pruning() {
+    use crate::committed_data_recovery::RecoveryRecord;
+    use mp_gateway::committed_data::CommittedDataVersion;
+    let directory = tempfile::tempdir().unwrap();
+    let backend = open(directory.path());
+    let tree = dataset(10);
+    let root = tree.root();
+    backend.db.write_committed_data_dataset(&tree, None).unwrap();
+    let record =
+        RecoveryRecord::encode(backend.chain_config().chain_id.to_felt(), None, root, None, tree.entries().to_vec())
+            .unwrap();
+    let version = CommittedDataVersion { application_id: Felt::ONE, dataset_id: Felt::TWO, root };
+    std::thread::scope(|scope| {
+        let pruning = backend.db.inner.committed_data.tree.lock().unwrap();
+        let (send, receive) = std::sync::mpsc::channel();
+        let db = &backend.db;
+        let writer = scope.spawn(move || {
+            let result = (|| -> Result<()> {
+                db.write_committed_data_version(version, true)?;
+                let id = db.store_recovery_record(&record)?;
+                anyhow::ensure!(db.recovery_pending_bytes()? > 0);
+                db.mark_recovery_exported(&id)?;
+                anyhow::ensure!(db.recovery_pending_bytes()? == 0);
+                anyhow::ensure!(db.get_recovery_manifest(&id)?.is_some());
+                Ok(())
+            })();
+            send.send(result).unwrap();
+        });
+        let result = receive.recv_timeout(std::time::Duration::from_secs(5));
+        // Release before joining so a regression fails instead of deadlocking the test.
+        drop(pruning);
+        writer.join().unwrap();
+        result.expect("Catalog and outbox writes must complete while the proof arena is locked").unwrap();
+    });
+    assert!(backend.db.has_committed_data_version(version).unwrap());
+    assert_dataset(&backend.db, &tree);
+}
+
+/// Full-node imports have no explicit parent. Equal dictionaries must still share proof nodes
+/// and archive only changed values, including after restart and after the parent is pruned.
+#[test]
+fn full_snapshots_reuse_local_history_across_restart_and_pruning() {
+    let directory = tempfile::tempdir().unwrap();
+    let first = dataset(10);
+    let second = dataset(20);
+    {
+        let backend = open(directory.path());
+        backend.db.write_committed_data_dataset(&first, Some(0)).unwrap();
+    }
+    let backend = open(directory.path());
+    let db = &backend.db;
+    let before = rows(db, b"cdm/n/").len();
+    db.write_committed_data_dataset(&second, Some(1)).unwrap();
+    assert_eq!(rows(db, b"cdm/n/").len() - before, 4, "Only one leaf and its three ancestors change");
+    let snapshot = SnapshotWithDBArc::new(Arc::clone(&db.inner));
+    assert_eq!(history_chain(&snapshot, second.root()).unwrap().0, vec![second.root(), first.root()]);
+    drop(snapshot);
+    drain(db, Some(u64::MAX));
+    assert!(rows(db, b"cdm/n/").is_empty());
+    assert_dataset(db, &first);
+    assert_dataset(db, &second);
+    // A pruned optimization candidate is harmless: a new complete checkpoint is still valid.
+    let third = dataset(30);
+    db.write_committed_data_dataset(&third, Some(2)).unwrap();
+    assert_dataset(db, &third);
+    let snapshot = SnapshotWithDBArc::new(Arc::clone(&db.inner));
+    assert_eq!(history_chain(&snapshot, third.root()).unwrap().0, vec![third.root()]);
+}
+
+#[test]
+fn full_snapshot_reuse_does_not_merge_different_key_sets() {
+    let directory = tempfile::tempdir().unwrap();
+    let backend = open(directory.path());
+    let original = dataset(10);
+    backend.db.write_committed_data_dataset(&original, Some(0)).unwrap();
+    let mut entries = original.entries().to_vec();
+    entries[0].0 = Felt::from(100);
+    let replacement = CommittedDataSet::new(entries).unwrap();
+    backend.db.write_committed_data_dataset(&replacement, Some(1)).unwrap();
+    assert!(backend.db.get_committed_data_witness(replacement.root(), Felt::ZERO).unwrap().is_none());
+    assert!(backend.db.get_committed_data_witness(replacement.root(), Felt::from(100)).unwrap().unwrap().verify());
+    let snapshot = SnapshotWithDBArc::new(Arc::clone(&backend.db.inner));
+    assert_eq!(history_chain(&snapshot, replacement.root()).unwrap().0, vec![replacement.root()]);
+}
+
+/// Cross dictionary/page and checkpoint boundaries, then discard every proof node and reopen.
+/// Full imports model a replica; explicit patches model ingestion on the sequencer.
+#[rstest::rstest]
+fn historical_proofs_rebuild_across_size_depth_and_import_modes(
+    #[values(1usize, 17, 1024, 4097)] entries: usize,
+    #[values(0u64, 1, 64, 65)] updates: u64,
+    #[values(false, true)] full_import: bool,
+    #[values(0u64, 21600)] idle_secs: u64,
+) {
+    let directory = tempfile::tempdir().unwrap();
+    let mut values: Vec<_> = (0..entries).map(|key| (Felt::from(key), Felt::from(key))).collect();
+    values.last_mut().unwrap().0 = Felt::MAX; // Exercise the full key domain, including a singleton.
+    let mut versions = vec![CommittedDataSet::new(values.clone()).unwrap()];
+    {
+        let backend = open_with_idle(directory.path(), idle_secs);
+        let db = &backend.db;
+        db.write_committed_data_dataset(&versions[0], Some(0)).unwrap();
+        for version in 1..=updates {
+            values[0].1 = if version % 2 == 0 { Felt::MAX - Felt::from(version) } else { Felt::from(version) };
+            let next = CommittedDataSet::new(values.clone()).unwrap();
+            if full_import {
+                db.write_committed_data_dataset(&next, Some(version)).unwrap();
+            } else {
+                db.patch_committed_data_dataset(
+                    versions.last().unwrap().root(),
+                    next.root(),
+                    vec![values[0]],
+                    Some(version),
+                )
+                .unwrap();
+            }
+            versions.push(next);
+        }
+        drain(db, Some(u64::MAX));
+        assert!(rows(db, b"cdm/n/").is_empty());
+        assert!(rows(db, b"cdh/ref/").is_empty());
+    }
+    let backend = open_with_idle(directory.path(), idle_secs);
+    let db = &backend.db;
+    for expected in &versions {
+        let sorted = expected.entries();
+        let keys = [sorted[entries - 1].0, sorted[0].0, sorted[entries / 2].0, sorted[0].0];
+        let actual = db.get_committed_data_batch(expected.root(), &keys).unwrap();
+        assert_eq!(actual, CommittedDataBatchProof::from_dataset(expected, &keys).unwrap());
+        for (key, witness) in keys.iter().zip(db.get_committed_data_witnesses(expected.root(), &keys).unwrap()) {
+            assert_eq!(witness, expected.witness(*key).unwrap());
+            assert!(witness.verify());
+        }
+        let mut assembled = Vec::new();
+        for start in (0..entries).step_by(mp_gateway::committed_data::VALUES_PER_PAGE) {
+            let (count, page) = db.get_committed_data_page(expected.root(), start as u32).unwrap().unwrap();
+            assert_eq!(count as usize, entries);
+            assembled.extend(page);
+        }
+        assert_eq!(assembled, sorted);
+        assert_eq!(pointer(db, expected.root()) == 0, idle_secs == 0, "Only enabled disk reuse republishes indexes");
+    }
+    assert_eq!(rows(db, b"cdm/n/").is_empty(), idle_secs == 0);
+    assert_eq!(rows(db, b"cdh/ref/").is_empty(), idle_secs == 0);
+}
+
+/// Kill a real writer while pruning races with imports. Every acknowledged root must survive;
+/// a write racing the kill may be absent or complete, but must never expose a partial tree.
+#[test]
+fn historical_proofs_survive_killed_writer_and_concurrent_pruning() {
+    use std::io::{BufRead, Write};
+    const CHILD_DIRECTORY: &str = "MADARA_HISTORY_KILL_FIXTURE";
+    const TEST: &str =
+        "rocksdb::committed_history::tests::historical_proofs_survive_killed_writer_and_concurrent_pruning";
+    if let Ok(directory) = std::env::var(CHILD_DIRECTORY) {
+        let backend = open(std::path::Path::new(&directory));
+        let pruning = Arc::clone(&backend);
+        std::thread::spawn(move || loop {
+            pruning.db.maintain_history(Some(u64::MAX)).unwrap();
+            std::thread::yield_now();
+        });
+        for version in 0..1000u64 {
+            backend.db.write_committed_data_dataset(&dataset(version), Some(version)).unwrap();
+            println!("HISTORY_ACK {version}");
+            std::io::stdout().flush().unwrap();
+        }
+        panic!("Parent must kill the child before the workload finishes");
+    }
+    for acknowledged in [0u64, 1, 10, 65] {
+        let directory = tempfile::tempdir().unwrap();
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", TEST, "--nocapture"])
+            .env(CHILD_DIRECTORY, directory.path())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let output = std::io::BufReader::new(child.stdout.take().unwrap());
+        let marker = format!("HISTORY_ACK {acknowledged}");
+        let mut reached = false;
+        for line in output.lines() {
+            if line.unwrap() == marker {
+                reached = true;
+                child.kill().unwrap(); // SIGKILL on Unix: no Drop, flush, or graceful service shutdown.
+                break;
+            }
+        }
+        let status = child.wait().unwrap();
+        assert!(reached && !status.success(), "Fixture must really be killed after acknowledgement");
+        let backend = open(directory.path());
+        let db = &backend.db;
+        for version in 0..=acknowledged {
+            assert_dataset(db, &dataset(version));
+        }
+        // The kill may race a later complete write. Authenticate every published root as well.
+        let mut after = None;
+        loop {
+            let roots = db.list_committed_data_roots(after).unwrap();
+            if roots.is_empty() {
+                break;
+            }
+            for root in &roots {
+                let (_, values) = db.get_committed_data_page(*root, 0).unwrap().unwrap();
+                let expected = CommittedDataSet::new(values).unwrap();
+                assert_eq!(expected.root(), *root);
+                assert_dataset(db, &expected);
+            }
+            after = roots.last().copied();
+        }
+        drain(db, Some(u64::MAX));
+        assert!(rows(db, b"cdm/n/").is_empty());
+        assert!(rows(db, b"cdh/ref/").is_empty());
+        for version in 0..=acknowledged {
+            assert_dataset(db, &dataset(version));
+        }
+    }
+}
+
+/// Disk damage must yield an error, never an unauthenticated witness or a partial repair.
+/// Recomputed checksums model internally consistent bad data; the commitment remains authoritative.
+#[rstest::rstest]
+#[case::missing_record("missing_record")]
+#[case::missing_checksum("missing_checksum")]
+#[case::wrong_checksum("wrong_checksum")]
+#[case::missing_dictionary("missing_dictionary")]
+#[case::wrong_dictionary("wrong_dictionary")]
+#[case::invalid_compressed_frame("invalid_frame")]
+#[case::wrong_values_with_valid_checksum("wrong_values")]
+#[case::truncated_checkpoint("truncated_checkpoint")]
+#[case::duplicate_index("duplicate_index")]
+#[case::cycle("cycle")]
+#[case::wrong_identity("wrong_identity")]
+fn historical_corruption_fails_closed_without_mutating_other_roots(#[case] corruption: &str) {
+    let directory = tempfile::tempdir().unwrap();
+    let first = dataset(10);
+    let unaffected = CommittedDataSet::new(vec![(Felt::MAX, Felt::ONE)]).unwrap();
+    {
+        let backend = open(directory.path());
+        backend.db.write_committed_data_dataset(&first, Some(0)).unwrap();
+        backend.db.write_committed_data_dataset(&unaffected, Some(0)).unwrap();
+        drain(&backend.db, Some(u64::MAX));
+    }
+    let backend = open(directory.path());
+    let db = &backend.db;
+    let cf = db.inner.get_column(meta::META_COLUMN);
+    let key = root_key(HISTORY, first.root());
+    let checksum = root_key(archive::HISTORY_HASH, first.root());
+    let bytes = db.inner.db.get_cf(&cf, &key).unwrap().unwrap();
+    let mut history: ValueHistory = deserialize(&bytes).unwrap();
+    match corruption {
+        "missing_record" => db.inner.db.delete_cf(&cf, &key).unwrap(),
+        "missing_checksum" => db.inner.db.delete_cf(&cf, checksum).unwrap(),
+        "wrong_checksum" => db.inner.db.put_cf(&cf, checksum, b"bad checksum").unwrap(),
+        "missing_dictionary" | "wrong_dictionary" => {
+            let encoded = serde_json::to_value(&history).unwrap();
+            let dictionary: Vec<u8> = serde_json::from_value(encoded["dictionary"].clone()).unwrap();
+            let key = named(archive::DICTIONARY, &dictionary);
+            if corruption == "missing_dictionary" {
+                db.inner.db.delete_cf(&cf, key).unwrap();
+            } else {
+                let mut bytes = db.inner.db.get_cf(&cf, &key).unwrap().unwrap();
+                bytes[0] ^= 1;
+                db.inner.db.put_cf(&cf, key, bytes).unwrap();
+            }
+        }
+        _ => {
+            match corruption {
+                "invalid_frame" => history.data = vec![0xff],
+                "wrong_values" => {
+                    let raw = codec::encode(
+                        first
+                            .entries()
+                            .iter()
+                            .enumerate()
+                            .map(|(index, (_, value))| (index, Felt::ZERO, *value + Felt::ONE)),
+                    );
+                    history.data = zstd::stream::encode_all(raw.as_slice(), 3).unwrap();
+                }
+                "truncated_checkpoint" => {
+                    let raw = codec::encode([(0, Felt::ZERO, Felt::from(10))]);
+                    history.data = zstd::stream::encode_all(raw.as_slice(), 3).unwrap();
+                }
+                "duplicate_index" => history.data = zstd::stream::encode_all(&[0u8, 1][..], 3).unwrap(),
+                "cycle" => {
+                    history.base = Some(first.root());
+                    history.depth = 1;
+                }
+                "wrong_identity" => {
+                    let mut encoded = serde_json::to_value(&history).unwrap();
+                    encoded["root"] = serde_json::to_value(Felt::ZERO).unwrap();
+                    history = serde_json::from_value(encoded).unwrap();
+                }
+                _ => unreachable!(),
+            }
+            let bytes = serialize(&history).unwrap();
+            db.inner.db.put_cf(&cf, checksum, crate::committed_data_recovery::digest(&bytes)).unwrap();
+            db.inner.db.put_cf(&cf, key, bytes).unwrap();
+        }
+    }
+    let before = rows(db, b"");
+    assert!(db.get_committed_data_witness(first.root(), Felt::ZERO).is_err());
+    assert!(db.get_committed_data_witnesses(first.root(), &[Felt::ZERO]).is_err());
+    assert!(db.get_committed_data_batch(first.root(), &[Felt::ZERO]).is_err());
+    assert_eq!(rows(db, b""), before, "Failed reads cannot write repaired or partial state");
+    let witness = db.get_committed_data_witness(unaffected.root(), Felt::MAX).unwrap().unwrap();
+    assert_eq!(witness.value, Felt::ONE);
+    assert!(witness.verify(), "A failed reconstruction must not poison the next request");
+}
+
+/// Every historical read entry point must publish the same complete index, while returning
+/// only its requested slice/proof. Subsequent pages and readers reuse the exact node IDs.
+#[rstest::rstest]
+#[case::page(0)]
+#[case::witness(1)]
+#[case::witnesses(2)]
+#[case::batch(3)]
+fn rebuilt_index_is_durable_and_all_read_paths_reuse_it(#[case] first_read: u8) {
+    let directory = tempfile::tempdir().unwrap();
+    let idle_secs = crate::committed_data_retention::DEFAULT_REBUILT_PROOF_IDLE_SECS;
+    let tree = CommittedDataSet::new((0..4097u32).map(|key| (Felt::from(key), Felt::from(key + 1))).collect()).unwrap();
+    let root = tree.root();
+    let keys = [Felt::ZERO, Felt::from(4096u32)];
+    let backend = open_with_idle(directory.path(), idle_secs);
+    let db = &backend.db;
+    db.write_committed_data_dataset(&tree, Some(10)).unwrap();
+    drain(db, Some(12));
+    let archives = rows(db, HISTORY);
+    let used = rows(db, USED);
+    assert_eq!(pointer(db, root), 0);
+    match first_read {
+        0 => assert_eq!(db.get_committed_data_page(root, 0).unwrap().unwrap().1, tree.entries()[..4096]),
+        1 => assert!(db.get_committed_data_witness(root, keys[0]).unwrap().unwrap().verify()),
+        2 => assert_eq!(db.get_committed_data_witnesses(root, &keys).unwrap().len(), 2),
+        3 => assert_eq!(
+            db.get_committed_data_batch(root, &keys).unwrap(),
+            CommittedDataBatchProof::from_dataset(&tree, &keys).unwrap()
+        ),
+        _ => unreachable!(),
+    }
+    let rebuilt = pointer(db, root);
+    assert_ne!(rebuilt, 0);
+    let nodes = rows(db, b"cdm/n/");
+    assert_eq!(nodes.len(), 2 * tree.entries().len() - 1);
+    assert_eq!(db.get_committed_data_page(root, 4096).unwrap().unwrap().1, tree.entries()[4096..]);
+    assert_eq!(rows(db, HISTORY), archives);
+    assert_eq!(rows(db, USED), used, "Historical reads never advance execution age");
+    drain(db, Some(u64::MAX));
+    assert_eq!(pointer(db, root), rebuilt, "An active idle lease vetoes block-age pruning");
+    drop(backend);
+    let backend = open_with_idle(directory.path(), idle_secs);
+    let db = &backend.db;
+    drain(db, Some(u64::MAX));
+    assert_eq!(
+        db.get_committed_data_batch(root, &keys).unwrap(),
+        CommittedDataBatchProof::from_dataset(&tree, &keys).unwrap()
+    );
+    assert_eq!(pointer(db, root), rebuilt, "Restart must reuse the durable index and lease");
+    assert_eq!(rows(db, b"cdm/n/"), nodes);
+}
+
+/// Expiry and the settlement buffer are independent vetoes. Leased roots must not block
+/// pruning other old roots, and access after expiry but before pruning renews protection.
+#[test]
+fn rebuilt_lease_refresh_expiry_and_settlement_buffer_are_independent() {
+    let directory = tempfile::tempdir().unwrap();
+    let backend = open_with_idle(directory.path(), 100);
+    let db = &backend.db;
+    let first = dataset(10);
+    let second = dataset(20);
+    db.write_committed_data_dataset(&first, Some(10)).unwrap();
+    drain(db, Some(12));
+    let now = leases::unix_seconds().unwrap();
+    db.historical_proof_snapshot_at(first.root(), now).unwrap();
+    let rebuilt = pointer(db, first.root());
+    db.write_committed_data_dataset(&second, Some(20)).unwrap();
+    drain(db, Some(22));
+    assert_eq!(pointer(db, first.root()), rebuilt);
+    assert_eq!(pointer(db, second.root()), 0, "Leases cannot starve the age queue");
+    db.historical_proof_snapshot_at(first.root(), now + 50).unwrap();
+    assert!(!db.maintain_history_at(Some(u64::MAX), now + 100).unwrap(), "Access refreshes the deadline");
+    assert!(db.maintain_history_at(Some(11), now + 150).unwrap(), "Expiry returns the root to the age queue");
+    assert!(!db.maintain_history_at(Some(11), now + 150).unwrap(), "The block buffer still protects it");
+    db.historical_proof_snapshot_at(first.root(), now + 151).unwrap();
+    assert!(
+        !db.maintain_history_at(Some(12), now + 151).unwrap(),
+        "Access between expiry and pruning renews the lease"
+    );
+    // A later execution changes the age, never discards the active lease.
+    db.note_root_use(first.root(), 200).unwrap();
+    assert!(db.maintain_history_at(Some(200), now + 251).unwrap());
+    assert!(!db.maintain_history_at(Some(200), now + 251).unwrap());
+    assert!(db.maintain_history_at(Some(201), now + 251).unwrap());
+    assert_eq!(pointer(db, first.root()), 0);
+    assert!(rows(db, leases::LEASE).is_empty());
+    assert!(rows(db, b"cdm/n/").is_empty());
+    assert_eq!(rows(db, HISTORY).len(), 2, "Pruning only deletes the proof index");
+    assert_dataset(db, &first);
+}
+
+/// Parallel cold misses build once. Snapshots retain the exact old nodes for in-flight readers
+/// after expiry/pruning, while a child root's shared nodes remain live through reference counts.
+#[test]
+fn concurrent_rebuilds_and_expiry_preserve_shared_nodes_and_read_snapshots() {
+    let directory = tempfile::tempdir().unwrap();
+    let backend = open_with_idle(directory.path(), 100);
+    let db = &backend.db;
+    let first = dataset(10);
+    db.write_committed_data_dataset(&first, Some(10)).unwrap();
+    drain(db, Some(12));
+    let allocator = rows(db, crate::persistent_committed_data::NEXT_KEY);
+    let before = u64::from_be_bytes(allocator[0].1.as_ref().try_into().unwrap());
+    let root = first.root();
+    std::thread::scope(|scope| {
+        let barrier = Arc::new(std::sync::Barrier::new(8));
+        for _ in 0..8 {
+            let barrier = Arc::clone(&barrier);
+            scope.spawn(move || {
+                barrier.wait();
+                assert!(db.get_committed_data_witness(root, Felt::ZERO).unwrap().unwrap().verify());
+            });
+        }
+    });
+    let allocator = rows(db, crate::persistent_committed_data::NEXT_KEY);
+    assert_eq!(u64::from_be_bytes(allocator[0].1.as_ref().try_into().unwrap()) - before, 15);
+    let snapshot = SnapshotWithDBArc::new(Arc::clone(&db.inner));
+    let old_id = pointer(db, first.root());
+    let second = dataset(20);
+    db.patch_committed_data_dataset(first.root(), second.root(), vec![(Felt::ZERO, Felt::from(20))], Some(200))
+        .unwrap();
+    let later = leases::unix_seconds().unwrap() + 101;
+    assert!(db.maintain_history_at(Some(12), later).unwrap());
+    assert!(db.maintain_history_at(Some(12), later).unwrap());
+    let cf = db.inner.get_column(meta::META_COLUMN);
+    let mut retained =
+        Tree::new(u64::MAX, MAX_COMMITTED_DATA_VALUES as u32, |id| Ok(snapshot.get_cf(&cf, node_key(id))?));
+    assert!(retained.witness(old_id, first.root(), Felt::ZERO).unwrap().unwrap().verify());
+    assert_eq!(pointer(db, first.root()), 0);
+    assert_dataset(db, &second);
+    assert_eq!(rows(db, b"cdm/n/").len(), 15);
+}
+
+/// Recomputed archive checksums are not proof authentication. A root mismatch must publish
+/// neither a partial index, allocator change nor lease, so a later repair remains possible.
+#[test]
+fn durable_reconstruction_authenticates_before_any_write() {
+    let directory = tempfile::tempdir().unwrap();
+    let backend = open_with_idle(directory.path(), 100);
+    let db = &backend.db;
+    let tree = dataset(10);
+    db.write_committed_data_dataset(&tree, Some(0)).unwrap();
+    drain(db, Some(2));
+    let cf = db.inner.get_column(meta::META_COLUMN);
+    let key = root_key(HISTORY, tree.root());
+    let bytes = db.inner.db.get_cf(&cf, &key).unwrap().unwrap();
+    let mut history: ValueHistory = deserialize(&bytes).unwrap();
+    let mut values = tree.entries().to_vec();
+    values[0].1 += Felt::ONE;
+    let encoded = codec::encode(values.iter().enumerate().map(|(index, (_, value))| (index, Felt::ZERO, *value)));
+    history.data = zstd::stream::encode_all(encoded.as_slice(), 3).unwrap();
+    let corrupt = serialize(&history).unwrap();
+    db.inner.db.put_cf(&cf, &key, &corrupt).unwrap();
+    db.inner
+        .db
+        .put_cf(&cf, root_key(archive::HISTORY_HASH, tree.root()), crate::committed_data_recovery::digest(&corrupt))
+        .unwrap();
+    let before = rows(db, b"");
+    assert!(db.get_committed_data_page(tree.root(), 0).is_err());
+    assert!(db.get_committed_data_witness(tree.root(), Felt::ZERO).is_err());
+    assert_eq!(rows(db, b""), before);
+    db.inner.db.put_cf(&cf, &key, &bytes).unwrap();
+    db.inner
+        .db
+        .put_cf(&cf, root_key(archive::HISTORY_HASH, tree.root()), crate::committed_data_recovery::digest(&bytes))
+        .unwrap();
+    assert_dataset(db, &tree);
+}
+
+/// A successfully returned cold read acknowledges a WAL-synced pointer, all reachable nodes and
+/// its lease together. SIGKILL must not turn that acknowledgement into a partial rebuilt index.
+#[test]
+fn rebuilt_index_and_lease_survive_killed_reader() {
+    use std::io::{BufRead, Write};
+    const DIRECTORY: &str = "MADARA_REBUILT_PROOF_CRASH_DIRECTORY";
+    const TEST: &str = "rocksdb::committed_history::tests::rebuilt_index_and_lease_survive_killed_reader";
+    let tree = dataset(10);
+    if let Ok(directory) = std::env::var(DIRECTORY) {
+        let backend = open_with_idle(std::path::Path::new(&directory), 100);
+        backend.db.write_committed_data_dataset(&tree, Some(0)).unwrap();
+        drain(&backend.db, Some(2));
+        assert_dataset(&backend.db, &tree);
+        println!("REBUILT_ACK {}", pointer(&backend.db, tree.root()));
+        std::io::stdout().flush().unwrap();
+        loop {
+            std::thread::park();
+        }
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", TEST, "--nocapture"])
+        .env(DIRECTORY, directory.path())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let output = std::io::BufReader::new(child.stdout.take().unwrap());
+    let mut acknowledged = None;
+    for line in output.lines() {
+        if let Some(id) = line.unwrap().strip_prefix("REBUILT_ACK ") {
+            acknowledged = Some(id.parse::<u64>().unwrap());
+            child.kill().unwrap();
+            break;
+        }
+    }
+    assert!(!child.wait().unwrap().success());
+    let rebuilt = acknowledged.expect("Child must acknowledge a rebuilt index before being killed");
+    let backend = open_with_idle(directory.path(), 100);
+    assert_eq!(pointer(&backend.db, tree.root()), rebuilt);
+    drain(&backend.db, Some(u64::MAX));
+    assert_eq!(pointer(&backend.db, tree.root()), rebuilt, "Lease survives abrupt process death");
+    assert_dataset(&backend.db, &tree);
+    assert_eq!(pointer(&backend.db, tree.root()), rebuilt);
+}

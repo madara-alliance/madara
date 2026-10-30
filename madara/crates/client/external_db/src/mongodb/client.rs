@@ -2,7 +2,10 @@
 
 use crate::{config::ExternalDbConfig, mongodb::MempoolTransactionDocument};
 use anyhow::Result;
-use mongodb::{bson::doc, options::ClientOptions};
+use mongodb::{
+    bson::doc,
+    options::{Acknowledgment, ClientOptions, CollectionOptions, ReadConcern, WriteConcern},
+};
 use std::time::Duration;
 
 /// MongoDB client wrapper for external database operations.
@@ -25,7 +28,13 @@ impl MongoClient {
         client.database("admin").run_command(doc! { "ping": 1 }).await?;
 
         let db = client.database(&config.database_name);
-        let collection = db.collection::<MempoolTransactionDocument>(&config.collection_name);
+        let collection = db.collection_with_options::<MempoolTransactionDocument>(
+            &config.collection_name,
+            CollectionOptions::builder()
+                .read_concern(ReadConcern::majority())
+                .write_concern(WriteConcern::builder().w(Acknowledgment::Majority).journal(true).build())
+                .build(),
+        );
 
         Ok(Self { client, collection })
     }

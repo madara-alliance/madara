@@ -283,6 +283,17 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                 }
             };
             let tx_hash = tx.hash;
+            for id in self.backend.db.recovery_dependencies(tx_hash)? {
+                let manifest = self
+                    .backend
+                    .db
+                    .get_recovery_manifest(&id)?
+                    .context("Saved transaction is missing committed-data recovery record")?;
+                anyhow::ensure!(
+                    self.backend.db.get_committed_data_count(manifest.root)?.is_some(),
+                    "Saved transaction is missing committed-data tree; restore before replay"
+                );
+            }
             if let Err(err) = self.add_tx(tx, InsertionMode::Reload).await {
                 match err {
                     MempoolInsertionError::InnerMempool(TxInsertionError::NonceTooLow { .. }) => {
@@ -426,12 +437,36 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
     }
 
     /// Reload and requeue preserve the original admission side effects.
+    pub async fn accept_tx_with_committed_data(
+        &self,
+        tx: ValidatedTransaction,
+        dependencies: Vec<String>,
+    ) -> Result<(), MempoolInsertionError> {
+        if !self.config.save_to_db
+            || !(1..=mp_gateway::committed_data::MAX_DATASETS_PER_TRANSACTION).contains(&dependencies.len())
+        {
+            return Err(MempoolInsertionError::Internal(anyhow::anyhow!(
+                "Committed-data recovery requires mempool saving and 1..=4 dependencies"
+            )));
+        }
+        self.add_tx_with_dependencies(tx, InsertionMode::New, dependencies).await
+    }
+
     async fn add_tx(&self, tx: ValidatedTransaction, mode: InsertionMode) -> Result<(), MempoolInsertionError> {
+        self.add_tx_with_dependencies(tx, mode, Vec::new()).await
+    }
+
+    async fn add_tx_with_dependencies(
+        &self,
+        tx: ValidatedTransaction,
+        mode: InsertionMode,
+        dependencies: Vec<String>,
+    ) -> Result<(), MempoolInsertionError> {
         let is_new_tx = mode == InsertionMode::New;
         tracing::debug!("Accepting transaction tx_hash={:#x} is_new_tx={is_new_tx}", tx.hash);
 
         let mut outbox_id = None;
-        if is_new_tx && self.external_outbox.enabled {
+        if is_new_tx && self.external_outbox.enabled && dependencies.is_empty() {
             match self.backend.write_external_outbox(&tx) {
                 Ok(id) => {
                     outbox_id = Some(id);
@@ -457,8 +492,23 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                 lock.release_consumed(&tx.hash);
             }
             let ret = self.account_nonce_for_insertion(&lock, &tx.contract_address).and_then(|nonce| {
-                lock.insert_tx(TxTimestamp::now(), tx.clone(), nonce, &mut removed_txs).map_err(Into::into)
+                lock.insert_tx_with_commit(TxTimestamp::now(), tx.clone(), nonce, &mut removed_txs, || {
+                    if !dependencies.is_empty() {
+                        self.backend
+                            .db
+                            .write_recovery_admission(&tx, &dependencies, self.external_outbox.enabled)
+                            .map_err(|err| TxInsertionError::Persistence(format!("{err:#}")))?;
+                    }
+                    Ok(())
+                })
+                .map_err(Into::into)
             });
+            if mode == InsertionMode::Requeue && ret.is_err() && !lock.contains_tx_by_hash(&TransactionHash(tx.hash)) {
+                // A deferred transaction is no longer owned by the executor. If re-admission
+                // rejects it, clear its saved row and Received status while holding the lock
+                // so a concurrent admission of the same hash cannot lose its persistence.
+                self.on_txs_removed(std::slice::from_ref(&tx));
+            }
             (ret, lock.summary())
         };
 
@@ -485,18 +535,18 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                     removed_txs.len()
                 );
             }
-            self.on_tx_added(&tx, is_new_tx);
+            self.on_tx_added(&tx, is_new_tx, dependencies.is_empty());
         }
         ret
     }
 
     /// Update secondary state when a new transaction has been successfully added to the mempool.
     /// Use `is_new_tx: false` when loading transactions from db, so that we skip saving in db and updating metrics.
-    fn on_tx_added(&self, tx: &ValidatedTransaction, is_new_tx: bool) {
+    fn on_tx_added(&self, tx: &ValidatedTransaction, is_new_tx: bool, save: bool) {
         tracing::debug!("Accepted transaction tx_hash={:#x}", tx.hash);
         if is_new_tx {
             self.metrics.accepted_transaction_counter.add(1, &[]);
-            if self.config.save_to_db {
+            if self.config.save_to_db && save {
                 if let Err(err) = self.backend.write_saved_mempool_transaction(tx) {
                     tracing::error!("Could not add mempool transaction to database: {err:#}");
                 }
@@ -858,6 +908,30 @@ pub(crate) mod tests {
     }
 
     #[rstest::rstest]
+    #[tokio::test]
+    async fn recovery_admission_failure_never_exposes_transaction(
+        #[future] backend: Arc<mc_db::MadaraBackend>,
+        tx_account: ValidatedTransaction,
+    ) {
+        use blockifier::execution::syscalls::committed_data::CommittedDataSet;
+        let backend = backend.await;
+        let entries = vec![(Felt::ONE, Felt::TWO)];
+        let root = CommittedDataSet::new(entries.clone()).unwrap().root();
+        backend.import_committed_data_snapshot(root, entries.clone()).await.unwrap();
+        let id = backend.journal_committed_data(None, root, entries).await.unwrap();
+        let mempool = Mempool::new(backend.clone(), MempoolConfig::default());
+        // Exercise the real DB rejection without a process-global failpoint affecting other tests.
+        let result = mempool.accept_tx_with_committed_data(tx_account.clone(), vec!["missing".into()]).await;
+        assert!(result.is_err());
+        assert!(!mempool.is_transaction_in_mempool(&tx_account.hash));
+        assert_eq!(backend.get_saved_mempool_transactions().count(), 0);
+        assert!(backend.db.recovery_dependencies(tx_account.hash).unwrap().is_empty());
+        mempool.accept_tx_with_committed_data(tx_account.clone(), vec![id.clone()]).await.unwrap();
+        assert_eq!(backend.get_saved_mempool_transactions().count(), 1);
+        assert_eq!(backend.db.recovery_dependencies(tx_account.hash).unwrap(), vec![id]);
+    }
+
+    #[rstest::rstest]
     #[timeout(Duration::from_millis(1_000))]
     #[tokio::test]
     async fn mempool_accept_tx_pass(#[future] backend: Arc<mc_db::MadaraBackend>, tx_account: ValidatedTransaction) {
@@ -1041,6 +1115,48 @@ pub(crate) mod tests {
             Err(tokio::sync::broadcast::error::TryRecvError::Empty)
         );
         assert_eq!(backend.get_saved_mempool_transactions().collect::<Result<Vec<_>, _>>().unwrap(), vec![tx_account]);
+    }
+
+    #[rstest::rstest]
+    #[tokio::test]
+    async fn expired_requeue_clears_saved_transaction_and_received_status(
+        #[future] backend: Arc<mc_db::MadaraBackend>,
+        tx_account: ValidatedTransaction,
+    ) {
+        let backend = backend.await;
+        let mempool = Mempool::new(backend.clone(), MempoolConfig::default());
+        mempool.accept_tx(tx_account.clone()).await.unwrap();
+        let mut deferred = mempool.get_consumer().await.next_contiguous(1).unwrap();
+        assert!(mempool.preconfirmed_transactions_statuses.contains_key(&deferred.hash));
+        // Simulate expiration during execution without a wall-clock sleep.
+        deferred.arrived_at = TxTimestamp::UNIX_EPOCH;
+        assert_matches::assert_matches!(
+            mempool.requeue_tx(deferred).await,
+            Err(MempoolInsertionError::InnerMempool(TxInsertionError::TooOld { .. }))
+        );
+        assert!(!mempool.preconfirmed_transactions_statuses.contains_key(&tx_account.hash));
+        assert!(backend.get_saved_mempool_transactions().next().is_none());
+        let restarted = Mempool::new(backend, MempoolConfig::default());
+        restarted.load_txs_from_db().await.unwrap();
+        assert!(restarted.is_empty().await);
+    }
+
+    #[rstest::rstest]
+    #[tokio::test]
+    async fn duplicate_requeue_preserves_queued_transaction(
+        #[future] backend: Arc<mc_db::MadaraBackend>,
+        tx_account: ValidatedTransaction,
+    ) {
+        let backend = backend.await;
+        let mempool = Mempool::new(backend.clone(), MempoolConfig::default());
+        mempool.accept_tx(tx_account.clone()).await.unwrap();
+        assert_matches::assert_matches!(
+            mempool.requeue_tx(tx_account.clone()).await,
+            Err(MempoolInsertionError::InnerMempool(TxInsertionError::DuplicateTxn))
+        );
+        assert!(mempool.preconfirmed_transactions_statuses.contains_key(&tx_account.hash));
+        assert_eq!(backend.get_saved_mempool_transactions().collect::<Result<Vec<_>, _>>().unwrap(), vec![tx_account]);
+        assert!(!mempool.is_empty().await);
     }
 
     #[rstest::rstest]

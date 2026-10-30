@@ -13,6 +13,9 @@ use mp_state_update::StateDiff;
 use mp_transactions::{validated::ValidatedTransaction, L1HandlerTransactionWithFee};
 use starknet_api::core::ChainId;
 
+/// Total dataset entry count and one bounded page of sorted felt key/value pairs.
+pub type CommittedDataPageEntries = (u32, Vec<(Felt, Felt)>);
+
 #[derive(Debug, Clone)]
 pub struct EventFilter {
     pub start_block: u64,
@@ -106,6 +109,76 @@ pub struct StoredChainInfo {
 
 /// Trait abstracting over the storage interface.
 pub trait MadaraStorageRead: Send + Sync + 'static {
+    /// Operational proof-cache access metadata only; never modifies chain state or dataset values.
+    fn note_committed_data_use(&self, _root: Felt, _block: u64) -> Result<()> {
+        Ok(())
+    }
+
+    /// Lists at most 64 namespace/root labels strictly after a lexical cursor. Rescan each pass.
+    fn list_committed_data_versions(
+        &self,
+        _after: Option<mp_gateway::committed_data::CommittedDataVersion>,
+    ) -> Result<Vec<mp_gateway::committed_data::CommittedDataVersion>> {
+        anyhow::bail!("Committed-data version storage is unsupported by this backend")
+    }
+
+    /// Tests membership in a namespace; this is not evidence of on-chain publication.
+    fn has_committed_data_version(&self, _version: mp_gateway::committed_data::CommittedDataVersion) -> Result<bool> {
+        anyhow::bail!("Committed-data version storage is unsupported by this backend")
+    }
+
+    /// Immutable private data; retained proofs use path reads, pruned proofs reconstruct from values.
+    fn get_committed_data_witness(
+        &self,
+        _root: Felt,
+        _index: Felt,
+    ) -> Result<Option<blockifier::execution::syscalls::committed_data::CommittedDataWitness>> {
+        anyhow::bail!("Committed-data storage is unsupported by this backend")
+    }
+
+    /// Transport witnesses in request order. Cold implementations reconstruct once per batch.
+    fn get_committed_data_witnesses(
+        &self,
+        root: Felt,
+        keys: &[Felt],
+    ) -> Result<Vec<blockifier::execution::syscalls::committed_data::CommittedDataWitness>> {
+        anyhow::ensure!(
+            !keys.is_empty()
+                && keys.len() <= blockifier::execution::syscalls::committed_data::MAX_COMMITTED_DATA_READ_KEYS,
+            "Invalid batch size"
+        );
+        keys.iter()
+            .map(|key| self.get_committed_data_witness(root, *key)?.context("Missing committed-data key"))
+            .collect()
+    }
+
+    /// Build one batch; cold implementations must reconstruct once rather than once per key.
+    fn get_committed_data_batch(
+        &self,
+        root: Felt,
+        keys: &[Felt],
+    ) -> Result<blockifier::execution::syscalls::committed_data::CommittedDataBatchProof> {
+        use blockifier::execution::syscalls::committed_data::{CommittedDataBatchProof, CommittedDataError};
+        Ok(CommittedDataBatchProof::new(root, keys, |key| {
+            self.get_committed_data_witness(root, key).map_err(|error| CommittedDataError::Provider(error.to_string()))
+        })?)
+    }
+
+    /// Lists at most 64 complete root-keyed datasets strictly after the cursor.
+    fn list_committed_data_roots(&self, _after: Option<Felt>) -> Result<Vec<Felt>> {
+        anyhow::bail!("Committed-data storage is unsupported by this backend")
+    }
+
+    /// Returns the durable occupied count without reading value pages.
+    fn get_committed_data_count(&self, _root: Felt) -> Result<Option<u32>> {
+        anyhow::bail!("Committed-data storage is unsupported by this backend")
+    }
+
+    /// Returns the occupied count and up to 4096 values at an aligned offset.
+    fn get_committed_data_page(&self, _root: Felt, _start: u32) -> Result<Option<CommittedDataPageEntries>> {
+        anyhow::bail!("Committed-data storage is unsupported by this backend")
+    }
+
     // Blocks
 
     fn find_block_hash(&self, block_hash: &Felt) -> Result<Option<u64>>;
@@ -188,10 +261,96 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
     /// This uses RocksDB internal properties and is intended for observability (metrics),
     /// not for correctness-critical logic.
     fn get_external_outbox_size_estimate(&self) -> Result<u64>;
+
+    /// Serialized payload bytes awaiting remote backup acknowledgement; excludes permanent data.
+    fn recovery_pending_bytes(&self) -> Result<u64> {
+        Ok(0)
+    }
+    /// Resolve an encoded namespace/root identity to its permanent recovery manifest ID.
+    fn find_recovery_record(&self, _key: &[u8]) -> Result<Option<String>> {
+        Ok(None)
+    }
+    /// Read a pending upload record, or None after its payload has been acknowledged and removed.
+    fn get_recovery_record(&self, _id: &str) -> Result<Option<crate::committed_data_recovery::RecoveryRecord>> {
+        Ok(None)
+    }
+    /// Small durable identity retained after the upload payload is acknowledged and removed.
+    fn get_recovery_manifest(&self, id: &str) -> Result<Option<crate::committed_data_recovery::RecoveryManifest>> {
+        Ok(self.get_recovery_record(id)?.map(|record| record.manifest))
+    }
+    /// List at most limit pending manifest IDs for asynchronous export.
+    fn pending_recovery_records(&self, _limit: usize) -> Result<Vec<String>> {
+        Ok(Vec::new())
+    }
+    /// Return manifest IDs bound to a saved transaction; ordinary transactions have none.
+    fn recovery_dependencies(&self, _hash: Felt) -> Result<Vec<String>> {
+        Ok(Vec::new())
+    }
 }
 
 /// Trait abstracting over the storage interface.
 pub trait MadaraStorageWrite: Send + Sync + 'static {
+    /// Performs one bounded migration/pruning operation. Values remain permanently reconstructible.
+    fn maintain_committed_data_history(&self, _cutoff: Option<u64>) -> Result<bool> {
+        Ok(false)
+    }
+
+    /// Configure operational caches and backup admission; does not change committed roots.
+    fn configure_committed_data(
+        &self,
+        _config: crate::committed_data_retention::CommittedDataRetentionConfig,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    /// Durably registers a namespace/root label only after its complete dataset is present.
+    /// A crash before this write may leave an unused dataset; replay is idempotent.
+    /// Initialization may only create an empty namespace or repeat an existing root.
+    /// Replication and explicit-base updates pass `initializing = false`.
+    fn write_committed_data_version(
+        &self,
+        _version: mp_gateway::committed_data::CommittedDataVersion,
+        _initializing: bool,
+    ) -> Result<()> {
+        anyhow::bail!("Committed-data version storage is unsupported by this backend")
+    }
+
+    /// Durably persists an authenticated immutable dataset, including the local confirmed-head
+    /// checkpoint observed at import admission. This does not establish on-chain publication.
+    /// Re-importing the same dataset must be idempotent; unsupported backends return an error.
+    fn write_committed_data_dataset(
+        &self,
+        _dataset: &blockifier::execution::syscalls::committed_data::CommittedDataSet,
+        _imported_after_block: Option<u64>,
+    ) -> Result<()> {
+        anyhow::bail!("Committed-data storage is unsupported by this backend")
+    }
+
+    /// The default rejects unsupported storage implementations; RocksDB overrides this method.
+    /// A successful no-op would falsely acknowledge durable data, so failure is intentional.
+    /// Authenticate and persist a complete value map in the persistent tree, without building
+    /// a second in-memory snapshot. Reject missing/duplicate entries and a mismatched root.
+    fn import_committed_data_values(
+        &self,
+        _root: Felt,
+        _entries: Vec<(Felt, Felt)>,
+        _checkpoint: Option<u64>,
+    ) -> Result<()> {
+        anyhow::bail!("Committed-data storage is unsupported by this backend")
+    }
+
+    /// RocksDB implements this capability; the default fails closed for other backends.
+    /// Apply authenticated upserts using persistent subtree sharing; missing bases fail closed.
+    fn patch_committed_data_dataset(
+        &self,
+        _base: Felt,
+        _root: Felt,
+        _entries: Vec<(Felt, Felt)>,
+        _checkpoint: Option<u64>,
+    ) -> Result<()> {
+        anyhow::bail!("Committed-data updates are unsupported by this backend")
+    }
+
     fn write_header(&self, header: BlockHeaderWithSignatures) -> Result<()>;
     fn write_transactions(&self, block_n: u64, txs: &[TransactionWithReceipt]) -> Result<()>;
     /// Mark L1 handler transactions in a fully confirmed block as consumed.
@@ -263,6 +422,34 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     fn write_mempool_transaction(&self, tx: &ValidatedTransaction) -> Result<()>;
     fn write_external_outbox(&self, tx: &ValidatedTransaction) -> Result<ExternalOutboxId>;
     fn delete_external_outbox(&self, id: ExternalOutboxId) -> Result<()>;
+
+    /// Durably journal an authenticated import and account for its pending bytes; retries are idempotent.
+    fn store_recovery_record(&self, _record: &crate::committed_data_recovery::RecoveryRecord) -> Result<String> {
+        anyhow::bail!("Recovery storage unsupported")
+    }
+    /// Install an authenticated remote backup identity without queuing its payload for upload.
+    /// Must atomically preserve namespace identity and acknowledge any identical pending record.
+    fn restore_recovery_manifest(
+        &self,
+        _manifest: &crate::committed_data_recovery::RecoveryManifest,
+    ) -> Result<String> {
+        anyhow::bail!("Committed-data recovery is unsupported by this backend")
+    }
+
+    /// Acknowledge verified remote durability, removing only temporary local upload payloads.
+    fn mark_recovery_exported(&self, _id: &str) -> Result<()> {
+        anyhow::bail!("Recovery storage unsupported")
+    }
+    /// Atomically persist an admission and its dataset dependencies before mempool visibility.
+    /// When export is true, include the ordinary external transaction outbox entry in that batch.
+    fn write_recovery_admission(
+        &self,
+        _tx: &ValidatedTransaction,
+        _dependencies: &[String],
+        _export: bool,
+    ) -> Result<()> {
+        anyhow::bail!("Recovery storage unsupported")
+    }
 
     /// Write a state diff to the global tries.
     /// Returns the new state root and timing information.

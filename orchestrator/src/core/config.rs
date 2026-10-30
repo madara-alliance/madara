@@ -283,6 +283,7 @@ impl Config {
         let prover_config =
             ProverConfig::try_from(run_cmd.clone()).context("Failed to create prover config from run command")?;
         let prover_kind = prover_config.kind();
+        run_cmd.snos_args.validate_committed_data(prover_kind, &run_cmd.layer)?;
         let da_config = DAConfig::try_from(run_cmd.clone()).context("Failed to create DA config from run command")?;
         let settlement_config = SettlementConfig::try_from(run_cmd.clone())
             .context("Failed to create settlement config from run command")?;

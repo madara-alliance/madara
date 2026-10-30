@@ -132,7 +132,8 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
     /// Executes `tx` on a discarded fork of the current state.
     fn probe_l2_gas_limit(&mut self, tx: &Transaction) -> Result<ProbeOutcome, TransactionExecutionError> {
         let mut transactional_state = TransactionalState::create_transactional(&mut self.state);
-        let result = tx.execute_raw(&mut transactional_state, &self.block_context, false);
+        let probe_context = self.block_context.fork_committed_data();
+        let result = tx.execute_raw(&mut transactional_state, &probe_context, false);
         transactional_state.abort();
 
         match result {
@@ -147,6 +148,7 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
                     Ok(ProbeOutcome::Success(Box::new(info)))
                 }
             }
+            Err(TransactionExecutionError::CommittedDataInsufficientGas { .. }) => Ok(ProbeOutcome::OutOfGas),
             // Out of gas during validation surfaces as a hard error, not a revert.
             Err(err) if err.to_string().contains(OUT_OF_GAS_CAIRO_STRING) => Ok(ProbeOutcome::OutOfGas),
             Err(err) => Err(err),

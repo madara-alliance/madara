@@ -57,11 +57,15 @@ const SEPOLIA_STRK_FEE_TOKEN: &str = "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd6
 const SNOS_PIE_FILES: [&str; 4] =
     ["snos_sepolia_8059997.zip", "snos_sepolia_8059998.zip", "snos_sepolia_8059999.zip", "snos_sepolia_8060000.zip"];
 
-/// Expected aggregator fact hash when the four SNOS PIEs above are aggregated.
-/// Pinning this value turns any drift in `run_local_aggregator` or `get_fact_info` into
-/// a loud test failure.
-/// State update transaction with this fact - https://sepolia.etherscan.io/tx/0x210ce8de99bfc31ddf1d6c62665210bb23c9ec975fd1a6ff7ce0c7124c8e6140
-const EXPECTED_AGG_FACT: &str = "0x567583b3f11c269a52e29622b95e7be9b0a1a195c0df9ad3e052b4c82163a6dc";
+/// Child OS hash from Sequencer 43c5377d24901912a301c4cf2106e413cc16d2b6.
+/// Changing this hash changes the aggregator output and therefore the expected fact below,
+/// even when the historical child outputs and aggregator program are unchanged.
+const EXPECTED_CHILD_OS_HASH: &str = "0x182321dc87e7e34b11773323d254749d69d1d37648207976414167d9589ed4e";
+
+/// Expected fact for these historical outputs under `EXPECTED_CHILD_OS_HASH`.
+/// This checks the local aggregator's fact calculation; it does not establish that these
+/// historical blocks were proved under the committed-data OS.
+const EXPECTED_AGG_FACT: &str = "0x0a2f01ceea68e20c7c5033f3a798ccb0ad35b2cfc6457cf1db344fb4e7932cd6";
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
@@ -102,7 +106,11 @@ async fn test_local_aggregator_with_fact_registration() -> color_eyre::Result<()
     let fact_info = get_fact_info(agg_pie, Some(PROGRAM_HASHES.aggregator_with_prefix), true)?;
     let fact: [u8; 32] = fact_info.fact.0;
     let fact_hex = format!("0x{}", hex::encode(fact));
-    assert_eq!(fact_hex, EXPECTED_AGG_FACT, "aggregator fact hash drifted");
+    assert_eq!(
+        (PROGRAM_HASHES.os, fact_hex.as_str()),
+        (AggregatorFelt::from_hex(EXPECTED_CHILD_OS_HASH).expect("valid expected child OS hash"), EXPECTED_AGG_FACT),
+        "child OS / aggregator fact changed; revalidate both pinned fixture values"
+    );
 
     // 5. Spawn anvil and deploy MockGpsVerifier using the inlined bytecode.
     let anvil = Anvil::new().try_spawn().expect("Failed to spawn anvil");

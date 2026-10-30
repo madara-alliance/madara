@@ -133,6 +133,50 @@ static GLOBAL_ALLOCATOR: jemallocator::Jemalloc = jemallocator::Jemalloc;
 const GREET_IMPL_NAME: &str = "Madara";
 const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issues";
 
+/// Services that may start only after a warp receiver finishes replacing its database.
+fn warp_update_config(run_cmd: &RunCmd) -> Option<WarpUpdateConfig> {
+    if run_cmd.args_preset.warp_update_receiver {
+        let mut deferred_service_start = vec![];
+        let mut deferred_service_stop = vec![];
+
+        if !run_cmd.rpc_params.rpc_disable {
+            deferred_service_start.push(MadaraServiceId::RpcUser);
+        }
+
+        if run_cmd.rpc_params.rpc_admin {
+            deferred_service_start.push(MadaraServiceId::RpcAdmin);
+        }
+
+        if run_cmd.rpc_params.rpc_committed_data {
+            deferred_service_start.push(MadaraServiceId::RpcCommittedData);
+        }
+
+        if run_cmd.backend_params.committed_data_proof_retention_secs.is_some() {
+            deferred_service_start.push(MadaraServiceId::CommittedDataHistory);
+        }
+
+        if run_cmd.gateway_params.any_enabled() {
+            deferred_service_start.push(MadaraServiceId::Gateway);
+        }
+
+        if run_cmd.is_sequencer() {
+            deferred_service_start.push(MadaraServiceId::BlockProduction);
+            deferred_service_stop.push(MadaraServiceId::L2Sync);
+        }
+
+        Some(WarpUpdateConfig {
+            warp_update_port_rpc: run_cmd.l2_sync_params.warp_update_port_rpc,
+            warp_update_port_fgw: run_cmd.l2_sync_params.warp_update_port_fgw,
+            warp_update_shutdown_sender: run_cmd.l2_sync_params.warp_update_shutdown_sender,
+            warp_update_shutdown_receiver: run_cmd.l2_sync_params.warp_update_shutdown_receiver,
+            deferred_service_start,
+            deferred_service_stop,
+        })
+    } else {
+        None
+    }
+}
+
 /// Validates startup controls that require privileged administrative RPC access.
 /// This prevents a node from starting paused without an enabled path to resume intake.
 fn validate_runtime_controls(run_cmd: &RunCmd) -> anyhow::Result<()> {
@@ -262,6 +306,8 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("🌐 Network: {} (chain id `{}`)", chain_config.chain_name, chain_config.chain_id);
     run_cmd.args_preset.greet();
 
+    run_cmd.validate_committed_data_recovery()?;
+
     let external_db_requested = run_cmd.external_db_params.is_enabled();
     if external_db_requested && !run_cmd.should_run_mempool() {
         tracing::warn!(
@@ -328,6 +374,36 @@ async fn main() -> anyhow::Result<()> {
     let chain_head_state = backend.chain_head_state();
     tracing::info!("💼 Starting chain with head state: {:?}", chain_head_state);
 
+    // Explicit disaster recovery is a startup prerequisite: continuing after an unavailable or
+    // corrupt archive would run an incomplete restored chain. Normal export startup remains
+    // asynchronous/retrying when both restore lists are empty (the default).
+    if !run_cmd.external_db_params.restore_committed_data_records.is_empty()
+        || !run_cmd.external_db_params.restore_committed_data_transactions.is_empty()
+    {
+        anyhow::ensure!(run_cmd.should_save_mempool_to_db(), "Committed-data recovery requires mempool saving");
+        let config = run_cmd
+            .external_db_params
+            .to_config()
+            .context("Committed-data restore requires external DB configuration")?
+            .with_chain_id(&chain_config.chain_id.to_string());
+        let mongo = mc_external_db::mongodb::MongoClient::new(&config).await?;
+        let archive = mc_external_db::committed_data_recovery::CommittedDataArchive::new(
+            &mongo.client().database(&config.database_name),
+            &config.collection_name,
+        );
+        let count = archive
+            .restore(&backend, &run_cmd.external_db_params.restore_committed_data_records)
+            .await
+            .context("Restoring committed-data dependencies before startup")?;
+        let transactions = mc_external_db::committed_data_recovery::restore_transactions(
+            &backend,
+            &config,
+            &run_cmd.external_db_params.restore_committed_data_transactions,
+        )
+        .await?;
+        tracing::info!(count, transactions, "Verified committed-data archive restored before transaction replay");
+    }
+
     let service_mempool = MempoolService::new(&run_cmd, backend.clone());
 
     let (l1_head_snd, l1_head_recv) = tokio::sync::watch::channel(None);
@@ -345,38 +421,7 @@ async fn main() -> anyhow::Result<()> {
 
     // L2 Sync
 
-    let warp_update = if run_cmd.args_preset.warp_update_receiver {
-        let mut deferred_service_start = vec![];
-        let mut deferred_service_stop = vec![];
-
-        if !run_cmd.rpc_params.rpc_disable {
-            deferred_service_start.push(MadaraServiceId::RpcUser);
-        }
-
-        if run_cmd.rpc_params.rpc_admin {
-            deferred_service_start.push(MadaraServiceId::RpcAdmin);
-        }
-
-        if run_cmd.gateway_params.any_enabled() {
-            deferred_service_start.push(MadaraServiceId::Gateway);
-        }
-
-        if run_cmd.is_sequencer() {
-            deferred_service_start.push(MadaraServiceId::BlockProduction);
-            deferred_service_stop.push(MadaraServiceId::L2Sync);
-        }
-
-        Some(WarpUpdateConfig {
-            warp_update_port_rpc: run_cmd.l2_sync_params.warp_update_port_rpc,
-            warp_update_port_fgw: run_cmd.l2_sync_params.warp_update_port_fgw,
-            warp_update_shutdown_sender: run_cmd.l2_sync_params.warp_update_shutdown_sender,
-            warp_update_shutdown_receiver: run_cmd.l2_sync_params.warp_update_shutdown_receiver,
-            deferred_service_start,
-            deferred_service_stop,
-        })
-    } else {
-        None
-    };
+    let warp_update = warp_update_config(&run_cmd);
 
     let service_l2_sync = SyncService::new(
         &run_cmd.l2_sync_params,
@@ -449,7 +494,7 @@ async fn main() -> anyhow::Result<()> {
         (Arc::clone(&gateway_client) as _, Arc::clone(&gateway_client) as _)
     };
 
-    let tx_submit = MakeSubmitTransactionSwitch::new(Arc::clone(&gateway_submit_tx), mempool_submit_tx);
+    let tx_submit = MakeSubmitTransactionSwitch::new(Arc::clone(&gateway_submit_tx), Arc::clone(&mempool_submit_tx));
     let tx_lookup = MakeTransactionLookupSwitch::new(gateway_transaction_lookup, mempool_transaction_lookup);
     let validated_tx_submit =
         MakeSubmitValidatedTransactionSwitch::new(Arc::clone(&gateway_client) as _, service_mempool.mempool() as _);
@@ -476,6 +521,15 @@ async fn main() -> anyhow::Result<()> {
         service_mempool.mempool(),
     );
 
+    let service_rpc_committed_data = RpcService::committed_data(
+        run_cmd.rpc_params.clone(),
+        backend.clone(),
+        tx_submit.clone(),
+        tx_lookup.clone(),
+        mempool_submit_tx,
+        run_cmd.is_sequencer(),
+    );
+
     // Feeder gateway
 
     let service_gateway = GatewayService::new(
@@ -497,6 +551,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let mut app = ServiceMonitor::default()
+        .with(service::CommittedDataHistoryService(Arc::clone(&backend)))?
         .with(service_telemetry)?
         .with(service_mempool)?
         .with(service_l1_sync)?
@@ -504,6 +559,7 @@ async fn main() -> anyhow::Result<()> {
         .with(service_block_production)?
         .with(service_rpc_user)?
         .with(service_rpc_admin)?
+        .with(service_rpc_committed_data)?
         .with(service_gateway)?;
 
     if let Some(service_external_db) = service_external_db {
@@ -544,6 +600,10 @@ async fn main() -> anyhow::Result<()> {
         app.activate(MadaraServiceId::RpcAdmin);
     }
 
+    if run_cmd.rpc_params.rpc_committed_data && !warp_update_receiver {
+        app.activate(MadaraServiceId::RpcCommittedData);
+    }
+
     if run_cmd.gateway_params.any_enabled() && !warp_update_receiver {
         app.activate(MadaraServiceId::Gateway);
     }
@@ -555,6 +615,9 @@ async fn main() -> anyhow::Result<()> {
         app.activate(MadaraServiceId::ExternalDb);
     }
 
+    if run_cmd.backend_params.committed_data_proof_retention_secs.is_some() && !warp_update_receiver {
+        app.activate(MadaraServiceId::CommittedDataHistory);
+    }
     let result = app.start().await;
 
     // Critical: Flush database before exit to ensure data persistence (WAL is disabled)
@@ -565,4 +628,31 @@ async fn main() -> anyhow::Result<()> {
     }
 
     result
+}
+
+#[cfg(test)]
+mod warp_update_tests {
+    use super::*;
+
+    #[test]
+    fn committed_data_proof_cleanup_is_deferred_only_for_receivers_with_retention() {
+        for receiver in [false, true] {
+            for retention in [None, Some(0), Some(21600)] {
+                let mut cmd = RunCmd::parse_from(["madara", "--sequencer", "--preset", "devnet"]);
+                cmd.args_preset.warp_update_receiver = receiver;
+                cmd.backend_params.committed_data_proof_retention_secs = retention;
+                let config = warp_update_config(&cmd);
+                assert_eq!(config.is_some(), receiver);
+                if let Some(config) = config {
+                    assert_eq!(
+                        config.deferred_service_start.contains(&MadaraServiceId::CommittedDataHistory),
+                        retention.is_some()
+                    );
+                    assert!(!config.deferred_service_stop.contains(&MadaraServiceId::CommittedDataHistory));
+                    assert!(config.deferred_service_start.contains(&MadaraServiceId::BlockProduction));
+                    assert!(config.deferred_service_stop.contains(&MadaraServiceId::L2Sync));
+                }
+            }
+        }
+    }
 }

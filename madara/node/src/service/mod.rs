@@ -12,3 +12,6 @@ pub use l1::L1SyncService;
 pub use l2::{SyncService, WarpUpdateConfig};
 pub use mempool::MempoolService;
 pub use rpc::RpcService;
+
+mod committed_data;
+pub use committed_data::CommittedDataHistoryService;

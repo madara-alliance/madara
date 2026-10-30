@@ -1,0 +1,110 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/github-workflow.json
+name: Task - Committed Data Upstream Regression
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - .github/workflows/task-test-committed-data-upstream.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: committed-data-upstream-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  committed-data-upstream:
+    runs-on: blacksmith-8vcpu-ubuntu-2204
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/load-env
+      - name: Read exact upstream revisions
+        id: revision
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          manifest = Path("Cargo.toml").read_text()
+          revisions = set(re.findall(r'git = "https://github.com/madara-alliance/sequencer", rev = "([0-9a-f]{40})"', manifest))
+          assert len(revisions) == 1, "expected one coherent Sequencer revision"
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"sha={revisions.pop()}\n")
+              snos = re.findall(r'git = "https://github.com/madara-alliance/snos.git", rev = "([0-9a-f]{40})"', manifest)
+              assert len(set(snos)) == 1, "expected one coherent SNOS revision"
+              output.write(f"snos_sha={snos[0]}\n")
+          PY
+      - uses: actions/checkout@v5
+        with:
+          repository: madara-alliance/sequencer
+          ref: ${{ steps.revision.outputs.sha }}
+          path: upstream-sequencer
+      - uses: actions/checkout@v5
+        with:
+          repository: madara-alliance/snos
+          ref: ${{ steps.revision.outputs.snos_sha }}
+          path: upstream-snos
+      - uses: ./.github/actions/setup-rust
+        with:
+          rust-version: 1.92.0
+          cache-key: committed-data-upstream-${{ runner.os }}-rust-1.92.0
+      - uses: ./.github/actions/setup-cairo-native
+      - uses: ./.github/actions/setup-python-cairo
+        with:
+          # Cairo's Python VM layout dataclasses require Python 3.10; compiling alone works on 3.11.
+          python-version: "3.10"
+      - name: Independent Cairo union and billing constraints
+        working-directory: upstream-sequencer
+        run: python scripts/test_committed_data_union.py
+      # A CLI target directory is intentionally not inherited by nested cargo install build scripts.
+      # Exporting CARGO_TARGET_DIR here makes those children wait on their parent Cargo lock.
+      - name: Cairo proof constraints and full OS regressions
+        if: ${{ !cancelled() }}
+        working-directory: upstream-sequencer
+        run: |
+          cargo +1.92.0 test --target-dir ../target --locked --release -p starknet_os_flow_tests committed_data -- --nocapture
+          cargo +1.92.0 test --target-dir ../target --locked --release -p apollo_starknet_os_program test_program -- --nocapture
+          cargo +1.92.0 test --target-dir ../target --locked --release -p starknet_os committed_witness_tests -- --nocapture
+
+      - name: Export exact full-flow test runner for external snapshot validation
+        if: ${{ !cancelled() }}
+        working-directory: upstream-sequencer
+        run: |
+          cargo +1.92.0 test --target-dir ../target --locked --release -p starknet_os_flow_tests --no-run --message-format=json > runner-build.jsonl
+          python3 - <<'PYTHON'
+          import json, pathlib, shutil, subprocess
+          output = pathlib.Path("../committed-data-runner")
+          output.mkdir(exist_ok=True)
+          executables = []
+          for line in pathlib.Path("runner-build.jsonl").read_text().splitlines():
+              item = json.loads(line)
+              if item.get("executable") and item.get("target", {}).get("name") == "starknet_os_flow_tests":
+                  executables.append(item["executable"])
+          assert len(executables) == 1, executables
+          shutil.copy2(executables[0], output / "flow-tests")
+          (output / "sequencer-revision.txt").write_text(subprocess.check_output(["git", "rev-parse", "HEAD"], text=True))
+          (output / "dynamic-libraries.txt").write_text(subprocess.check_output(["ldd", executables[0]], text=True))
+          PYTHON
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: committed-data-flow-runner
+          path: committed-data-runner/
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: VM and native transaction rejection regressions
+        if: ${{ !cancelled() }}
+        working-directory: upstream-sequencer
+        run: cargo +1.92.0 test --target-dir ../target --locked --release -p blockifier --features testing,cairo_native committed_data -- --nocapture
+
+      - name: SNOS multi-block witness transport regressions
+        if: ${{ !cancelled() }}
+        working-directory: upstream-snos
+        run: cargo +1.92.0 test --target-dir ../target --locked --release -p generate-pie --lib committed_data -- --nocapture

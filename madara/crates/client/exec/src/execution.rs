@@ -102,8 +102,9 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
                 let mut transactional_state = TransactionalState::create_transactional(&mut self.state);
                 // NB: We use execute_raw because execute already does transaactional state.
                 let timer = TxExecutionTimer::new();
+                let transaction_context = self.block_context.fork_committed_data();
                 let mut execution_info =
-                    tx.execute_raw(&mut transactional_state, &self.block_context, false).map_err(make_reexec_error)?;
+                    tx.execute_raw(&mut transactional_state, &transaction_context, false).map_err(make_reexec_error)?;
                 timer.finish(tx_type);
 
                 execution_info.revert_error = execution_info.revert_error.take().map(|e| e.format_for_receipt());
@@ -129,6 +130,7 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
                     .collect();
 
                 transactional_state.commit();
+                self.block_context.committed_data_read_set.replace_with(&transaction_context.committed_data_read_set);
 
                 // Check if this is a deprecated (Cairo 0) class declaration (DeclareV0/V1).
                 let deprecated_declared_class = match &tx {

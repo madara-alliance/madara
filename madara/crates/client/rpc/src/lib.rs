@@ -762,6 +762,16 @@
 //! }
 //! ```
 //!
+//! ### Committed Data RPC
+//!
+//! Dataset ingestion is exposed only on the separately enabled `--rpc-committed-data`
+//! listener (default loopback port 9945). Neither the public nor admin RPC exports them.
+//! `madara_V0_1_0_importCommittedDataSet(root, values, signatures)` authenticates and durably persists a
+//! dataset. An optional node-local signer allowlist protects ingestion. Witness and paged dataset
+//! retrieval use feeder-gateway GET endpoints, not this RPC listener.
+//! Import success is a JSON-RPC result, not simply HTTP 200. It does not publish a root on-chain.
+//! Operators must protect external access and confirm replication before root publication.
+//!
 //! ### Replay and Mempool Intake Controls
 //!
 //! These methods require `--rpc-unsafe` on the administrative endpoint.
@@ -825,6 +835,9 @@ mod constants;
 mod errors;
 mod metrics;
 mod types;
+
+#[cfg(test)]
+mod tests;
 
 use jsonrpsee::RpcModule;
 use mc_db::MadaraBackend;
@@ -1022,6 +1035,9 @@ pub struct Starknet {
     pub(crate) block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
     pub ctx: ServiceContext,
     pub(crate) rpc_unsafe_enabled: bool,
+    pub(crate) committed_data_signers: Arc<[mp_convert::Felt]>,
+    /// Set only for a sequencer's private listener; runtime block-production status is checked too.
+    pub(crate) committed_data_transaction_submission: bool,
     pub(crate) sync_threshold_blocks: u64,
 }
 
@@ -1048,12 +1064,35 @@ impl Starknet {
             ctx,
             pre_v0_9_preconfirmed_as_pending: false,
             rpc_unsafe_enabled: false,
+            committed_data_signers: Arc::from([]),
+            committed_data_transaction_submission: false,
             sync_threshold_blocks: DEFAULT_SYNC_THRESHOLD_BLOCKS,
         }
     }
 
     pub fn set_pre_v0_9_preconfirmed_as_pending(&mut self, value: bool) {
         self.pre_v0_9_preconfirmed_as_pending = value;
+    }
+
+    /// Combined imports may submit transactions only when this RPC belongs to a sequencer.
+    pub fn set_committed_data_transaction_submission(&mut self, enabled: bool) {
+        self.committed_data_transaction_submission = enabled;
+    }
+
+    /// Sets the node-local ingestion allowlist; applications authorize root publication on-chain.
+    pub fn set_committed_data_signers(&mut self, keys: Vec<mp_convert::Felt>) -> anyhow::Result<()> {
+        let mut seen = HashSet::new();
+        for key in &keys {
+            anyhow::ensure!(seen.insert(*key), "Duplicate committed-data signer");
+            let result = starknet_core::crypto::ecdsa_verify(
+                key,
+                &mp_convert::Felt::ONE,
+                &starknet_core::crypto::Signature { r: mp_convert::Felt::ONE, s: mp_convert::Felt::ONE },
+            );
+            anyhow::ensure!(result.is_ok(), "Invalid committed-data signer public key");
+        }
+        self.committed_data_signers = keys.into();
+        Ok(())
     }
 
     pub fn set_rpc_unsafe_enabled(&mut self, value: bool) {
@@ -1108,6 +1147,14 @@ pub fn rpc_api_user(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
     rpc_api.merge(versions::user::v0_10_2::StarknetWsRpcApiV0_10_2Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::user::v0_10_2::StarknetTraceRpcApiV0_10_2Server::into_rpc(starknet.clone()))?;
 
+    Ok(rpc_api)
+}
+
+/// Returns only dataset import, without admin or Starknet methods.
+/// The caller must mount this module exclusively on the opt-in private listener.
+pub fn rpc_api_committed_data(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
+    let mut rpc_api = RpcModule::new(());
+    rpc_api.merge(versions::committed_data::v0_1_0::CommittedDataRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
     Ok(rpc_api)
 }
 
@@ -1368,6 +1415,3 @@ impl Drop for WsSubscriptionGuard {
         );
     }
 }
-
-#[cfg(test)]
-mod tests;

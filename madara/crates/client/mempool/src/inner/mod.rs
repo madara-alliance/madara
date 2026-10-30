@@ -26,6 +26,8 @@ pub(crate) mod tx;
 
 #[derive(thiserror::Error, Debug, PartialEq)]
 pub enum TxInsertionError {
+    #[error("Durable admission failed: {0}")]
+    Persistence(String),
     #[error("Nonce mismatch: account nonce is {account_nonce:?}")]
     NonceTooLow { account_nonce: Nonce },
     #[error("A transaction with this nonce already exists in the mempool")]
@@ -177,6 +179,7 @@ impl InnerMempool {
     /// ## Returns
     ///
     /// Returns nothing, or an error if the transaction was rejected. If an error is returned, the transaction is not inserted.
+    #[cfg(test)]
     pub fn insert_tx(
         &mut self,
         now: TxTimestamp,
@@ -184,6 +187,18 @@ impl InnerMempool {
         account_nonce: Nonce,
         removed_txs: &mut impl Extend<ValidatedTransaction>,
     ) -> Result<(), TxInsertionError> {
+        self.insert_tx_with_commit(now, tx, account_nonce, removed_txs, || Ok(()))
+    }
+
+    pub fn insert_tx_with_commit(
+        &mut self,
+        now: TxTimestamp,
+        tx: ValidatedTransaction,
+        account_nonce: Nonce,
+        removed_txs: &mut impl Extend<ValidatedTransaction>,
+        commit: impl FnOnce() -> Result<(), TxInsertionError>,
+    ) -> Result<(), TxInsertionError> {
+        let mut commit = Some(commit);
         if self.limiter.is_in_flight(&tx.hash) {
             return Err(TxInsertionError::DuplicateTxn);
         }
@@ -230,7 +245,13 @@ impl InnerMempool {
                     MempoolFullPolicy::EvictLessDesirable => {
                         let new_tx_eviction_score = EvictionScore::new(&mempool_tx, account_nonce);
                         tracing::debug!("Try make room via less-desirable eviction: {new_tx_eviction_score:?}");
-                        self.try_make_room_for_less_desirable_tx(&new_tx_eviction_score, removed_txs)
+                        if self.eviction_queue.get_next_if_less_desirable_than(&new_tx_eviction_score).is_none() {
+                            false
+                        } else {
+                            // Do not evict an existing transaction if the required durable write fails.
+                            commit.take().expect("Admission commit is called once")()?;
+                            self.try_make_room_for_less_desirable_tx(&new_tx_eviction_score, removed_txs)
+                        }
                     }
                     MempoolFullPolicy::RejectNew => false,
                 };
@@ -248,7 +269,10 @@ impl InnerMempool {
             }
         }
 
-        // We're clear to insert into the entry :)
+        if let Some(commit) = commit {
+            commit()?;
+        }
+        // Durable admission is complete before the new transaction becomes visible.
         let account_update = entry.insert(mempool_tx);
         self.apply_update(account_update, removed_txs);
 

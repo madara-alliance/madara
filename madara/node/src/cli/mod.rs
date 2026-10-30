@@ -347,6 +347,18 @@ impl RunCmd {
         self.should_run_mempool() && self.external_db_params.is_enabled()
     }
 
+    /// Imports queue a bounded, temporary payload until the external writer acknowledges it.
+    /// Reject an undrainable configuration before opening or migrating the database.
+    pub fn validate_committed_data_recovery(&self) -> anyhow::Result<()> {
+        if self.rpc_params.rpc_committed_data {
+            anyhow::ensure!(
+                self.should_run_external_db() && self.should_save_mempool_to_db(),
+                "The committed-data import listener requires a sequencer with mempool saving and configured external DB backup"
+            );
+        }
+        Ok(())
+    }
+
     pub fn should_save_mempool_to_db(&self) -> bool {
         self.should_run_mempool() && !self.validator_params.no_mempool_saving
     }
@@ -420,6 +432,75 @@ mod tests {
             "mongodb://localhost:27017",
         ]);
         assert!(enabled.should_run_external_db());
+    }
+
+    #[test]
+    fn committed_data_recovery_rejects_undrainable_import_configuration() {
+        let common = ["madara", "--sequencer", "--preset", "devnet", "--rpc-committed-data"];
+        let missing_backup = RunCmd::parse_from(common);
+        assert!(missing_backup.validate_committed_data_recovery().is_err());
+        let configured = ["--external-db-enabled", "--external-db-mongodb-uri", "mongodb://localhost:27017"];
+        let valid = RunCmd::parse_from(common.into_iter().chain(configured));
+        assert!(valid.validate_committed_data_recovery().is_ok());
+        let no_saving = RunCmd::parse_from(common.into_iter().chain(configured).chain(["--no-mempool-saving"]));
+        assert!(no_saving.validate_committed_data_recovery().is_err());
+        let full = RunCmd::parse_from(
+            ["madara", "--full", "--network", "sepolia", "--rpc-committed-data"].into_iter().chain(configured),
+        );
+        assert!(full.validate_committed_data_recovery().is_err());
+        let disabled = RunCmd::parse_from(["madara", "--full", "--network", "sepolia"]);
+        assert!(disabled.validate_committed_data_recovery().is_ok());
+    }
+
+    #[test]
+    fn committed_data_retention_configuration_roundtrips() {
+        let defaults = RunCmd::parse_from(["madara", "--sequencer", "--preset", "devnet"]);
+        let original = defaults.backend_params.backend_config().committed_data_retention;
+        assert_eq!(original.proof_retention_secs, None);
+        assert_eq!(original.rebuilt_proof_idle_secs, 6 * 60 * 60);
+        assert_eq!(original.memory_blocks, 7200);
+        assert_eq!(original.cache_bytes, 256 * 1024 * 1024);
+        assert_eq!(original.pending_backup_bytes, 512 * 1024 * 1024);
+        let configured = RunCmd::parse_from([
+            "madara",
+            "--sequencer",
+            "--preset",
+            "devnet",
+            "--committed-data-proof-retention-secs",
+            "172800",
+            "--committed-data-rebuilt-proof-idle-secs",
+            "3600",
+            "--committed-data-memory-blocks",
+            "4320",
+            "--committed-data-cache-mib",
+            "64",
+            "--committed-data-pending-backup-mib",
+            "1024",
+        ]);
+        let config = configured.backend_params.backend_config().committed_data_retention;
+        assert_eq!(config.proof_retention_secs, Some(172800));
+        assert_eq!(config.rebuilt_proof_idle_secs, 3600);
+        assert_eq!(config.memory_blocks, 4320);
+        assert_eq!(config.cache_bytes, 64 * 1024 * 1024);
+        assert_eq!(config.pending_backup_bytes, 1024 * 1024 * 1024);
+        let mut json = serde_json::to_value(&defaults.backend_params).unwrap();
+        for name in [
+            "committed_data_proof_retention_secs",
+            "committed_data_rebuilt_proof_idle_secs",
+            "committed_data_memory_blocks",
+            "committed_data_cache_mib",
+            "committed_data_pending_backup_mib",
+        ] {
+            json.as_object_mut().unwrap().remove(name);
+        }
+        let restored: super::BackendParams = serde_json::from_value(json).unwrap();
+        assert_eq!(
+            restored.backend_config().committed_data_retention.rebuilt_proof_idle_secs,
+            original.rebuilt_proof_idle_secs
+        );
+        assert_eq!(restored.backend_config().committed_data_retention.cache_bytes, original.cache_bytes);
+        assert_eq!(restored.backend_config().committed_data_retention.memory_blocks, original.memory_blocks);
+        assert!(RunCmd::try_parse_from(["madara", "--committed-data-memory-blocks", "-1"]).is_err());
     }
 
     #[test]

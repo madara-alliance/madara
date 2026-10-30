@@ -7,6 +7,7 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::core::client::alert::MockAlertClient;
+use crate::core::client::database::MockDatabaseClient;
 use crate::tests::common::default_job_item;
 use crate::tests::config::{MockType, TestConfigBuilder};
 use crate::tests::jobs::ConfigType;
@@ -64,6 +65,8 @@ async fn test_rpc_for_snos_attempt_uses_primary_rpc_for_first_attempt() {
     let primary_rpc_url = Url::parse("http://localhost:9545").unwrap();
     let backup_rpc_url = Url::parse("http://localhost:9546").unwrap();
     let snos_config = SNOSParams {
+        use_committed_data: false,
+        committed_data_rpc_url: None,
         rpc_for_snos: primary_rpc_url.clone(),
         rpc_for_snos_backup: Some(backup_rpc_url),
         snos_full_output: false,
@@ -86,6 +89,8 @@ async fn test_rpc_for_snos_attempt_uses_backup_rpc_for_retry_attempt() {
     let primary_rpc_url = Url::parse("http://localhost:9545").unwrap();
     let backup_rpc_url = Url::parse("http://localhost:9546").unwrap();
     let snos_config = SNOSParams {
+        use_committed_data: false,
+        committed_data_rpc_url: None,
         rpc_for_snos: primary_rpc_url,
         rpc_for_snos_backup: Some(backup_rpc_url.clone()),
         snos_full_output: false,
@@ -106,6 +111,8 @@ async fn test_rpc_for_snos_attempt_uses_backup_rpc_for_retry_attempt() {
 async fn test_rpc_for_snos_attempt_uses_primary_rpc_for_retry_attempt_without_backup() {
     let primary_rpc_url = Url::parse("http://localhost:9545").unwrap();
     let snos_config = SNOSParams {
+        use_committed_data: false,
+        committed_data_rpc_url: None,
         rpc_for_snos: primary_rpc_url.clone(),
         rpc_for_snos_backup: None,
         snos_full_output: false,
@@ -137,7 +144,11 @@ async fn test_process_job() -> color_eyre::Result<()> {
         }
     };
 
+    // This live-PIE fixture has no persisted batch; the resource audit must remain observational.
+    let mut database = MockDatabaseClient::new();
+    database.expect_get_snos_batches().once().returning(|_| Ok(vec![]));
     let services = TestConfigBuilder::new()
+        .configure_database(database.into())
         .configure_rpc_url(ConfigType::Mock(MockType::RpcUrl(pathfinder_url)))
         .configure_storage_client(ConfigType::Actual)
         .build()

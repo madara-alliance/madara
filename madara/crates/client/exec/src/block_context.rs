@@ -10,19 +10,21 @@ use blockifier::{
 };
 use mc_db::{MadaraBackend, MadaraBlockView, MadaraStateView, MadaraStorageRead};
 use mp_block::MadaraMaybePreconfirmedBlockInfo;
-use mp_chain_config::{ChainConfig, L1DataAvailabilityMode, StarknetVersion};
+use mp_chain_config::{L1DataAvailabilityMode, StarknetVersion};
 use starknet_api::{
     block::{BlockInfo, BlockNumber, BlockTimestamp},
     core::ContractAddress,
 };
 use std::sync::Arc;
 
-fn block_context(
-    chain_config: &ChainConfig,
+/// Builds historical execution context with the node's read permission and authenticated dataset provider.
+fn block_context<D: MadaraStorageRead>(
+    backend: &Arc<MadaraBackend<D>>,
     block_info: MadaraMaybePreconfirmedBlockInfo,
 ) -> Result<Arc<BlockContext>, Error> {
+    let chain_config = backend.chain_config();
     let protocol_version = block_info.protocol_version();
-    Ok(BlockContext::new(
+    let mut context = BlockContext::new(
         BlockInfo {
             block_number: BlockNumber(block_info.block_number()),
             block_timestamp: BlockTimestamp(block_info.block_timestamp().0),
@@ -37,8 +39,13 @@ fn block_context(
         chain_config.blockifier_chain_info(),
         chain_config.exec_constants_by_protocol_version(*protocol_version)?,
         chain_config.bouncer_config.clone(),
-    )
-    .into())
+    );
+    context.use_committed_data = backend.use_committed_data();
+    context.committed_data_witnesses =
+        Arc::new(blockifier::execution::syscalls::committed_data::CommittedDataWitnesses::from_provider(
+            backend.committed_data_provider_at(context.block_info().block_number.0),
+        ));
+    Ok(context.into())
 }
 
 pub struct ExecutionContext<D: MadaraStorageRead> {
@@ -80,7 +87,7 @@ impl<D: MadaraStorageRead> MadaraBlockViewExecutionExt<D> for MadaraBlockView<D>
         Ok(ExecutionContext {
             protocol_version: *block_info.protocol_version(),
             state: CachedState::new(BlockifierStateAdapter::new(self.clone().into(), block_info.block_number())),
-            block_context: block_context(self.backend().chain_config(), block_info)?,
+            block_context: block_context(self.backend(), block_info)?,
         })
     }
     fn new_execution_context_at_block_start(&self) -> Result<ExecutionContext<D>, Error> {
@@ -91,7 +98,7 @@ impl<D: MadaraStorageRead> MadaraBlockViewExecutionExt<D> for MadaraBlockView<D>
                 self.clone().state_view_on_parent(), // Only make the parent block state visible..
                 block_info.block_number(),
             )),
-            block_context: block_context(self.backend().chain_config(), block_info)?, // ..but use the current block context
+            block_context: block_context(self.backend(), block_info)?, // ..but use the current block context
         })
     }
 }
@@ -112,18 +119,88 @@ impl<D: MadaraStorageRead> MadaraBackendExecutionExt<D> for MadaraBackend<D> {
         state_adaptor: LayeredStateAdapter<D>,
         block_info: BlockInfo,
     ) -> Result<TransactionExecutor<LayeredStateAdapter<D>>, Error> {
+        let mut context = BlockContext::new(
+            block_info,
+            self.chain_config().blockifier_chain_info(),
+            self.chain_config().exec_constants_by_protocol_version(self.chain_config().latest_protocol_version)?,
+            self.chain_config().bouncer_config.clone(),
+        );
+        context.use_committed_data = self.use_committed_data();
+        context.committed_data_witnesses =
+            Arc::new(blockifier::execution::syscalls::committed_data::CommittedDataWitnesses::from_provider(
+                self.committed_data_provider_at(context.block_info().block_number.0),
+            ));
         Ok(TransactionExecutor::new(
             CachedState::new(state_adaptor),
-            BlockContext::new(
-                block_info,
-                self.chain_config().blockifier_chain_info(),
-                self.chain_config().exec_constants_by_protocol_version(self.chain_config().latest_protocol_version)?,
-                self.chain_config().bouncer_config.clone(),
-            ),
+            context,
             TransactionExecutorConfig {
                 concurrency_config: self.chain_config().block_production_concurrency.blockifier_config(),
                 stack_size: DEFAULT_STACK_SIZE,
             },
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use blockifier::execution::syscalls::committed_data::{read_value, CommittedDataSet};
+    use mc_db::{committed_data_retention::CommittedDataRetentionConfig, MadaraBackendConfig, MadaraStorageWrite};
+    use mp_convert::Felt;
+
+    /// Exercise the exact block-start context used by traceTransaction/traceBlockTransactions,
+    /// including the real syscall read path after the durable proof index is pruned.
+    /// This covers trace context/provider integration, not HTTP trace serialization.
+    #[rstest::rstest]
+    #[case::sequencer(false)]
+    #[case::replica(true)]
+    #[tokio::test]
+    async fn committed_data_historical_trace_context_reads_pruned_values(#[case] replica: bool) {
+        let backend = MadaraBackend::open_for_testing_with_config(
+            mp_chain_config::ChainConfig::madara_test().into(),
+            MadaraBackendConfig {
+                use_committed_data: true,
+                committed_data_retention: CommittedDataRetentionConfig {
+                    proof_retention_secs: Some(0),
+                    cache_bytes: 0,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        );
+        let entries = vec![(Felt::ONE, Felt::MAX), (Felt::TWO, Felt::ZERO)];
+        let tree = CommittedDataSet::new(entries.clone()).unwrap();
+        // A replica imports the complete map through the same authenticated snapshot path.
+        if replica {
+            backend.import_committed_data_snapshot(tree.root(), entries).await.unwrap();
+        } else {
+            backend.db.write_committed_data_dataset(&tree, None).unwrap();
+        }
+        mc_db::test_utils::add_test_block(&backend, 0, vec![]);
+        mc_db::test_utils::add_test_block(&backend, 1, vec![]);
+        backend.set_latest_l1_confirmed(Some(1)).unwrap();
+        let view = backend.view_on_confirmed(0).unwrap();
+        let context = view.block_view_on_latest().unwrap().new_execution_context_at_block_start().unwrap();
+        let read = || {
+            let mut gas = u64::MAX;
+            let mut failure = None;
+            let result = read_value(
+                context.block_context.use_committed_data,
+                &context.block_context.committed_data_witnesses,
+                starknet_api::abi::abi_utils::selector_from_name("get_value").0,
+                &[tree.root(), Felt::ONE],
+                &mut gas,
+                &mut failure,
+            )
+            .unwrap();
+            assert!(failure.is_none());
+            result
+        };
+        let before = read();
+        assert!(backend.db.maintain_committed_data_history(Some(u64::MAX)).unwrap());
+        assert_eq!(read(), before);
+        assert_eq!(before.0, Felt::MAX);
+        // Historical execution below the cutoff must not reactivate the proof index.
+        assert!(!backend.db.maintain_committed_data_history(Some(u64::MAX)).unwrap());
     }
 }

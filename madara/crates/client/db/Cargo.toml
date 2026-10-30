@@ -26,6 +26,7 @@ mp-bloom-filter = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-class = { workspace = true }
 mp-convert = { workspace = true }
+mp-gateway = { workspace = true }
 mp-receipt = { workspace = true }
 mp-rpc = { workspace = true }
 mp-state-update = { workspace = true }
@@ -50,6 +51,7 @@ futures = { workspace = true }
 itertools.workspace = true
 libc.workspace = true
 librocksdb-sys = { workspace = true }
+lru = { workspace = true }
 # Optional deps used by `feature = "testing"` so downstream crates can enable
 # `mc-db/testing` without relying on `dev-dependencies`.
 m-cairo-test-contracts = { workspace = true, optional = true }
@@ -57,8 +59,10 @@ num-traits = { workspace = true }
 rayon = { workspace = true }
 rocksdb.workspace = true
 serde = { workspace = true }
+sha2 = { workspace = true }
 siphasher.workspace = true
 smallvec.workspace = true
+zstd = { workspace = true }
 # Optional for the same reason as `m-cairo-test-contracts` above.
 starknet-core = { workspace = true, optional = true }
 tempfile = { workspace = true, optional = true }

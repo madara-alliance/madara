@@ -1060,3 +1060,37 @@ fn test_get_tx_by_hash(mut fcfs_mempool: MempoolTester) {
     assert!(!fcfs_mempool.contains_tx_by_hash(felt!("0x999")));
     assert_eq!(fcfs_mempool.get_transaction_by_hash(felt!("0x999")), None);
 }
+
+#[rstest]
+fn recovery_commit_failure_does_not_evict(#[with(1)] mut fcfs_mempool: MempoolTester) {
+    let old = TestTx {
+        nonce: felt!("0x4"),
+        contract_address: felt!("0x100"),
+        arrived_at: 1000,
+        tip: None,
+        tx_hash: felt!("0x100"),
+        is_declare: false,
+    };
+    let new = TestTx {
+        nonce: felt!("0x2"),
+        contract_address: felt!("0x200"),
+        arrived_at: 1000,
+        tip: None,
+        tx_hash: felt!("0x200"),
+        is_declare: false,
+    };
+    fcfs_mempool.insert_tx(old, felt!("0x1")).unwrap();
+    let before = fcfs_mempool.inner.clone();
+    let mut removed = Vec::new();
+    let result = fcfs_mempool.inner.insert_tx_with_commit(
+        TxTimestamp(fcfs_mempool.current_time),
+        new.into(),
+        Nonce(felt!("0x1")),
+        &mut removed,
+        || Err(TxInsertionError::Persistence("test fsync failure".into())),
+    );
+    assert!(matches!(result, Err(TxInsertionError::Persistence(_))));
+    assert!(removed.is_empty());
+    assert_eq!(fcfs_mempool.inner, before);
+    fcfs_mempool.check_invariants();
+}

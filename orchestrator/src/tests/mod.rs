@@ -1,5 +1,6 @@
 pub mod alerts;
 pub mod cli;
+mod committed_data_e2e;
 pub mod common;
 pub mod compression;
 pub mod config;

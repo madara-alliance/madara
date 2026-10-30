@@ -102,7 +102,7 @@ serde_with.workspace = true
 serde_yaml.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-tokio-util.workspace = true
+tokio-util = { workspace = true, features = ["rt"] }
 tower.workspace = true
 tower-http.workspace = true
 url.workspace = true
@@ -134,7 +134,7 @@ mp-convert = { workspace = true }
 mp-gateway = { workspace = true }
 mp-receipt = { workspace = true }
 mp-transactions = { workspace = true }
-mp-utils = { workspace = true }
+mp-utils = { workspace = true, features = ["testing"] }
 
 # Testing
 assert_matches.workspace = true

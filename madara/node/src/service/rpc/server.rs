@@ -3,7 +3,7 @@
 
 use super::metrics::RpcMetrics;
 use super::middleware::{Metrics, RpcMiddlewareLayerMetrics};
-use crate::service::rpc::middleware::RpcMiddlewareServiceVersion;
+use crate::service::rpc::middleware::RpcDispatcher;
 use anyhow::Context;
 use mc_rpc::versions::user::v0_7_1::methods::read::syncing::syncing;
 use mc_rpc::Starknet;
@@ -11,9 +11,11 @@ use mp_chain_config::RpcVersion;
 use mp_rpc::v0_7_1::SyncingStatus;
 use mp_utils::service::ServiceContext;
 use std::convert::Infallible;
+use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio_util::task::TaskTracker;
 use tower::Service;
 
 #[allow(non_upper_case_globals)]
@@ -21,12 +23,38 @@ const MiB: u32 = 1024 * 1024;
 const WS_PING_INTERVAL_SECS: u64 = 30;
 const WS_MAX_PING_FAILURES: usize = 3;
 
+/// Use jsonrpsee's existing stop signal for HTTP sockets too. Hyper's graceful
+/// shutdown joins these connections; the RPC tracker separately drains admitted calls.
+#[derive(Clone)]
+struct RpcExecutor(jsonrpsee::server::StopHandle);
+
+impl<F> hyper::rt::Executor<F> for RpcExecutor
+where
+    F: Future + Send + 'static,
+    F::Output: Send,
+{
+    fn execute(&self, connection: F) {
+        let stop = self.0.clone();
+        tokio::spawn(async move {
+            tokio::select! {
+                biased;
+                _ = stop.shutdown() => {},
+                _ = connection => {},
+            }
+        });
+    }
+}
+
 /// RPC server configuration.
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
     pub name: String,
     pub addr: SocketAddr,
     pub cors: Option<Vec<String>>,
+    /// Private committed-data listener: reject DNS-rebinding Host values independently of CORS.
+    /// Public/admin listeners retain their existing policy; CORS alone does not stop a browser
+    /// from sending a request to a loopback-only endpoint.
+    pub restrict_hosts: bool,
     pub rpc_version_default: mp_chain_config::RpcVersion,
     pub max_connections: u32,
     pub max_subs_per_conn: u32,
@@ -56,12 +84,14 @@ pub async fn start_server(
     config: ServerConfig,
     mut ctx: ServiceContext,
     stop_handle: jsonrpsee::server::StopHandle,
+    server_handle: jsonrpsee::server::ServerHandle,
     starknet: Arc<Starknet>,
 ) -> anyhow::Result<()> {
     let ServerConfig {
         name,
         addr,
         cors,
+        restrict_hosts,
         rpc_version_default,
         max_connections,
         max_subs_per_conn,
@@ -86,7 +116,7 @@ pub async fn start_server(
         .max_failures(WS_MAX_PING_FAILURES);
 
     let http_middleware = tower::ServiceBuilder::new()
-        .option_layer(host_filtering(cors.is_some(), local_addr))
+        .option_layer(host_filtering(restrict_hosts, local_addr))
         .layer(try_into_cors(cors.as_ref())?);
 
     let builder = jsonrpsee::server::Server::builder()
@@ -107,9 +137,13 @@ pub async fn start_server(
         service_builder: builder.to_service_builder(),
     };
     let ctx1 = ctx.clone();
+    let requests = TaskTracker::new();
+    let admitted_requests = requests.clone();
+    let executor = RpcExecutor(stop_handle.clone());
 
     let make_service = hyper::service::make_service_fn(move |_| {
         let cfg = cfg.clone();
+        let requests = admitted_requests.clone();
         let ctx1 = ctx1.clone();
         let starknet = Arc::clone(&starknet);
 
@@ -127,9 +161,10 @@ pub async fn start_server(
                 let path = req.uri().path().to_string();
                 let metrics_layer = RpcMiddlewareLayerMetrics::new(Metrics::new(metrics, transport_label));
 
+                let requests = requests.clone();
                 let rpc_middleware = jsonrpsee::server::RpcServiceBuilder::new()
                     .layer_fn(move |service| {
-                        RpcMiddlewareServiceVersion::new(service, path.clone(), rpc_version_default)
+                        RpcDispatcher::new(service, path.clone(), rpc_version_default, requests.clone())
                     })
                     .layer(metrics_layer.clone());
 
@@ -181,6 +216,7 @@ pub async fn start_server(
 
     let server = hyper::Server::from_tcp(listener.into_std()?)
         .with_context(|| format!("Creating hyper server at: {addr}"))?
+        .executor(executor)
         .serve(make_service);
 
     tracing::info!(
@@ -207,12 +243,19 @@ pub async fn start_server(
         format_rpc_versions(&supported_versions),
     );
 
-    server
+    let result = server
         .with_graceful_shutdown(async {
             ctx.run_until_cancelled(stop_handle.shutdown()).await;
+            requests.close();
+            let _ = server_handle.stop(); // Stop existing WebSocket intake too.
         })
-        .await
-        .context("Running rpc server")
+        .await;
+    // Also drain on a listener error. A dropped HTTP/WS client must not detach a DB writer
+    // across service stop/revert, including trace calls that lazily rebuild proof indexes.
+    requests.close();
+    let _ = server_handle.stop();
+    requests.wait().await;
+    result.context("Running rpc server")
 }
 
 // Copied from https://github.com/paritytech/polkadot-sdk/blob/a0aefc6b233ace0a82a8631d67b6854e6aeb014b/substrate/client/rpc-servers/src/utils.rs#L192
@@ -303,4 +346,61 @@ pub(crate) fn format_cors(maybe_cors: Option<&Vec<String>>) -> String {
 }
 pub(crate) fn format_rpc_versions(versions: &[RpcVersion]) -> String {
     format!("{:?}", versions.iter().map(|v| format!("/rpc/v{v}/")).collect::<Vec<_>>())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{convert::Infallible, time::Duration};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[rstest::rstest]
+    #[case::unfinished_upload(true)]
+    #[case::unread_response(false)]
+    #[tokio::test]
+    async fn rpc_shutdown_closes_stalled_http_connections(#[case] unfinished_upload: bool) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = listener.local_addr().unwrap();
+        let (stop, handle) = jsonrpsee::server::stop_channel();
+        let (started, mut ready) = tokio::sync::mpsc::unbounded_channel();
+        let make_service = hyper::service::make_service_fn(move |_| {
+            let started = started.clone();
+            async move {
+                Ok::<_, Infallible>(hyper::service::service_fn(move |request: hyper::Request<hyper::Body>| {
+                    let started = started.clone();
+                    async move {
+                        started.send(()).unwrap();
+                        hyper::body::to_bytes(request.into_body()).await?;
+                        // Exceed the socket send buffer so the unread response cannot finish.
+                        Ok::<_, hyper::Error>(hyper::Response::new(hyper::Body::from(vec![0; 16 * 1024 * 1024])))
+                    }
+                }))
+            }
+        });
+        let executor = RpcExecutor(stop.clone());
+        let server = hyper::Server::from_tcp(listener)
+            .unwrap()
+            .executor(executor)
+            .serve(make_service)
+            .with_graceful_shutdown(async move { stop.shutdown().await });
+        let server = tokio::spawn(server);
+        let mut client = tokio::net::TcpStream::connect(address).await.unwrap();
+        if unfinished_upload {
+            // Keep the socket open after sending only one of the declared 10,000 bytes.
+            client.write_all(b"POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 10000\r\n\r\n{").await.unwrap();
+        } else {
+            client.write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n").await.unwrap();
+            client.read_exact(&mut [0; 1]).await.unwrap();
+        }
+        ready.recv().await.unwrap();
+        assert!(!server.is_finished());
+        handle.stop().unwrap();
+        tokio::time::timeout(Duration::from_secs(1), async {
+            server.await.unwrap().unwrap();
+        })
+        .await
+        .unwrap();
+        drop(client);
+    }
 }

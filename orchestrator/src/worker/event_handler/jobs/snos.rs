@@ -1,3 +1,5 @@
+mod resource_audit;
+
 use crate::core::config::Config;
 use crate::core::StorageClient;
 use crate::error::job::fact::FactError;
@@ -74,8 +76,12 @@ trait OsHintsConfigurationFromLayer {
 impl OsHintsConfigurationFromLayer for OsHintsConfiguration {
     fn with_layer(layer: Layer) -> OsHintsConfiguration {
         match layer {
-            Layer::L2 => OsHintsConfiguration { debug_mode: true, full_output: true, use_kzg_da: false },
-            Layer::L3 => OsHintsConfiguration { debug_mode: true, full_output: false, use_kzg_da: true },
+            Layer::L2 => {
+                OsHintsConfiguration { debug_mode: true, full_output: true, use_kzg_da: false, ..Default::default() }
+            }
+            Layer::L3 => {
+                OsHintsConfiguration { debug_mode: true, full_output: false, use_kzg_da: true, ..Default::default() }
+            }
         }
     }
 }
@@ -123,12 +129,15 @@ impl JobHandlerTrait for SnosJobHandler {
         // Get DA public keys (already parsed as Felt values in config)
         let public_keys: Option<Vec<Felt>> = config.da_public_keys().cloned();
 
+        let mut os_hints_config = OsHintsConfiguration::with_layer(config.layer().clone());
+        os_hints_config.use_committed_data = config.snos_config().use_committed_data;
         let input = PieGenerationInput {
+            committed_data_rpc_url: config.snos_config().committed_data_rpc_url.as_ref().map(ToString::to_string),
             rpc_url: snos_url.to_string(),
             blocks: (start_block_number..=end_block_number).collect(),
             // Use chain details fetched at orchestrator startup (no RPC call needed here)
             chain_config: config.chain_details().to_chain_config(),
-            os_hints_config: OsHintsConfiguration::with_layer(config.layer().clone()),
+            os_hints_config,
             output_path: None, // No file output
             layout: config.params.snos_layout_name,
             versioned_constants: config.snos_config().versioned_constants.clone(),
@@ -144,6 +153,13 @@ impl JobHandlerTrait for SnosJobHandler {
         let snos_timing = snos_output.timing;
         let cairo_pie = snos_output.output.cairo_pie;
         MetricsRecorder::record_snos_run_metrics(cairo_pie.execution_resources.n_steps, &snos_timing);
+        resource_audit::record(
+            config.database(),
+            &snos_metadata,
+            &cairo_pie.execution_resources,
+            config.snos_config().versioned_constants.as_ref(),
+        )
+        .await;
 
         // TODO: currently we are getting the Vec<Felt> but ideally we should get a struct, fix it once it available upstream
         //       maybe we can add our own struct meanwhile in the snos code? something to think about!!!

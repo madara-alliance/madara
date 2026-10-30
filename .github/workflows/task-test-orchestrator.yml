@@ -113,6 +113,11 @@ jobs:
         with:
           python-version: ${{ env.BUILD_PYTHON_VERSION }}
 
+      # The acceptance fixture is compiled from the exact Sequencer dependency at runtime.
+      # nextest archives contain executables, but do not restore git dependency source trees.
+      - name: Restore pinned sources for the committed-data Cairo fixture
+        run: cargo fetch --locked --target x86_64-unknown-linux-gnu
+
       - name: Run tests
         continue-on-error: false
         env:
@@ -121,6 +126,7 @@ jobs:
           MADARA_ORCHESTRATOR_ATLANTIC_API_KEY: ${{ secrets.MADARA_ORCHESTRATOR_ATLANTIC_API_KEY }}
           # the self hosted runner has a different region so we override it here
           AWS_REGION: us-east-1
+          COMMITTED_DATA_E2E_OUTPUT: ${{ github.workspace }}/committed-data-e2e-report
         run: |
           echo "MADARA_ORCHESTRATOR_MADARA_BINARY_PATH: $MADARA_ORCHESTRATOR_MADARA_BINARY_PATH"
           # This specific Atlantic integration test submits a real job and now
@@ -133,3 +139,11 @@ jobs:
             --no-fail-fast \
             -- \
             --skip atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash
+
+      - name: Upload committed-data real-node acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: committed-data-real-node-acceptance
+          path: committed-data-e2e-report/
+          if-no-files-found: ignore

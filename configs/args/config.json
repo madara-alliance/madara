@@ -14,6 +14,7 @@
     "rpc": false
   },
   "backend_params": {
+    "use_committed_data": false,
     "base_path": "../madara-db",
     "backup_dir": null,
     "restore_from_latest_backup": false,
@@ -62,7 +63,7 @@
     "n_blocks_to_sync": null,
     "stop_on_sync": false,
     "backup_every_n_blocks": null,
-    "bouncer_config_sync_enable": false,
+    "madara_additional_data_sync": false,
     "disable_reorg": false,
     "disable_reorg_preconfirmed": false
   },

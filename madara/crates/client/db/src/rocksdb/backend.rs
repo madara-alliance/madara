@@ -1,5 +1,9 @@
 use super::*;
 
+mod recovery;
+#[cfg(test)]
+mod tests;
+
 #[derive(Debug, Clone, Copy, Default)]
 pub(super) struct TrieLogHeads {
     pub(super) contract: Option<u64>,
@@ -163,7 +167,13 @@ impl RocksDBStorage {
 
         let writeopts = config.write_mode.to_write_options();
         tracing::info!("📝 Database write mode: {}", config.write_mode);
-        let inner = Arc::new(RocksDBStorageInner { global_opts: opts, writeopts, db, config: config.clone() });
+        let inner = Arc::new(RocksDBStorageInner {
+            global_opts: opts,
+            writeopts,
+            db,
+            config: config.clone(),
+            committed_data: Default::default(),
+        });
 
         let head_block_n = inner.get_head_projection_without_content()?.and_then(|c| match c {
             StoredHeadProjectionWithoutContent::Confirmed(block_n) => Some(block_n),
@@ -450,6 +460,9 @@ impl RocksDBStorage {
                 format!("Writing checkpoint for confirmed block #{confirmed_tip} during parallel merkle reconciliation")
             })?;
         }
+        // Startup snapshots precede repair. Replace them explicitly even when the
+        // confirmed height is unchanged; ordinary head publication is idempotent.
+        self.snapshots.rewind_to(confirmed_tip);
         self.on_new_confirmed_head(confirmed_tip).with_context(|| {
             format!("Refreshing snapshot inventory for confirmed block #{confirmed_tip} during parallel merkle reconciliation")
         })?;
@@ -763,8 +776,3 @@ impl RocksDBStorage {
         self.inner.db.write_opt(batch, &self.inner.writeopts).context("Committing canonical reorg head")
     }
 }
-
-#[cfg(test)]
-mod tests;
-
-mod recovery;

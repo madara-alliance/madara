@@ -64,6 +64,7 @@
 //! - Mempool DB persistence can conflict with WAL replay on restart. Prefer
 //!   `--no-mempool-saving` for replay flows (see docs/mempool_wal_gotchas.md).
 
+pub mod committed_data_recovery;
 pub mod config;
 pub mod metrics;
 pub mod mongodb;

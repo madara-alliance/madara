@@ -45,6 +45,9 @@ mod backup;
 mod blocks;
 mod classes;
 mod column;
+mod committed_data;
+mod committed_data_recovery;
+mod committed_history;
 mod events;
 mod events_bloom_filter;
 pub(crate) mod external_outbox;
@@ -54,6 +57,7 @@ mod mempool;
 mod meta;
 mod metrics;
 mod options;
+mod proof_references;
 mod reorg;
 mod rocksdb_snapshot;
 mod snapshots;
@@ -97,9 +101,23 @@ fn deserialize<T: serde::de::DeserializeOwned>(bytes: impl AsRef<[u8]>) -> Resul
     bincode_opts().deserialize(bytes.as_ref())
 }
 
+/// Per-database committed-data state. Separate locks keep catalog/outbox writes independent
+/// of proof allocation and pruning; configuration is shared by all cloned storage handles.
+#[derive(Default)]
+struct CommittedDataState {
+    /// Serializes arena allocation, repair and pruning; caches only committed nodes.
+    tree: std::sync::Mutex<crate::persistent_committed_data::NodeCache>,
+    /// Serializes namespace initialization and recovery outbox accounting.
+    records: std::sync::Mutex<()>,
+    /// Bounds cold reconstruction to one tree per backend until the reader finishes.
+    reconstruction: std::sync::Mutex<()>,
+    config: std::sync::RwLock<crate::committed_data_retention::CommittedDataRetentionConfig>,
+}
+
 pub(crate) struct RocksDBStorageInner {
     db: DB,
     global_opts: RocksDBOptions,
+    committed_data: CommittedDataState,
     writeopts: WriteOptions,
     config: RocksDBConfig,
 }

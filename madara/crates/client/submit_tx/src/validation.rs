@@ -104,9 +104,12 @@ impl From<TransactionExecutionError> for SubmitTransactionError {
         use TransactionExecutionError as E;
 
         match err {
+            // Missing private data is a node availability failure, not invalid user input.
+            E::CommittedDataAvailability(err) => SubmitTransactionError::Internal(err.into()),
             err @ E::ContractClassVersionMismatch { .. } => rejected(InvalidContractClassVersion, format!("{err:#}")),
             err @ E::DeclareTransactionError { .. } => rejected(ClassAlreadyDeclared, format!("{err:#}")),
-            err @ (E::ExecutionError { .. }
+            err @ (E::CommittedDataInsufficientGas { .. }
+            | E::ExecutionError { .. }
             | E::ValidateTransactionError { .. }
             | E::ContractConstructorExecutionFailed { .. }
             | E::PanicInValidate { .. }
@@ -191,6 +194,7 @@ impl From<MempoolInsertionError> for SubmitTransactionError {
         match value {
             err @ (E::Internal(_) | E::ValidatedToBlockifier(_)) => Internal(anyhow::anyhow!(err)),
             err @ E::InnerMempool(TxInsertionError::TooOld { .. }) => Internal(anyhow::anyhow!(err)),
+            E::InnerMempool(TxInsertionError::Persistence(err)) => Internal(anyhow::anyhow!(err)),
             E::InnerMempool(TxInsertionError::DuplicateTxn) => {
                 rejected(DuplicatedTransaction, "A transaction with this hash already exists in the transaction pool")
             }
@@ -220,7 +224,7 @@ impl From<MempoolInsertionError> for SubmitTransactionError {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct TransactionValidatorConfig {
     pub disable_validation: bool,
     pub disable_fee: bool,
@@ -237,6 +241,7 @@ pub struct TransactionValidator {
     inner: Arc<dyn ValidatedTransactionProvider>,
     backend: Arc<MadaraBackend>,
     config: TransactionValidatorConfig,
+    committed_data: Vec<String>,
 }
 
 impl fmt::Debug for TransactionValidator {
@@ -251,7 +256,7 @@ impl TransactionValidator {
         backend: Arc<MadaraBackend>,
         config: TransactionValidatorConfig,
     ) -> Self {
-        Self { inner, backend, config }
+        Self { inner, backend, config, committed_data: Vec::new() }
     }
 
     #[tracing::instrument(skip(self, tx, converted_class))]
@@ -312,7 +317,11 @@ impl TransactionValidator {
             converted_class,
             account_tx.execution_flags.charge_fee,
         );
-        self.inner.submit_validated_transaction(tx).await?;
+        if self.committed_data.is_empty() {
+            self.inner.submit_validated_transaction(tx).await?;
+        } else {
+            self.inner.submit_validated_with_committed_data(tx, self.committed_data.clone()).await?;
+        }
 
         Ok(())
     }
@@ -350,6 +359,33 @@ impl SubmitL1HandlerTransaction for TransactionValidator {
 
 #[async_trait]
 impl SubmitTransaction for TransactionValidator {
+    async fn submit_committed_data_transaction(
+        &self,
+        tx: mp_rpc::v0_10_2::BroadcastedTxn,
+        dependencies: Vec<String>,
+    ) -> Result<Felt, SubmitTransactionError> {
+        if !(1..=mp_gateway::committed_data::MAX_DATASETS_PER_TRANSACTION).contains(&dependencies.len()) {
+            return Err(SubmitTransactionError::Internal(anyhow::anyhow!("Invalid dataset dependencies")));
+        }
+        let validator = Self {
+            inner: self.inner.clone(),
+            backend: self.backend.clone(),
+            config: self.config.clone(),
+            committed_data: dependencies,
+        };
+        Ok(match tx {
+            mp_rpc::v0_10_2::BroadcastedTxn::Invoke(tx) => {
+                validator.submit_invoke_transaction(tx).await?.transaction_hash
+            }
+            mp_rpc::v0_10_2::BroadcastedTxn::Declare(tx) => {
+                validator.submit_declare_transaction(tx).await?.transaction_hash
+            }
+            mp_rpc::v0_10_2::BroadcastedTxn::DeployAccount(tx) => {
+                validator.submit_deploy_account_transaction(tx).await?.transaction_hash
+            }
+        })
+    }
+
     async fn submit_declare_v0_transaction(
         &self,
         tx: BroadcastedDeclareTxnV0,
@@ -497,5 +533,28 @@ impl TransactionLookup for TransactionValidator {
         hash: Felt,
     ) -> Result<Option<ProviderTransactionResponse>, SubmitTransactionError> {
         self.inner.feeder_transaction(hash).await
+    }
+}
+
+#[cfg(test)]
+mod committed_data_tests {
+    use super::*;
+    use blockifier::execution::syscalls::committed_data::CommittedDataError;
+
+    #[test]
+    fn committed_data_budget_failure_is_rejected_user_input() {
+        let error = SubmitTransactionError::from(TransactionExecutionError::CommittedDataInsufficientGas {
+            required: 100,
+            remaining: 99,
+        });
+        assert!(matches!(error, SubmitTransactionError::Rejected(_)));
+    }
+
+    #[test]
+    fn committed_data_unavailability_is_an_internal_submission_failure() {
+        let error = SubmitTransactionError::from(TransactionExecutionError::CommittedDataAvailability(
+            CommittedDataError::Unavailable,
+        ));
+        assert!(matches!(error, SubmitTransactionError::Internal(_)));
     }
 }

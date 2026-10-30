@@ -101,14 +101,16 @@ impl Snapshots {
         );
     }
 
-    /// Called when a new block has been added in the database. This will make a snapshot
-    /// on top of the new block, and it will store that snapshot in the snapshot history every
-    /// `snapshot_interval` blocks.
+    /// Captures a committed trie boundary and retains configured interval snapshots.
+    /// Batched sync can publish older confirmed heads after advancing the trie: those
+    /// notifications must not relabel newer state. Reorgs use the explicit rewind methods.
     #[tracing::instrument(skip(self))]
     pub fn set_new_head(&self, block_n: u64) {
-        let snapshot = Arc::new(SnapshotWithDBArc::new(Arc::clone(&self.db)));
-
         let mut inner = self.inner.write().expect("Poisoned lock");
+        if inner.head_block_n.is_some_and(|head| head >= block_n) {
+            return;
+        }
+        let snapshot = Arc::new(SnapshotWithDBArc::new(Arc::clone(&self.db)));
 
         if self.max_kept_snapshots != Some(0) && self.snapshot_interval != 0 && block_n % self.snapshot_interval == 0 {
             self.save_interval_snapshot_locked(&mut inner, block_n, Arc::clone(&snapshot));
@@ -164,6 +166,14 @@ impl Snapshots {
         let mut inner = self.inner.write().expect("Poisoned lock");
         inner.exact.retain(|saved_block_n, _| *saved_block_n <= block_n);
         inner.historical.retain(|saved_block_n, _| *saved_block_n <= block_n);
+        // Same-height repair can replace the target's materialized state. Neither
+        // interval lookup nor a pinned root base may retain its pre-repair snapshot.
+        if let Some(saved) = inner.exact.get_mut(&block_n) {
+            *saved = Arc::clone(&snapshot);
+        }
+        if let Some(saved) = inner.historical.get_mut(&block_n) {
+            *saved = Arc::clone(&snapshot);
+        }
         inner.head = snapshot;
         inner.head_block_n = Some(block_n);
         tracing::debug!(
@@ -428,8 +438,14 @@ mod tests {
         storage.snapshots.set_new_head(5);
         storage.snapshots.pin_head(5);
 
+        // Simulate repair after snapshots were already captured: an interval
+        // snapshot at the target must be replaced alongside the live head.
+        let column = storage.inner.get_column(crate::rocksdb::meta::META_COLUMN);
+        storage.inner.db.put_cf(&column, b"snapshot_repair_test", b"repaired").unwrap();
         storage.snapshots.rewind_to(4);
         storage.snapshots.pin_head(4);
+        let (_, historical) = storage.snapshots.get_closest(4);
+        assert_eq!(historical.get_cf(&column, b"snapshot_repair_test").unwrap(), Some(b"repaired".to_vec()));
 
         assert!(storage.snapshots.get_exact(Some(5)).is_none(), "Future exact snapshot should be pruned");
         assert!(storage.snapshots.get_exact(Some(4)).is_some(), "Target exact snapshot should remain available");

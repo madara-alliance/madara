@@ -37,6 +37,8 @@ pub struct OrchestratorMetrics {
     pub snos_rpc_wait_time: Histogram<f64>,
     pub snos_execution_time: Histogram<f64>,
     pub snos_cairo_steps: Histogram<f64>,
+    /// Per-resource, per-attempt audits: within_reservation, exceeded, or unavailable.
+    pub snos_resource_audit_total: Counter<u64>,
     pub snos_rpc_calls_per_job: Histogram<f64>,
     pub snos_batch_blocks: Histogram<f64>,
     pub snos_rpc_fallback_total: Counter<f64>,
@@ -246,6 +248,11 @@ impl Metrics for OrchestratorMetrics {
             "SNOS-reported local execution time outside RPC waits".to_string(),
             "s".to_string(),
         );
+
+        let snos_resource_audit_total = orchestrator_meter
+            .u64_counter("snos_resource_audit_total")
+            .with_description("SNOS batch resource audit attempts by resource and outcome; not a transaction fee audit")
+            .build();
 
         let snos_cairo_steps = orchestrator_meter
             .f64_histogram("snos_cairo_steps")
@@ -579,6 +586,7 @@ impl Metrics for OrchestratorMetrics {
             snos_rpc_wait_time,
             snos_execution_time,
             snos_cairo_steps,
+            snos_resource_audit_total,
             snos_rpc_calls_per_job,
             snos_batch_blocks,
             snos_rpc_fallback_total,

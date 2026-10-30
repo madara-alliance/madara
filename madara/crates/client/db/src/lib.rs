@@ -60,6 +60,11 @@
 //! Head publication and row garbage collection have explicit ordering, so replacing a projection
 //! alone must not be mistaken for deleting its old preconfirmed data.
 
+mod committed_data;
+pub mod committed_data_recovery;
+pub mod committed_data_retention;
+mod persistent_committed_data;
+
 use crate::gas::L1GasQuoteCell;
 use crate::preconfirmed::PreconfirmedBlock;
 use crate::preconfirmed::PreconfirmedExecutedTransaction;
@@ -408,6 +413,11 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     #[cfg(any(test, feature = "testing"))]
     _temp_dir: Option<tempfile::TempDir>,
 
+    /// Bounded cache of authenticated immutable datasets; empty until import.
+    committed_data_cache: committed_data::SnapshotCache,
+    /// Wake the sole cleanup worker after ingestion; busy-worker notifications are discarded.
+    committed_data_cleanup: tokio::sync::Notify,
+
     /// Custom headers used during block replay to ensure deterministic execution.
     ///
     /// When replaying a block, we must match the exact timestamp and gas configuration
@@ -444,6 +454,11 @@ pub struct ExecutionReadCacheConfig {
 
 #[derive(Debug, Default)]
 pub struct MadaraBackendConfig {
+    pub committed_data_retention: committed_data_retention::CommittedDataRetentionConfig,
+    /// Permit committed reads during account execution, independently of dataset ingestion.
+    /// L1 handlers must not read committed data, directly or through another contract;
+    /// their availability-failure semantics are unsupported.
+    pub use_committed_data: bool,
     pub flush_every_n_blocks: Option<u64>,
     /// When false, the preconfirmed block is never saved to database.
     pub save_preconfirmed: bool,

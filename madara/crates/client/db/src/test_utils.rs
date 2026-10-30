@@ -13,6 +13,8 @@ use mp_transactions::{
 use starknet_core::types::contract::SierraClass;
 use std::sync::Arc;
 
+pub use crate::committed_data::committed_data_import_in_flight;
+
 pub fn add_test_block(
     backend: &Arc<MadaraBackend>,
     block_number: u64,
@@ -32,6 +34,15 @@ pub fn add_test_block(
         )
         .expect("Adding block should succeed")
         .block_hash
+}
+
+/// Fill the pending-backup budget without allocating hundreds of MiB in tests.
+pub fn set_recovery_pending_bytes(backend: &MadaraBackend, bytes: u64) {
+    use bincode::Options;
+    let db = backend.db.inner_db();
+    let cf = db.cf_handle("committed_data_recovery").unwrap();
+    // Match RocksDB's DefaultOptions codec, not bincode::serialize's legacy fixed-width codec.
+    db.put_cf(&cf, b"bytes", bincode::DefaultOptions::new().serialize(&bytes).unwrap()).unwrap();
 }
 
 pub fn devnet_account_address() -> Felt {

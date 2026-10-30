@@ -14,19 +14,21 @@ use mc_db::MadaraBackend;
 use mc_submit_tx::{SubmitTransaction, SubmitValidatedTransaction, TransactionLookup};
 use mp_utils::service::ServiceContext;
 use std::{
-    convert::Infallible,
     io::{self, Write},
     net::{Ipv4Addr, SocketAddr},
     sync::Arc,
     time::Instant,
 };
-use tokio::{net::TcpListener, sync::Semaphore};
+use tokio::{net::TcpListener, sync::Semaphore, task::JoinSet};
+use tokio_util::task::TaskTracker;
 
 const MAX_CONCURRENT_GZIP_COMPRESSIONS: usize = 4;
 
 #[derive(Debug, Clone)]
 pub struct GatewayServerConfig {
     pub feeder_gateway_enable: bool,
+    /// Per-server concurrency budget; each permit lives until blocking work actually finishes.
+    pub committed_data_max_concurrent_reads: usize,
     pub feeder_gateway_gzip_responses: bool,
     pub gateway_enable: bool,
     pub gateway_external: bool,
@@ -37,6 +39,7 @@ impl Default for GatewayServerConfig {
     fn default() -> Self {
         Self {
             feeder_gateway_enable: false,
+            committed_data_max_concurrent_reads: crate::committed_data::DEFAULT_MAX_CONCURRENT_READS,
             feeder_gateway_gzip_responses: false,
             gateway_enable: false,
             gateway_external: false,
@@ -68,10 +71,16 @@ pub async fn start_server(
 
     let addr = listener.local_addr().context("Getting the bound-to address.")?;
     tracing::info!("🌐 Gateway endpoint started at {}", addr);
+    anyhow::ensure!(config.committed_data_max_concurrent_reads > 0, "Committed-data read concurrency must be positive");
+    let committed_data_reads = Arc::new(Semaphore::new(config.committed_data_max_concurrent_reads));
     let gzip_compression_semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_GZIP_COMPRESSIONS));
     let gateway_metrics = GatewayMetrics::register();
+    let requests = TaskTracker::new();
+    let mut connections = JoinSet::new();
 
     while let Some(res) = ctx.run_until_cancelled(listener.accept()).await {
+        // Reap finished connections rather than retaining their results until shutdown.
+        while connections.try_join_next().is_some() {}
         // Handle new incoming connections
         if let Ok((stream, _)) = res {
             let io = TokioIo::new(stream);
@@ -82,9 +91,11 @@ pub async fn start_server(
             let submit_validated = submit_validated.clone();
             let config = config.clone();
             let gzip_compression_semaphore = Arc::clone(&gzip_compression_semaphore);
+            let committed_data_reads = Arc::clone(&committed_data_reads);
             let gateway_metrics = gateway_metrics.clone();
 
-            tokio::task::spawn(async move {
+            let requests = requests.clone();
+            connections.spawn(async move {
                 let service = service_fn(move |req| {
                     let db_backend = Arc::clone(&db_backend);
                     let transaction_submitter = transaction_submitter.clone();
@@ -92,8 +103,11 @@ pub async fn start_server(
                     let submit_validated = submit_validated.clone();
                     let config = config.clone();
                     let gzip_compression_semaphore = Arc::clone(&gzip_compression_semaphore);
+                    let committed_data_reads = Arc::clone(&committed_data_reads);
                     let gateway_metrics = gateway_metrics.clone();
-                    async move {
+                    // A disconnected socket must not drop the owner awaiting a blocking DB
+                    // rebuild (or trace). The server drains these request tasks on shutdown.
+                    let request = requests.spawn(async move {
                         let path = req
                             .uri()
                             .path()
@@ -113,6 +127,7 @@ pub async fn start_server(
                             transaction_lookup,
                             submit_validated,
                             config,
+                            committed_data_reads,
                         )
                         .await;
 
@@ -148,8 +163,9 @@ pub async fn start_server(
                             response_stats.compression_duration,
                         );
 
-                        Ok::<_, Infallible>(res)
-                    }
+                        res
+                    });
+                    async move { request.await.map_err(io::Error::other) }
                 });
 
                 if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
@@ -159,7 +175,17 @@ pub async fn start_server(
         }
     }
 
+    drop(listener);
+    stop_gateway(&mut connections, &requests).await;
     Ok(())
+}
+
+/// Close every connection, including keep-alive request intake, before draining admitted work.
+/// Request tasks own their blocking children even when their connection has disappeared.
+pub(crate) async fn stop_gateway(connections: &mut JoinSet<()>, requests: &TaskTracker) {
+    connections.shutdown().await;
+    requests.close();
+    requests.wait().await;
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -189,6 +215,11 @@ fn telemetry_route(path: &str) -> &'static str {
         "feeder_gateway/get_contract_addresses" => "feeder_gateway/get_contract_addresses",
         "feeder_gateway/get_public_key" => "feeder_gateway/get_public_key",
         "feeder_gateway/get_block_bouncer_weights" => "feeder_gateway/get_block_bouncer_weights",
+        "feeder_gateway/get_committed_data_roots" => "feeder_gateway/get_committed_data_roots",
+        "feeder_gateway/get_committed_data_versions" => "feeder_gateway/get_committed_data_versions",
+        "feeder_gateway/get_committed_data" => "feeder_gateway/get_committed_data",
+        "feeder_gateway/get_committed_data_witnesses" => "feeder_gateway/get_committed_data_witnesses",
+        "feeder_gateway/get_committed_data_witness" => "feeder_gateway/get_committed_data_witness",
         _ => "unknown",
     }
 }

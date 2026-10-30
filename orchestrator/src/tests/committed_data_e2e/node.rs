@@ -1,0 +1,361 @@
+//! Owned Madara processes for the committed-data acceptance test. Every database and port is
+//! isolated; dropping a handle kills and reaps only the child created by this test.
+use anyhow::{ensure, Context, Result};
+use serde_json::{json, Value};
+use std::{
+    net::TcpListener,
+    path::PathBuf,
+    process::{Child, Command, Stdio},
+    time::Duration,
+};
+
+pub(super) struct Node {
+    child: Child,
+    args: Vec<String>,
+    binary: PathBuf,
+    pub rpc: String,
+    pub admin: String,
+    pub private: String,
+    pub feeder: String,
+    pub directory: tempfile::TempDir,
+}
+
+pub(super) async fn rpc(url: &str, method: &str, params: Value) -> Result<Value> {
+    let response: Value = reqwest::Client::new()
+        .post(url)
+        .timeout(Duration::from_secs(120))
+        .json(&json!({"jsonrpc":"2.0","id":1,"method":method,"params":params}))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    ensure!(response.get("error").is_none(), "{method}: {response}");
+    response.get("result").cloned().context("RPC result missing")
+}
+
+impl Node {
+    pub async fn start(upstream: Option<&Self>) -> Result<Self> {
+        Self::start_with_data(upstream, true).await
+    }
+
+    /// Feature-disabled reader exercises the unchanged block/bouncer protocol. This emulates
+    /// the legacy sync path; it is not evidence about an untested older executable.
+    pub async fn start_with_data(upstream: Option<&Self>, committed_data: bool) -> Result<Self> {
+        let directory = tempfile::tempdir()?;
+        let binary = PathBuf::from(
+            std::env::var("MADARA_ORCHESTRATOR_MADARA_BINARY_PATH")
+                .context("acceptance test requires the CI-built Madara binary")?,
+        );
+        // Hold all four reservations until spawn so the OS cannot reuse a port within this node.
+        let reservations = (0..4).map(|_| TcpListener::bind("127.0.0.1:0")).collect::<std::io::Result<Vec<_>>>()?;
+        let rpc_port = reservations[0].local_addr()?.port();
+        let admin_port = reservations[1].local_addr()?.port();
+        let private_port = reservations[2].local_addr()?.port();
+        let gateway_port = reservations[3].local_addr()?.port();
+        let mut args: Vec<String> = [
+            "--base-path",
+            directory.path().to_str().unwrap(),
+            "--l1-sync-disabled",
+            "--otel-export-metrics",
+            "false",
+            "--rpc-admin",
+            "--rpc-unsafe",
+            "--feeder-gateway-enable",
+            "--gateway-enable",
+            // SNOS needs the preceding block's Starknet state proof. The public default
+            // permits only latest-block proofs; this isolated prover fixture retains 128.
+            "--rpc-storage-proof-max-distance",
+            "128",
+            "--db-max-kept-snapshots",
+            "128",
+            "--db-snapshot-interval",
+            "1",
+            "--rpc-port",
+            &rpc_port.to_string(),
+            "--rpc-admin-port",
+            &admin_port.to_string(),
+            "--gateway-port",
+            &gateway_port.to_string(),
+            "--committed-data-memory-blocks",
+            "0",
+            "--committed-data-cache-mib",
+            "0",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+        if committed_data {
+            args.push("--use-committed-data".into());
+        }
+        match upstream {
+            Some(upstream) => args.extend([
+                "--full".into(),
+                "--preset".into(),
+                "devnet".into(),
+                "--gateway-url".into(),
+                upstream.feeder.trim_end_matches("/feeder_gateway/").into(),
+                "--madara-additional-data-sync".into(),
+            ]),
+            None => args.extend([
+                "--devnet".into(),
+                "--rpc-committed-data".into(),
+                "--rpc-committed-data-port".into(),
+                private_port.to_string(),
+                "--external-db-enabled".into(),
+                "--external-db-mongodb-uri".into(),
+                "mongodb://127.0.0.1:27017".into(),
+                "--external-db-database".into(),
+                format!("committed_e2e_{rpc_port}"),
+                "--chain-config-override".into(),
+                "block_time=600s,pending_block_update_time=100ms".into(),
+                "--l1-gas-price".into(),
+                "1000000000".into(),
+                "--blob-gas-price".into(),
+                "1".into(),
+                "--strk-per-eth".into(),
+                "1000".into(),
+            ]),
+        }
+        drop(reservations);
+        let child = Self::spawn(&binary, &args, directory.path())?;
+        let mut node = Self {
+            child,
+            args,
+            binary,
+            rpc: format!("http://127.0.0.1:{rpc_port}/rpc/v0_10_2/"),
+            admin: format!("http://127.0.0.1:{admin_port}/rpc/v0_1_0/"),
+            private: format!("http://127.0.0.1:{private_port}/rpc/v0_1_0/"),
+            feeder: format!("http://127.0.0.1:{gateway_port}/feeder_gateway/"),
+            directory,
+        };
+        node.ready().await?;
+        Ok(node)
+    }
+
+    fn spawn(binary: &PathBuf, args: &[String], directory: &std::path::Path) -> Result<Child> {
+        let log = std::fs::OpenOptions::new().create(true).append(true).open(directory.join("madara.log"))?;
+        Ok(Command::new(binary)
+            .args(args)
+            .env("RUST_LOG", "info")
+            .stdout(Stdio::from(log.try_clone()?))
+            .stderr(Stdio::from(log))
+            .spawn()?)
+    }
+
+    async fn ready(&mut self) -> Result<()> {
+        for _ in 0..120 {
+            ensure!(
+                self.child.try_wait()?.is_none(),
+                "Madara exited: {}",
+                std::fs::read_to_string(self.directory.path().join("madara.log"))?
+            );
+            if rpc(&self.rpc, "starknet_chainId", json!([])).await.is_ok() {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+        anyhow::bail!("Madara startup deadline exceeded")
+    }
+
+    pub async fn receipt(&self, hash: starknet_types_core::felt::Felt) -> Result<Value> {
+        for _ in 0..120 {
+            if let Ok(receipt) = rpc(&self.rpc, "starknet_getTransactionReceipt", json!([hash])).await {
+                if receipt.get("block_hash").is_some_and(|hash| !hash.is_null()) {
+                    return Ok(receipt);
+                }
+            }
+            rpc(&self.admin, "madara_closeBlock", json!([])).await?;
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+        anyhow::bail!("transaction confirmation deadline exceeded")
+    }
+
+    /// Fail immediately if sync terminates, preserving its saved log as the diagnostic source.
+    /// A deadline alone would hide a process failure behind minutes of connection retries.
+    pub async fn wait_for_block(&mut self, target: u64) -> Result<()> {
+        for _ in 0..180 {
+            let status = self.child.try_wait()?;
+            ensure!(status.is_none(), "Madara exited before block {target}: {status:?}; see saved node log");
+            if rpc(&self.rpc, "starknet_blockNumber", json!([]))
+                .await
+                .ok()
+                .and_then(|tip| tip.as_u64())
+                .is_some_and(|tip| tip >= target)
+            {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+        anyhow::bail!("full-node sync did not reach block {target}")
+    }
+
+    /// Block sync intentionally does not wait for the off-chain catalog. A root is advertised
+    /// only after its complete map has been authenticated and persisted; wait for that separate
+    /// readiness condition before testing traces, without retrying or masking trace failures.
+    pub async fn wait_for_datasets(&mut self, roots: &[starknet_types_core::felt::Felt]) -> Result<()> {
+        let client = reqwest::Client::builder().timeout(Duration::from_secs(30)).build()?;
+        for _ in 0..180 {
+            let status = self.child.try_wait()?;
+            ensure!(status.is_none(), "Madara exited during dataset replication: {status:?}; see saved node log");
+            let available: Vec<starknet_types_core::felt::Felt> = client
+                .get(format!("{}get_committed_data_roots", self.feeder))
+                .send()
+                .await?
+                .error_for_status()?
+                .json()
+                .await?;
+            if roots.iter().all(|root| available.contains(root)) {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+        anyhow::bail!("full-node dataset replication did not publish the acceptance roots")
+    }
+
+    /// Sample the child process, not the test runner (which also constructs reference trees and
+    /// executes SNOS). On Linux VmHWM is peak RSS since this child started; a restart resets it.
+    /// Disk bytes include every file currently in the isolated directory, including WAL/logs.
+    pub fn footprint(&self) -> Result<Value> {
+        fn directory_bytes(path: &std::path::Path) -> std::io::Result<u64> {
+            let mut bytes = 0;
+            for entry in std::fs::read_dir(path)? {
+                let entry = entry?;
+                let metadata = match entry.metadata() {
+                    Ok(metadata) => metadata,
+                    // Compaction may unlink an obsolete SST between read_dir and stat.
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                    Err(error) => return Err(error),
+                };
+                bytes += if metadata.is_dir() { directory_bytes(&entry.path())? } else { metadata.len() };
+            }
+            Ok(bytes)
+        }
+        let status = std::fs::read_to_string(format!("/proc/{}/status", self.child.id())).ok();
+        let kib = |name: &str| {
+            status.as_ref().and_then(|status| {
+                status.lines().find_map(|line| {
+                    let mut fields = line.split_whitespace();
+                    (fields.next()? == name).then(|| fields.next()?.parse::<u64>().ok()).flatten()
+                })
+            })
+        };
+        Ok(json!({"directory_bytes_including_wal_and_logs": directory_bytes(self.directory.path())?,
+            "rss_kib": kib("VmRSS:"), "peak_rss_kib": kib("VmHWM:")}))
+    }
+
+    /// Gracefully checkpoint first, then exercise abrupt death on the same durable chain.
+    /// Only signal the process owned by this fixture; never kill a node discovered by port/name.
+    pub async fn restart(&mut self, abrupt: bool) -> Result<()> {
+        self.stop(abrupt).await?;
+        self.child = Self::spawn(&self.binary, &self.args, self.directory.path())?;
+        self.ready().await
+    }
+
+    async fn stop(&mut self, abrupt: bool) -> Result<()> {
+        if abrupt {
+            self.child.kill()?;
+        } else {
+            ensure!(
+                Command::new("kill").args(["-TERM", &self.child.id().to_string()]).status()?.success(),
+                "Could not signal owned Madara process"
+            );
+        }
+        for _ in 0..120 {
+            if let Some(status) = self.child.try_wait()? {
+                ensure!(abrupt || status.success(), "Graceful Madara shutdown failed: {status}");
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+        anyhow::bail!("Madara shutdown deadline exceeded")
+    }
+
+    #[cfg(feature = "with_mongodb")]
+    pub fn backup_database(&self) -> &str {
+        let index = self.args.iter().position(|arg| arg == "--external-db-database").unwrap();
+        &self.args[index + 1]
+    }
+
+    /// Destroy this fixture's entire directory after killing its process, then recover only
+    /// canonical history from a dataset-free peer. Mongo is the sole source of restored maps.
+    /// Restore runs in sequencer mode because the operator CLI requires mempool persistence.
+    #[cfg(feature = "with_mongodb")]
+    pub async fn recover_total_loss(&mut self, chain_peer: &Self, block: u64, manifests: &[String]) -> Result<()> {
+        self.stop(true).await?;
+        if let Ok(output) = std::env::var("COMMITTED_DATA_E2E_OUTPUT") {
+            std::fs::copy(self.directory.path().join("madara.log"), PathBuf::from(output).join("before-db-loss.log"))?;
+        }
+        std::fs::remove_dir_all(self.directory.path())?;
+        std::fs::create_dir(self.directory.path())?;
+        ensure!(std::fs::read_dir(self.directory.path())?.next().is_none(), "loss fixture is not empty");
+
+        let source_flags = self.args.iter().position(|arg| arg == "--devnet").context("expected source fixture")?;
+        let mut sync_args = self.args[..source_flags].to_vec();
+        sync_args.retain(|arg| arg != "--use-committed-data");
+        sync_args.extend([
+            "--full".into(),
+            "--preset".into(),
+            "devnet".into(),
+            "--gateway-url".into(),
+            chain_peer.feeder.trim_end_matches("/feeder_gateway/").into(),
+            "--madara-additional-data-sync".into(),
+        ]);
+        self.child = Self::spawn(&self.binary, &sync_args, self.directory.path())?;
+        self.ready().await?;
+        self.wait_for_block(block).await?;
+        let catalog: Value =
+            reqwest::get(format!("{}get_committed_data_roots", self.feeder)).await?.error_for_status()?.json().await?;
+        ensure!(catalog == json!([]), "canonical resync unexpectedly supplied committed data");
+        self.stop(false).await?;
+
+        // Devnet's local private-key metadata is deliberately gone. Canonical account state
+        // has been synced, so resume as a normal sequencer instead of recreating genesis.
+        self.args[source_flags] = "--sequencer".into();
+        self.args.extend(["--preset".into(), "devnet".into()]);
+        let mut restore_args = self.args.clone();
+        // Commit the first valid map, then fail on a missing manifest. Startup must remain
+        // closed, and the subsequent complete retry must reuse the partial restore safely.
+        restore_args
+            .extend(["--restore-committed-data-records".into(), format!("{},{}", manifests[0], "0".repeat(64))]);
+        self.child = Self::spawn(&self.binary, &restore_args, self.directory.path())?;
+        let failure = self.ready().await.expect_err("missing Mongo manifest must abort startup");
+        ensure!(
+            format!("{failure:#}").contains("Missing complete recovery manifest"),
+            "wrong restore failure: {failure:#}"
+        );
+        ensure!(self.child.try_wait()?.is_some_and(|status| !status.success()), "restore did not exit with failure");
+        let mut restore_args = self.args.clone();
+        restore_args.extend(["--restore-committed-data-records".into(), manifests.join(",")]);
+        self.child = Self::spawn(&self.binary, &restore_args, self.directory.path())?;
+        self.ready().await
+    }
+
+    pub async fn restart_after_revert(&mut self, block_hash: Value) -> Result<()> {
+        // The admin call stops services, rolls back chain state, then exits. A connection close
+        // can race its JSON reply, so the postcondition is checked after waiting and reopening.
+        let _reply = rpc(&self.admin, "madara_revertToAndShutdown", json!([block_hash])).await;
+        for _ in 0..120 {
+            if self.child.try_wait()?.is_some() {
+                self.child = Self::spawn(&self.binary, &self.args, self.directory.path())?;
+                return self.ready().await;
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+        anyhow::bail!("revert did not stop Madara")
+    }
+}
+
+impl Drop for Node {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        if let Ok(output) = std::env::var("COMMITTED_DATA_E2E_OUTPUT") {
+            let _ = std::fs::create_dir_all(&output);
+            let _ = std::fs::copy(
+                self.directory.path().join("madara.log"),
+                PathBuf::from(output).join(format!("node-{}.log", self.child.id())),
+            );
+        }
+    }
+}

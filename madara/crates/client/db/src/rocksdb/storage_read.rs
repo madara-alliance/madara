@@ -2,8 +2,60 @@
 //! Individual method semantics are documented by [`MadaraStorageRead`].
 
 use super::*;
+use crate::storage::CommittedDataPageEntries;
 
 impl MadaraStorageRead for RocksDBStorage {
+    fn note_committed_data_use(&self, root: Felt, block: u64) -> Result<()> {
+        self.note_root_use(root, block)
+    }
+
+    fn list_committed_data_versions(
+        &self,
+        after: Option<mp_gateway::committed_data::CommittedDataVersion>,
+    ) -> Result<Vec<mp_gateway::committed_data::CommittedDataVersion>> {
+        self.read_committed_data_versions(after)
+    }
+
+    fn has_committed_data_version(&self, version: mp_gateway::committed_data::CommittedDataVersion) -> Result<bool> {
+        self.contains_committed_data_version(version)
+    }
+
+    fn get_committed_data_witness(
+        &self,
+        root: Felt,
+        index: Felt,
+    ) -> Result<Option<blockifier::execution::syscalls::committed_data::CommittedDataWitness>> {
+        self.read_committed_data_witness(root, index)
+    }
+
+    fn get_committed_data_witnesses(
+        &self,
+        root: Felt,
+        keys: &[Felt],
+    ) -> Result<Vec<blockifier::execution::syscalls::committed_data::CommittedDataWitness>> {
+        self.read_committed_data_witnesses(root, keys)
+    }
+
+    fn get_committed_data_batch(
+        &self,
+        root: Felt,
+        keys: &[Felt],
+    ) -> Result<blockifier::execution::syscalls::committed_data::CommittedDataBatchProof> {
+        self.read_committed_data_batch(root, keys)
+    }
+
+    fn list_committed_data_roots(&self, after: Option<Felt>) -> Result<Vec<Felt>> {
+        self.read_committed_data_roots(after)
+    }
+
+    fn get_committed_data_count(&self, root: Felt) -> Result<Option<u32>> {
+        self.read_committed_data_count(root)
+    }
+
+    fn get_committed_data_page(&self, root: Felt, start: u32) -> Result<Option<CommittedDataPageEntries>> {
+        self.read_committed_data_page(root, start)
+    }
+
     // Blocks
 
     fn find_block_hash(&self, block_hash: &Felt) -> Result<Option<u64>> {
@@ -187,6 +239,25 @@ impl MadaraStorageRead for RocksDBStorage {
         limit: usize,
     ) -> impl Iterator<Item = Result<external_outbox::ExternalOutboxEntry>> + '_ {
         self.inner.iter_external_outbox(limit).map(|res| res.context("Getting external outbox transactions"))
+    }
+
+    fn recovery_pending_bytes(&self) -> Result<u64> {
+        self.inner.pending_recovery_bytes()
+    }
+    fn find_recovery_record(&self, key: &[u8]) -> Result<Option<String>> {
+        self.inner.find_recovery_record(key)
+    }
+    fn get_recovery_record(&self, id: &str) -> Result<Option<crate::committed_data_recovery::RecoveryRecord>> {
+        self.inner.get_recovery_record(id)
+    }
+    fn get_recovery_manifest(&self, id: &str) -> Result<Option<crate::committed_data_recovery::RecoveryManifest>> {
+        self.inner.get_recovery_manifest(id)
+    }
+    fn pending_recovery_records(&self, limit: usize) -> Result<Vec<String>> {
+        self.inner.pending_recovery_records(limit)
+    }
+    fn recovery_dependencies(&self, hash: Felt) -> Result<Vec<String>> {
+        self.inner.recovery_dependencies(hash)
     }
 
     fn get_external_outbox_size_estimate(&self) -> Result<u64> {

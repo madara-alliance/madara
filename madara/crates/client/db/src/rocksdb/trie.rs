@@ -708,6 +708,111 @@ mod tests {
     use super::*;
     use crate::rocksdb::RocksDBConfig;
 
+    /// Restart discards in-memory snapshots. Historical reads must undo the durable head's
+    /// logs newest first, including deletion/reinsertion, without changing the live trie.
+    #[test]
+    fn historical_storage_proof_rewinds_head_after_reopen() {
+        use bitvec::{order::Msb0, view::BitView};
+        use starknet_types_core::felt::Felt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let config = RocksDBConfig { max_saved_trie_logs: None, ..Default::default() };
+        let identifier = Felt::ONE.to_bytes_be();
+        let key_bytes = Felt::TWO.to_bytes_be();
+        let key = &key_bytes.view_bits::<Msb0>()[5..];
+        let values = [Some(Felt::ONE), Some(Felt::TWO), None, Some(Felt::THREE)];
+        let mut expected = Vec::new();
+        {
+            let storage = RocksDBStorage::open(directory.path(), config.clone()).unwrap();
+            let mut trie = storage.contract_storage_trie();
+            for (revision, value) in values.iter().enumerate() {
+                match value {
+                    Some(value) => trie.insert(&identifier, key, value).unwrap(),
+                    None => trie.remove(&identifier, key).unwrap(),
+                }
+                trie.commit(BasicId::new(revision as u64)).unwrap();
+                expected
+                    .push((trie.root_hash(&identifier).unwrap(), trie.get_multi_proof(&identifier, [key]).unwrap()));
+            }
+            storage.inner.db.flush().unwrap();
+        }
+        let storage = RocksDBStorage::open(directory.path(), config).unwrap();
+        storage.snapshots.set_new_head(3);
+        let trie = storage.contract_storage_trie();
+        for (revision, (root, proof)) in expected.into_iter().enumerate() {
+            let mut historical =
+                trie.get_transactional_state(BasicId::new(revision as u64), trie.get_config()).unwrap().unwrap();
+            assert_eq!(historical.root_hash(&identifier).unwrap(), root, "revision {revision}");
+            assert_eq!(historical.get(&identifier, key).unwrap(), values[revision]);
+            assert_eq!(historical.get_multi_proof(&identifier, [key]).unwrap().0, proof.0);
+        }
+        assert_eq!(trie.get(&identifier, key).unwrap(), Some(Felt::THREE));
+    }
+
+    /// Delayed confirmed-head callbacks must not relabel the last trie in a sync batch.
+    #[rstest::rstest]
+    #[case::every_block(1, 10)]
+    #[case::sparse_snapshots(4, 10)]
+    #[case::head_only(4, 0)]
+    fn historical_trie_snapshots_match_each_block_of_a_sync_batch(
+        #[case] interval: u64,
+        #[case] retained_snapshots: usize,
+    ) {
+        use crate::MadaraStorageWrite;
+        use mp_chain_config::StarknetVersion;
+        use mp_state_update::{DeclaredClassItem, StateDiff};
+        use starknet_types_core::felt::Felt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let storage = RocksDBStorage::open(
+            directory.path(),
+            RocksDBConfig {
+                snapshot_interval: interval,
+                max_kept_snapshots: Some(retained_snapshots),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let diffs: Vec<_> = (0..=5u64)
+            .map(|block| StateDiff {
+                declared_classes: vec![DeclaredClassItem {
+                    class_hash: Felt::from(block + 1),
+                    compiled_class_hash: Felt::from(block + 100),
+                }],
+                ..Default::default()
+            })
+            .collect();
+        let reference_dir = tempfile::tempdir().unwrap();
+        let reference = RocksDBStorage::open(reference_dir.path(), RocksDBConfig::default()).unwrap();
+        let mut roots = Vec::new();
+        for (block, diff) in diffs.iter().enumerate() {
+            reference.apply_to_global_trie(block as u64, [diff], StarknetVersion::V0_14_2).unwrap();
+            roots.push(reference.class_trie().root_hash(super::super::global_trie::bonsai_identifier::CLASS).unwrap());
+        }
+        storage.apply_to_global_trie(0, &diffs, StarknetVersion::V0_14_2).unwrap();
+        // The next trie write can race delayed confirmed-head notifications, including
+        // one for the same head. Refreshing that snapshot would relabel newer state.
+        use bitvec::{order::Msb0, view::BitView};
+        let key = Felt::from(7u64).to_bytes_be();
+        let mut next = storage.class_trie();
+        next.insert(super::super::global_trie::bonsai_identifier::CLASS, &key.view_bits::<Msb0>()[5..], &Felt::MAX)
+            .unwrap();
+        next.commit(BasicId::new(6)).unwrap();
+        // Sync computes the whole trie batch before publishing its confirmed blocks.
+        for block in 0..=5 {
+            storage.on_new_confirmed_head(block).unwrap();
+        }
+        let trie = storage.class_trie();
+        for (block, expected) in roots.iter().enumerate() {
+            let view = trie.get_transactional_state(BasicId::new(block as u64), trie.get_config()).unwrap().unwrap();
+            assert_eq!(
+                view.root_hash(super::super::global_trie::bonsai_identifier::CLASS).unwrap(),
+                *expected,
+                "block {block}, snapshot interval {interval}"
+            );
+        }
+    }
+
     #[test]
     fn trie_log_revision_valid_prefix_returns_revision() {
         let revision = 42u64.to_be_bytes();

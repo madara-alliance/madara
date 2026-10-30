@@ -29,6 +29,8 @@ use std::{borrow::Cow, sync::Arc};
 const MAX_RETRIES: usize = 5;
 const BASE_DELAY_MS: u64 = 100;
 const BACKOFF_BASE: u32 = 2;
+const COMMITTED_DATA_ROOTS_RESPONSE_BYTES: usize = 8 * 1024;
+const COMMITTED_DATA_PAGE_RESPONSE_BYTES: usize = 1024 * 1024;
 
 impl GatewayProvider {
     /// Generic retry mechanism for GET requests
@@ -109,6 +111,50 @@ impl GatewayProvider {
             request.send_get::<ProviderStateUpdate>().await
         })
         .await
+    }
+
+    /// Enumerates one bounded page of available datasets, including imports not yet used by a block.
+    pub async fn get_committed_data_roots(&self, after: Option<Felt>) -> Result<Vec<Felt>, SequencerError> {
+        let mut request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+            .add_uri_segment("get_committed_data_roots")
+            .expect("static URI segment");
+        if let Some(after) = after {
+            request = request.add_param("after", format!("{after:#x}"));
+        }
+        request.send_get_bounded(COMMITTED_DATA_ROOTS_RESPONSE_BYTES).await
+    }
+
+    /// Fetches namespace/root labels with a bounded response, using a three-felt lexical cursor.
+    pub async fn get_committed_data_versions(
+        &self,
+        after: Option<mp_gateway::committed_data::CommittedDataVersion>,
+    ) -> Result<Vec<mp_gateway::committed_data::CommittedDataVersion>, SequencerError> {
+        let mut request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+            .add_uri_segment("get_committed_data_versions")
+            .expect("static URI segment");
+        if let Some(after) = after {
+            request = request
+                .add_param("application_id", format!("{:#x}", after.application_id))
+                .add_param("dataset_id", format!("{:#x}", after.dataset_id))
+                .add_param("root", format!("{:#x}", after.root));
+        }
+        // Three felts and field names per record, bounded to ROOTS_PER_PAGE records.
+        request.send_get_bounded(COMMITTED_DATA_ROOTS_RESPONSE_BYTES * 4).await
+    }
+
+    /// Fetches at most `VALUES_PER_PAGE` values. The receiving node must verify the completed root.
+    pub async fn get_committed_data_page(
+        &self,
+        root: Felt,
+        start: u32,
+    ) -> Result<Option<mp_gateway::committed_data::CommittedDataPage>, SequencerError> {
+        RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+            .add_uri_segment("get_committed_data")
+            .expect("static URI segment")
+            .add_param("root", format!("{root:#x}"))
+            .add_param("start", start.to_string())
+            .send_get_bounded(COMMITTED_DATA_PAGE_RESPONSE_BYTES)
+            .await
     }
 
     /// Fetches block bouncer weights from a remote Madara feeder gateway.

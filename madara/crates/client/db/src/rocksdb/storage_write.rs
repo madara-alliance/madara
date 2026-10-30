@@ -4,6 +4,54 @@
 use super::*;
 
 impl MadaraStorageWrite for RocksDBStorage {
+    fn maintain_committed_data_history(&self, cutoff: Option<u64>) -> Result<bool> {
+        self.maintain_history(cutoff)
+    }
+
+    fn configure_committed_data(
+        &self,
+        config: crate::committed_data_retention::CommittedDataRetentionConfig,
+    ) -> Result<()> {
+        *self.inner.committed_data.config.write().map_err(|_| anyhow::anyhow!("Committed-data config poisoned"))? =
+            config;
+        Ok(())
+    }
+
+    fn write_committed_data_version(
+        &self,
+        version: mp_gateway::committed_data::CommittedDataVersion,
+        initializing: bool,
+    ) -> Result<()> {
+        self.store_committed_data_version(version, initializing)
+    }
+
+    fn write_committed_data_dataset(
+        &self,
+        dataset: &blockifier::execution::syscalls::committed_data::CommittedDataSet,
+        imported_after_block: Option<u64>,
+    ) -> Result<()> {
+        self.store_committed_data_dataset(dataset, imported_after_block)
+    }
+
+    fn import_committed_data_values(
+        &self,
+        root: Felt,
+        entries: Vec<(Felt, Felt)>,
+        checkpoint: Option<u64>,
+    ) -> Result<()> {
+        self.store_persistent_patch(None, root, entries, checkpoint, true)
+    }
+
+    fn patch_committed_data_dataset(
+        &self,
+        base: Felt,
+        root: Felt,
+        entries: Vec<(Felt, Felt)>,
+        checkpoint: Option<u64>,
+    ) -> Result<()> {
+        self.store_persistent_patch(Some(base), root, entries, checkpoint, false)
+    }
+
     fn write_header(&self, header: mp_block::BlockHeaderWithSignatures) -> Result<()> {
         tracing::debug!("Writing header {}", header.header.block_number);
         let block_n = header.header.block_number;
@@ -263,6 +311,20 @@ impl MadaraStorageWrite for RocksDBStorage {
             .write_external_outbox(tx)
             .with_context(|| format!("Writing external outbox transaction for tx_hash={tx_hash:#x}"))
     }
+    fn store_recovery_record(&self, record: &crate::committed_data_recovery::RecoveryRecord) -> Result<String> {
+        self.inner.store_recovery_record(record)
+    }
+    fn restore_recovery_manifest(&self, manifest: &crate::committed_data_recovery::RecoveryManifest) -> Result<String> {
+        self.inner.restore_recovery_manifest(manifest)
+    }
+
+    fn mark_recovery_exported(&self, id: &str) -> Result<()> {
+        self.inner.mark_recovery_exported(id)
+    }
+    fn write_recovery_admission(&self, tx: &ValidatedTransaction, dependencies: &[String], export: bool) -> Result<()> {
+        self.inner.write_recovery_admission(tx, dependencies, export)
+    }
+
     fn delete_external_outbox(&self, id: external_outbox::ExternalOutboxId) -> Result<()> {
         tracing::debug!("Removing external outbox transaction arrived_at_ms={} uuid={:x?}", id.arrived_at_ms, id.uuid);
         self.inner
