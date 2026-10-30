@@ -260,6 +260,9 @@ pub struct StateUpdateMetadata {
     /// Nonce used by the final state update transaction attempt.
     #[serde(default)]
     pub tx_nonce: Option<u64>,
+    /// Nonce reserved before an external state-update send; reused after an interrupted attempt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inflight_tx_nonce: Option<u64>,
     /// Attempt history for Ethereum blob state update transactions.
     #[serde(default)]
     pub tx_attempts: Vec<StateUpdateTxAttempt>,

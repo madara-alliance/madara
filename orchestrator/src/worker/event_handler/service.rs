@@ -5,6 +5,8 @@ use opentelemetry::KeyValue;
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::time::sleep;
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::core::client::database::{AggregatorBatchDbQuery, SnosBatchDbQuery};
@@ -13,7 +15,7 @@ use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::jobs::external_id::ExternalId;
 use crate::types::jobs::job_updates::JobItemUpdates;
-use crate::types::jobs::metadata::JobMetadata;
+use crate::types::jobs::metadata::{JobMetadata, JobSpecificMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::jobs::WorkerTriggerType;
@@ -34,9 +36,13 @@ use crate::worker::event_handler::triggers::JobTrigger;
 use crate::worker::service::JobService;
 use crate::worker::utils::alerts::verification_timeout_alert_message;
 use orchestrator_utils::layer::Layer;
-use tracing::{debug, error, info, warn, Span};
+use tracing::{debug, error, info, warn, Instrument, Span};
 
 pub struct JobHandlerService;
+
+const SHUTDOWN_RESTORE_MAX_ATTEMPTS: u8 = 3;
+const SHUTDOWN_RESTORE_RETRY_DELAY: Duration = Duration::from_millis(250);
+const SQS_MAX_MESSAGE_DELAY_SECONDS: u64 = 900;
 
 impl JobHandlerService {
     /// Creates the job in the DB in the created state and adds it to the process queue
@@ -140,6 +146,7 @@ impl JobHandlerService {
     /// * `VerificationFailed` -> `LockedForProcessing` -> `PendingVerification`
     /// * `PendingRetry` -> `LockedForProcessing` -> `PendingVerification`
     /// * `LockedForProcessing` -> `Failed` (on non-retryable SNOS processing error)
+    /// * `LockedForProcessing` -> original status and metadata (on orchestrator shutdown)
     /// * `LockedForProcessing` -> original status (on retryable SNOS processing error, or any
     ///   processing panic, or any non-SNOS processing failure; message is NACKed)
     ///
@@ -154,7 +161,7 @@ impl JobHandlerService {
     /// * Adds processing completion timestamp to metadata
     /// * Automatically adds the job to verification queue upon successful processing
     /// * For jobs stuck in LockedForProcessing, heals them if they're older than the configured
-    ///   timeout (stale), otherwise acks the message assuming it's a duplicate
+    ///   timeout (stale); otherwise replaces the duplicate delivery with one delayed message
     ///
     /// # Failure handling
     /// Retryable SNOS processing errors restore the job to its pre-processing status and return an
@@ -163,12 +170,25 @@ impl JobHandlerService {
     /// errors still fail fast by moving the job to `Failed` and ACKing the message so alerting can
     /// stop the sequencer quickly. Failed jobs can be retried via the `retry_job` endpoint.
     ///
-    /// # Important
-    /// The queue visibility timeout MUST be greater than the job healing timeout configured via
-    /// environment variables (e.g., MADARA_ORCHESTRATOR_SNOS_JOB_TIMEOUT_SECONDS). If visibility
-    /// timeout is shorter, messages may become visible again before the healing timeout expires,
-    /// leading to duplicate processing attempts that get incorrectly treated as stale jobs.
     pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
+        Self::process_job_with_shutdown(id, config, CancellationToken::new()).await
+    }
+
+    /// Processes a job while observing the worker's shutdown token.
+    ///
+    /// The handler future is polled on Tokio's blocking pool so synchronous work cannot occupy
+    /// every async worker and prevent the shutdown coordinator from running. SNOS PIE generation
+    /// and local aggregation yield to isolated blocking tasks. On cancellation, the handler
+    /// future is dropped; the delivery owner then publishes a retry and restores the Mongo lock.
+    /// If a different synchronous handler has not yielded yet, the lock remains held until it
+    /// does or the shutdown deadline expires. A redelivery before the stale timeout is replaced
+    /// with a delayed message. If the deadline expires first, SQS visibility and stale-job
+    /// recovery remain the fallback.
+    pub(crate) async fn process_job_with_shutdown(
+        id: Uuid,
+        config: Arc<Config>,
+        shutdown_token: CancellationToken,
+    ) -> Result<(), JobError> {
         let start = Instant::now();
         let mut job = JobService::get_job(id, config.clone()).await?;
         let internal_id = job.internal_id;
@@ -195,12 +215,8 @@ impl JobHandlerService {
             JobStatus::LockedForProcessing => {
                 // Self-healing for orphaned jobs: Check if the job is stale (older than timeout).
                 // If stale, we assume the previous processor crashed/timed out and heal the job
-                // to process it normally. If not stale, we assume this is a duplicate message
-                // and ack it safely.
-                //
-                // WARNING: For this to work correctly, the queue visibility timeout MUST be
-                // greater than the healing timeout. Otherwise, messages may become visible
-                // before the healing timeout expires, causing false positive stale detection.
+                // to process it normally. The configured timeout is the maximum time an attempt
+                // may hold this lock before a redelivery can reclaim it.
                 let timeout_seconds = config.service_config().get_job_timeout(&job.job_type);
                 let cutoff_time = Utc::now() - chrono::Duration::seconds(timeout_seconds as i64);
 
@@ -220,7 +236,6 @@ impl JobHandlerService {
                         "Found stale job in LockedForProcessing state, healing and reprocessing"
                     );
 
-                    // Record orphaned job metric
                     MetricsRecorder::record_orphaned_job(&job);
                     let healing_workload = MetricsRecorder::start_healing_workload(&job.job_type);
 
@@ -253,13 +268,14 @@ impl JobHandlerService {
                     );
                     // Continue with normal processing below
                 } else {
-                    // Job is not stale - this is likely a duplicate message, ack it safely
+                    // Job is not stale - another attempt still owns it. Replace this delivery
+                    // with one delayed message so repeated receives cannot exhaust the DLQ budget.
                     debug!(
                         job_id = ?id,
                         status = ?job.status,
-                        "Job is {} but not stale, assuming duplicate message. ACKing safely.", JobStatus::LockedForProcessing
+                        "Job is {} within its processing timeout; deferring duplicate delivery.", JobStatus::LockedForProcessing
                     );
-                    return Ok(());
+                    return Self::defer_active_processing_job(&job, timeout_seconds, config).await;
                 }
             }
             JobStatus::PendingVerification | JobStatus::Completed => {
@@ -288,9 +304,15 @@ impl JobHandlerService {
             return Ok(());
         }
 
+        if shutdown_token.is_cancelled() {
+            warn!(job_id = ?id, job_type = ?job.job_type, "Shutdown requested before processing lock was acquired");
+            return Err(JobError::ShutdownInterrupted { id });
+        }
+
         // Save original status so retryable processing failures can restore the job to the
         // pre-processing state and let SQS own the retry lifecycle.
         let original_status = job.status.clone();
+        let original_metadata = job.metadata.clone();
 
         // This updates the version of the job.
         // This ensures that if another thread was about to process the same job,
@@ -331,8 +353,70 @@ impl JobHandlerService {
         // Increment process attempt counter
         job.metadata.common.process_attempt_no += 1;
 
-        let external_id = match AssertUnwindSafe(job_handler.process_job(config.clone(), &mut job)).catch_unwind().await
-        {
+        enum ProcessingOutcome<T> {
+            Completed(T),
+            Shutdown,
+        }
+
+        // Poll the handler on the blocking pool. Some handlers perform synchronous CPU work before
+        // their next await; keeping that work off the async worker pool ensures the shutdown
+        // coordinator itself always has capacity to run.
+        let processing_handler = Arc::clone(&job_handler);
+        let processing_config = config.clone();
+        let mut processing_job = job.clone();
+        let runtime = tokio::runtime::Handle::current();
+        let span = Span::current();
+        let processing = tokio::task::spawn_blocking(move || {
+            runtime.block_on(
+                async move {
+                    let outcome = {
+                        let processing =
+                            AssertUnwindSafe(processing_handler.process_job(processing_config, &mut processing_job))
+                                .catch_unwind();
+                        tokio::pin!(processing);
+
+                        tokio::select! {
+                            biased;
+
+                            result = &mut processing => ProcessingOutcome::Completed(result),
+                            _ = shutdown_token.cancelled() => ProcessingOutcome::Shutdown,
+                        }
+                    };
+
+                    (outcome, processing_job)
+                }
+                .instrument(span),
+            )
+        });
+
+        let processing = processing.await;
+
+        let processing_result = match processing {
+            Ok((ProcessingOutcome::Completed(result), processed_job)) => {
+                job = processed_job;
+                result
+            }
+            Err(error) => Ok(Err(JobError::Other(OtherError::from(format!("Job handler task failed: {error}"))))),
+            Ok((ProcessingOutcome::Shutdown, processed_job)) => {
+                job = processed_job;
+                warn!(
+                    job_id = ?id,
+                    job_type = ?job.job_type,
+                    internal_id = %job.internal_id,
+                    status = ?original_status,
+                    "Shutdown stopped the processing handler; restoring job state for SQS retry"
+                );
+                workload.finish_cancelled();
+                return Err(JobError::ShutdownCleanupPending {
+                    id,
+                    job: Box::new(job),
+                    original_status,
+                    original_metadata: Box::new(original_metadata),
+                });
+            }
+        };
+
+        let external_id = match processing_result {
             Ok(Ok(external_id)) => {
                 Span::current().record("external_id", format!("{:?}", external_id).as_str());
                 // Add the time of processing to the metadata.
@@ -353,9 +437,9 @@ impl JobHandlerService {
                         "Processing failure detected, restoring job state for SQS retry"
                     );
                     workload.finish_error();
-                    return Err(
-                        Self::reset_job_for_sqs_retry(&mut job, config.clone(), original_status, reason, e).await
-                    );
+                    let error =
+                        Self::reset_job_for_sqs_retry(&mut job, config.clone(), original_status, reason, e).await;
+                    return Err(error);
                 }
 
                 error!(
@@ -372,7 +456,8 @@ impl JobHandlerService {
                     &job.job_type,
                 );
                 workload.finish_error();
-                return JobService::move_job_to_failed(&job, config.clone(), reason).await;
+                let result = JobService::move_job_to_failed(&job, config.clone(), reason).await;
+                return result;
             }
             Err(panic) => {
                 let panic_msg = panic
@@ -393,14 +478,9 @@ impl JobHandlerService {
                     "Job handler panicked during processing, restoring job state for SQS retry"
                 );
                 workload.finish_error();
-                return Err(Self::reset_job_for_sqs_retry(
-                    &mut job,
-                    config.clone(),
-                    original_status,
-                    reason,
-                    panic_error,
-                )
-                .await);
+                let error =
+                    Self::reset_job_for_sqs_retry(&mut job, config.clone(), original_status, reason, panic_error).await;
+                return Err(error);
             }
         };
 
@@ -424,12 +504,13 @@ impl JobHandlerService {
                 JobStatus::Failed,
                 &job.job_type,
             );
-            JobService::move_job_to_failed(
+            let result = JobService::move_job_to_failed(
                 &job,
                 config.clone(),
                 format!("Failed to queue processed job for verification after SQS retries: {}", error),
             )
-            .await?;
+            .await;
+            result?;
             workload.finish_error();
             return Ok(());
         }
@@ -482,6 +563,97 @@ impl JobHandlerService {
         workload.finish_success();
 
         Ok(())
+    }
+
+    async fn defer_active_processing_job(
+        job: &crate::types::jobs::job_item::JobItem,
+        timeout_seconds: u64,
+        config: Arc<Config>,
+    ) -> Result<(), JobError> {
+        // SQS supports at most 15 minutes of per-message delay. Returning success after this send
+        // ACKs the current delivery and gives the replacement a fresh receive budget. If the send
+        // fails, the error keeps the current delivery available for normal queue recovery.
+        let delay_seconds = timeout_seconds.clamp(1, SQS_MAX_MESSAGE_DELAY_SECONDS);
+        JobService::add_job_to_queue(
+            config,
+            job.id,
+            job.job_type.process_queue_name(),
+            Some(Duration::from_secs(delay_seconds)),
+        )
+        .await
+    }
+
+    pub(crate) async fn restore_job_after_shutdown(
+        job: &mut crate::types::jobs::job_item::JobItem,
+        config: Arc<Config>,
+        original_status: JobStatus,
+        original_metadata: JobMetadata,
+    ) -> JobError {
+        let mut locked_job = job.clone();
+        for attempt in 1..=SHUTDOWN_RESTORE_MAX_ATTEMPTS {
+            let mut restored_metadata = original_metadata.clone();
+            // A state-update intent can finish its Mongo write just as cancellation drops the
+            // handler. Preserve its nonce even after refreshing an outdated job version.
+            if let (JobSpecificMetadata::StateUpdate(restored), JobSpecificMetadata::StateUpdate(current)) =
+                (&mut restored_metadata.specific, &locked_job.metadata.specific)
+            {
+                restored.inflight_tx_nonce = current.inflight_tx_nonce;
+            }
+            job.metadata = restored_metadata.clone();
+            match config
+                .database()
+                .update_job(
+                    &locked_job,
+                    JobItemUpdates::new()
+                        .update_status(original_status.clone())
+                        .update_metadata(restored_metadata)
+                        .build(),
+                )
+                .await
+            {
+                Ok(restored_job) => {
+                    *job = restored_job;
+                    MetricsRecorder::record_job_state_transition(
+                        JobStatus::LockedForProcessing,
+                        original_status.clone(),
+                        &job.job_type,
+                    );
+                    MetricsRecorder::record_job_status(job, &original_status);
+                    return JobError::ShutdownInterrupted { id: job.id };
+                }
+                Err(error) if attempt < SHUTDOWN_RESTORE_MAX_ATTEMPTS => {
+                    warn!(
+                        job_id = ?job.id,
+                        attempt,
+                        max_attempts = SHUTDOWN_RESTORE_MAX_ATTEMPTS,
+                        error = ?error,
+                        "Failed to restore shutdown-interrupted job, retrying"
+                    );
+                    if let Ok(Some(latest)) = config.database().get_job_by_id(job.id).await {
+                        if latest.status != JobStatus::LockedForProcessing
+                            || latest.metadata.common.process_started_at
+                                != locked_job.metadata.common.process_started_at
+                        {
+                            *job = latest;
+                            return JobError::ShutdownInterrupted { id: job.id };
+                        }
+                        locked_job = latest;
+                    }
+                    sleep(SHUTDOWN_RESTORE_RETRY_DELAY).await;
+                }
+                Err(source) => {
+                    error!(
+                        job_id = ?job.id,
+                        attempts = SHUTDOWN_RESTORE_MAX_ATTEMPTS,
+                        error = ?source,
+                        "Failed to restore shutdown-interrupted job after retry publication; stale recovery remains available"
+                    );
+                    return JobError::ShutdownRestoreFailed { id: job.id, source };
+                }
+            }
+        }
+
+        unreachable!("shutdown restore loop always returns")
     }
 
     async fn reset_job_for_sqs_retry(
@@ -1021,5 +1193,100 @@ impl JobHandlerService {
             WorkerTriggerType::UpdateState => Box::new(UpdateStateJobTrigger),
             WorkerTriggerType::StorageCleanup => Box::new(StorageCleanupTrigger),
         }
+    }
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+    use super::*;
+    use crate::core::client::database::{DatabaseError, MockDatabaseClient};
+    use crate::tests::config::TestConfigBuilder;
+    use crate::tests::utils::build_job_item;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[tokio::test]
+    async fn failed_shutdown_restore_is_distinct_and_preserves_metadata() {
+        let original_job = build_job_item(JobType::SnosRun, JobStatus::Created, 1);
+        let original_metadata = original_job.metadata.clone();
+        let expected_metadata = original_metadata.clone();
+        let lock_started_at = Utc::now();
+        let mut fetched_job = original_job.clone();
+        fetched_job.status = JobStatus::LockedForProcessing;
+        fetched_job.metadata.common.process_started_at = Some(lock_started_at);
+
+        let mut database = MockDatabaseClient::new();
+        database.expect_get_job_by_id().times(2).returning(move |_| Ok(Some(fetched_job.clone())));
+        database
+            .expect_update_job()
+            .withf(move |_, updates| {
+                updates.status == Some(JobStatus::Created) && updates.metadata.as_ref() == Some(&expected_metadata)
+            })
+            .times(SHUTDOWN_RESTORE_MAX_ATTEMPTS as usize)
+            .returning(|_, _| Err(DatabaseError::UpdateFailed("simulated outage".to_string())));
+
+        let services = TestConfigBuilder::new().configure_database(database.into()).build().await;
+        let mut locked_job = original_job;
+        locked_job.status = JobStatus::LockedForProcessing;
+        locked_job.metadata.common.process_attempt_no = 1;
+        locked_job.metadata.common.process_retry_attempt_no = 1;
+        locked_job.metadata.common.process_started_at = Some(lock_started_at);
+
+        let error = JobHandlerService::restore_job_after_shutdown(
+            &mut locked_job,
+            services.config,
+            JobStatus::Created,
+            original_metadata.clone(),
+        )
+        .await;
+
+        assert!(matches!(error, JobError::ShutdownRestoreFailed { .. }));
+        assert_eq!(locked_job.metadata, original_metadata);
+    }
+
+    #[tokio::test]
+    async fn shutdown_restore_refreshes_version_and_preserves_a_late_transaction_intent() {
+        let original_job = build_job_item(JobType::StateTransition, JobStatus::Created, 1);
+        let mut locked_job = original_job.clone();
+        locked_job.status = JobStatus::LockedForProcessing;
+        locked_job.version = 1;
+
+        let mut latest_job = locked_job.clone();
+        latest_job.version = 2;
+        if let JobSpecificMetadata::StateUpdate(metadata) = &mut latest_job.metadata.specific {
+            metadata.inflight_tx_nonce = Some(42);
+        }
+
+        let mut database = MockDatabaseClient::new();
+        database.expect_get_job_by_id().times(1).returning(move |_| Ok(Some(latest_job.clone())));
+        let updates = Arc::new(AtomicUsize::new(0));
+        database.expect_update_job().times(2).returning(move |current, update| {
+            if updates.fetch_add(1, Ordering::SeqCst) == 0 {
+                return Err(DatabaseError::UpdateFailed("stale version".to_string()));
+            }
+            assert_eq!(current.version, 2);
+            let metadata = update.metadata.expect("restored metadata");
+            assert!(matches!(
+                &metadata.specific,
+                JobSpecificMetadata::StateUpdate(state) if state.inflight_tx_nonce == Some(42)
+            ));
+            let mut restored = current.clone();
+            restored.status = update.status.expect("restored status");
+            restored.metadata = metadata;
+            Ok(restored)
+        });
+
+        let services = TestConfigBuilder::new().configure_database(database.into()).build().await;
+        let result = JobHandlerService::restore_job_after_shutdown(
+            &mut locked_job,
+            services.config,
+            JobStatus::Created,
+            original_job.metadata,
+        )
+        .await;
+        assert!(matches!(result, JobError::ShutdownInterrupted { .. }));
+        assert!(matches!(
+            &locked_job.metadata.specific,
+            JobSpecificMetadata::StateUpdate(state) if state.inflight_tx_nonce == Some(42)
+        ));
     }
 }

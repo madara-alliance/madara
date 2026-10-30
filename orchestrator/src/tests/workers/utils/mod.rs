@@ -138,6 +138,7 @@ fn create_metadata_for_job_type(job_type: JobType, block_number: u64) -> JobMeta
                 da_segment_path: None,
                 tx_hash: None,
                 tx_nonce: None,
+                inflight_tx_nonce: None,
                 tx_attempts: Vec::new(),
                 context: SettlementContext::Block(SettlementContextData { to_settle: block_number, last_failed: None }),
                 storage_artifacts_tagged_at: None,

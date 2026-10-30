@@ -12,6 +12,8 @@ use crate::error::job::snos::SnosError;
 use crate::error::other::OtherError;
 use crate::error::ConsumptionError;
 use crate::types::error::TypeError;
+use crate::types::jobs::job_item::JobItem;
+use crate::types::jobs::metadata::JobMetadata;
 use crate::types::jobs::types::{JobStatus, JobType};
 use da_error::DaError;
 use orchestrator_prover_client_interface::ProverClientError;
@@ -113,6 +115,27 @@ pub enum JobError {
     /// Indicates an error occurred while downcasting from an object
     #[error("Orchestrator Error: {0}")]
     AnyHowError(#[from] anyhow::Error),
+
+    /// Processing was interrupted before locking, or its database lock was restored.
+    #[error("Job {id} processing was interrupted by orchestrator shutdown")]
+    ShutdownInterrupted { id: Uuid },
+
+    /// The handler has stopped. The delivery owner must publish a retry before restoring Mongo.
+    #[error("Job {id} stopped for shutdown and awaits queue/database cleanup")]
+    ShutdownCleanupPending {
+        id: Uuid,
+        job: Box<JobItem>,
+        original_status: JobStatus,
+        original_metadata: Box<JobMetadata>,
+    },
+
+    /// Processing was interrupted, but the database lock could not be restored.
+    #[error("Failed to restore job {id} after orchestrator shutdown: {source}")]
+    ShutdownRestoreFailed {
+        id: Uuid,
+        #[source]
+        source: DatabaseError,
+    },
 }
 
 impl JobError {

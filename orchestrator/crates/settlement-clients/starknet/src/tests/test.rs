@@ -172,8 +172,9 @@ async fn test_settle(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) 
     let onchain_data_hash = [1; 32];
     let mut program_output = Vec::with_capacity(32);
     program_output.fill(onchain_data_hash);
+    let nonce = settlement_client.get_nonce().await.expect("Unable to get account nonce");
     let update_state_tx_hash = settlement_client
-        .update_state_calldata(program_output.clone(), program_output, onchain_data_hash, [1; 32])
+        .update_state_calldata(program_output.clone(), program_output, onchain_data_hash, [1; 32], nonce)
         .await
         .expect("Sending Update state");
 

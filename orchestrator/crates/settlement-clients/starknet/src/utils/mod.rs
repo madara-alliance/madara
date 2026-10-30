@@ -38,9 +38,23 @@ pub async fn invoke_contract(
     method: &str,
     calldata: Vec<Felt>,
 ) -> Result<InvokeTransactionResult> {
+    invoke_contract_with_nonce(signer, address, method, calldata, None).await
+}
+
+pub async fn invoke_contract_with_nonce(
+    signer: &LocalWalletSignerMiddleware,
+    address: Felt,
+    method: &str,
+    calldata: Vec<Felt>,
+    nonce: Option<u64>,
+) -> Result<InvokeTransactionResult> {
     let selector = get_selector_from_name(method).map_err(|e| eyre!("Invalid selector for {}: {}", method, e))?;
     let call = Call { to: address, selector, calldata };
-    signer.execute_v3(vec![call]).send().await.map_err(|account_error| match account_error {
+    let mut execution = signer.execute_v3(vec![call]);
+    if let Some(nonce) = nonce {
+        execution = execution.nonce(Felt::from(nonce));
+    }
+    execution.send().await.map_err(|account_error| match account_error {
         AccountError::Provider(provider_error) => match provider_error {
             ProviderError::StarknetError(stark_err) => match stark_err {
                 StarknetError::ValidationFailure(details) => {

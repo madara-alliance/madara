@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use tokio::signal;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
@@ -26,6 +26,17 @@ impl std::fmt::Display for ShutdownSignal {
             ShutdownSignal::Interrupt => write!(f, "SIGINT"),
             ShutdownSignal::Quit => write!(f, "SIGQUIT"),
             ShutdownSignal::Internal => write!(f, "INTERNAL"),
+        }
+    }
+}
+
+impl ShutdownSignal {
+    fn forced_exit_code(self) -> i32 {
+        match self {
+            Self::Terminate => 143,
+            Self::Interrupt => 130,
+            Self::Quit => 131,
+            Self::Internal => 1,
         }
     }
 }
@@ -157,18 +168,13 @@ impl SignalHandler {
             }
             Err(_) => {
                 error!("Graceful shutdown timed out after {} seconds", timeout_secs);
-
-                // Different behavior based on signal type
-                match signal {
-                    ShutdownSignal::Quit => {
-                        warn!("SIGQUIT received - forcing immediate exit");
-                        std::process::exit(130); // Unix convention for SIGQUIT
-                    }
-                    _ => {
-                        warn!("Shutdown timeout reached - this may leave some tasks incomplete");
-                        Err(anyhow!("Shutdown timeout exceeded"))
-                    }
-                }
+                let exit_code = signal.forced_exit_code();
+                warn!(
+                    signal = %signal,
+                    exit_code,
+                    "Shutdown deadline reached; forcing process exit so blocking tasks cannot extend the deadline"
+                );
+                std::process::exit(exit_code);
             }
         }
     }
@@ -183,5 +189,18 @@ impl SignalHandler {
 impl Default for SignalHandler {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ShutdownSignal;
+
+    #[test]
+    fn forced_exit_codes_follow_signal_conventions() {
+        assert_eq!(ShutdownSignal::Terminate.forced_exit_code(), 143);
+        assert_eq!(ShutdownSignal::Interrupt.forced_exit_code(), 130);
+        assert_eq!(ShutdownSignal::Quit.forced_exit_code(), 131);
+        assert_eq!(ShutdownSignal::Internal.forced_exit_code(), 1);
     }
 }

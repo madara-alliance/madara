@@ -68,3 +68,31 @@ pub enum EventSystemError {
     #[error("Mutex Poison Error: {0}")]
     MutexPoisonError(String),
 }
+
+impl EventSystemError {
+    /// Whether the queue delivery should be released immediately for retry.
+    ///
+    /// Shutdown cleanup owns delivery disposition itself; it must not be NACKed a second time.
+    pub(crate) fn should_nack_delivery(&self) -> bool {
+        !matches!(
+            self,
+            Self::JobError(JobError::ShutdownRestoreFailed { .. } | JobError::ShutdownCleanupPending { .. })
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shutdown_restore_failure_is_not_nacked_twice() {
+        let error = EventSystemError::JobError(JobError::ShutdownRestoreFailed {
+            id: Uuid::nil(),
+            source: DatabaseError::UpdateFailed("test".to_string()),
+        });
+
+        assert!(!error.should_nack_delivery());
+        assert!(EventSystemError::JobError(JobError::ShutdownInterrupted { id: Uuid::nil() }).should_nack_delivery());
+    }
+}

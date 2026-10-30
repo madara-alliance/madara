@@ -359,6 +359,7 @@ impl SettlementClient for EthereumSettlementClient {
         program_output: Vec<[u8; 32]>,
         onchain_data_hash: [u8; 32],
         onchain_data_size: [u8; 32],
+        _nonce: u64,
     ) -> Result<String> {
         info!(
             log_type = "starting",
@@ -687,6 +688,10 @@ impl SettlementClient for EthereumSettlementClient {
     async fn get_nonce(&self) -> Result<u64> {
         let nonce = self.provider.get_transaction_count(self.wallet_address).await?.to_string().parse()?;
         Ok(nonce)
+    }
+
+    async fn get_confirmed_nonce(&self) -> Result<u64> {
+        self.get_nonce().await
     }
 }
 

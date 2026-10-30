@@ -1,12 +1,15 @@
 use std::fs::read_to_string;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 use crate::core::client::database::{AggregatorBatchDbQuery, MockDatabaseClient};
 use crate::core::client::storage::MockStorageClient;
 use crate::core::config::StarknetVersion;
 use crate::error::job::state_update::StateUpdateError;
 use crate::error::job::JobError;
-use crate::tests::config::TestConfigBuilder;
+use crate::tests::common::test_utils::{acquire_test_lock, get_job_handler_context_safe};
+use crate::tests::config::{ConfigType, MockType, TestConfigBuilder};
 use crate::types::batch::{AggregatorBatch, AggregatorBatchWeights};
 use crate::types::constant::{
     get_batch_artifact_file, BLOB_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
@@ -18,15 +21,21 @@ use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::worker::event_handler::jobs::state_update::StateUpdateJobHandler;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
+use crate::worker::event_handler::service::JobHandlerService;
 use assert_matches::assert_matches;
+use async_trait::async_trait;
 use bytes::Bytes;
 use httpmock::prelude::*;
 use lazy_static::lazy_static;
 use mockall::predicate::eq;
-use orchestrator_settlement_client_interface::{MockSettlementClient, StateUpdateTxResult};
+use orchestrator_settlement_client_interface::{
+    MockSettlementClient, SettlementClient, SettlementVerificationStatus, StateUpdateTxResult,
+};
 use rstest::*;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
+use tokio::sync::oneshot;
+use tokio_util::sync::CancellationToken;
 use url::Url;
 
 lazy_static! {
@@ -34,6 +43,70 @@ lazy_static! {
 }
 
 pub const X_0_FILE_NAME: &str = "x_0.txt";
+
+struct PendingFirstStateUpdateClient {
+    broadcast_tx: Mutex<Option<oneshot::Sender<()>>>,
+    submissions: Arc<AtomicUsize>,
+    submitted_nonces: Arc<Mutex<Vec<u64>>>,
+    last_settled_block: u64,
+    nonce: u64,
+}
+
+#[async_trait]
+impl SettlementClient for PendingFirstStateUpdateClient {
+    async fn register_proof(&self, _proof: [u8; 32]) -> color_eyre::Result<String> {
+        unreachable!("register_proof is not used by this test")
+    }
+
+    async fn update_state_calldata(
+        &self,
+        _snos_output: Vec<[u8; 32]>,
+        _program_output: Vec<[u8; 32]>,
+        _onchain_data_hash: [u8; 32],
+        _onchain_data_size: [u8; 32],
+        _nonce: u64,
+    ) -> color_eyre::Result<String> {
+        unreachable!("update_state_calldata is not used by this test")
+    }
+
+    async fn update_state_with_blobs(
+        &self,
+        _program_output: Vec<[u8; 32]>,
+        _state_diff: Vec<Vec<u8>>,
+        nonce: u64,
+    ) -> color_eyre::Result<StateUpdateTxResult> {
+        self.submitted_nonces.lock().unwrap().push(nonce);
+
+        if self.submissions.fetch_add(1, Ordering::SeqCst) == 0 {
+            if let Some(broadcast_tx) = self.broadcast_tx.lock().unwrap().take() {
+                let _ = broadcast_tx.send(());
+            }
+            std::future::pending().await
+        } else {
+            Ok(StateUpdateTxResult { tx_hash: "0xreplacement".to_string(), attempts: Vec::new() })
+        }
+    }
+
+    async fn verify_tx_inclusion(&self, _tx_hash: &str) -> color_eyre::Result<SettlementVerificationStatus> {
+        unreachable!("verify_tx_inclusion is not used by this test")
+    }
+
+    async fn wait_for_tx_finality(&self, _tx_hash: &str) -> color_eyre::Result<Option<u64>> {
+        unreachable!("wait_for_tx_finality is not used by this test")
+    }
+
+    async fn get_last_settled_block(&self) -> color_eyre::Result<Option<u64>> {
+        Ok(Some(self.last_settled_block))
+    }
+
+    async fn get_nonce(&self) -> color_eyre::Result<u64> {
+        Ok(self.nonce + self.submissions.load(Ordering::SeqCst) as u64)
+    }
+
+    async fn get_confirmed_nonce(&self) -> color_eyre::Result<u64> {
+        Ok(self.nonce)
+    }
+}
 
 // ==================== Mock Tests (Unit tests) ===========================
 
@@ -50,6 +123,7 @@ async fn create_job_works() {
             da_segment_path: None,
             tx_hash: None,
             tx_nonce: None,
+            inflight_tx_nonce: None,
             tx_attempts: Vec::new(),
             context: SettlementContext::Block(SettlementContextData { to_settle: 1, last_failed: None }),
             storage_artifacts_tagged_at: None,
@@ -97,6 +171,7 @@ async fn process_job_invalid_input_gap_panics() {
             da_segment_path: None,
             tx_hash: None,
             tx_nonce: None,
+            inflight_tx_nonce: None,
             tx_attempts: Vec::new(),
             context: SettlementContext::Block(SettlementContextData {
                 to_settle: 6, // Gap between 4 and 6
@@ -197,6 +272,167 @@ async fn verify_job_rejects_when_contract_is_behind_previous_batch_boundary() {
     );
 }
 
+#[rstest]
+#[tokio::test]
+async fn settled_batch_reconciliation_skips_state_update_submission() {
+    let batch_index = 559;
+    let end_block = 902875;
+
+    let mut settlement_client = MockSettlementClient::new();
+    settlement_client.expect_get_last_settled_block().times(1).returning(move || Ok(Some(end_block)));
+
+    let mut database_client = MockDatabaseClient::new();
+    database_client.expect_get_aggregator_batches().times(1).returning(move |query: AggregatorBatchDbQuery| {
+        assert_eq!(query.indexes, Some(vec![batch_index]));
+        Ok(vec![test_aggregator_batch(batch_index, 902786, end_block)])
+    });
+
+    let services = TestConfigBuilder::new()
+        .configure_settlement_client(settlement_client.into())
+        .configure_database(database_client.into())
+        .build()
+        .await;
+
+    let should_submit =
+        StateUpdateJobHandler.should_send_state_update_txn_from_chain(&services.config, batch_index).await;
+
+    assert!(!should_submit.unwrap(), "an already-settled batch must not be submitted again");
+}
+
+#[rstest]
+#[case(42, 42)] // Pending attempt still owns this nonce.
+#[case(43, 43)] // A mined revert consumed the old nonce.
+#[tokio::test]
+async fn state_update_nonce_reuses_only_unconsumed_attempts(#[case] confirmed_nonce: u64, #[case] expected: u64) {
+    let mut settlement_client = MockSettlementClient::new();
+    settlement_client.expect_get_confirmed_nonce().times(1).returning(move || Ok(confirmed_nonce));
+    settlement_client
+        .expect_get_nonce()
+        .times(if confirmed_nonce > 42 { 1 } else { 0 })
+        .returning(move || Ok(confirmed_nonce));
+
+    let services = TestConfigBuilder::new().configure_settlement_client(settlement_client.into()).build().await;
+    let nonce = StateUpdateJobHandler::nonce_for_state_update(&services.config, Some(42)).await.unwrap();
+    assert_eq!(nonce, expected);
+}
+
+/// A shutdown after broadcast preserves the pinned nonce even if the provider's next nonce has
+/// advanced. The retry replaces the same transaction rather than creating a second transition.
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[allow(clippy::await_holding_lock)]
+async fn shutdown_after_state_update_broadcast_retries_with_the_same_nonce() {
+    let _test_lock = acquire_test_lock();
+    let batch_index = 559;
+    let nonce = 42;
+    let program_output_path = format!("batch/{batch_index}/{PROGRAM_OUTPUT_FILE_NAME}");
+    let da_segment_path = format!("batch/{batch_index}/da_segment.json");
+
+    let (broadcast_tx, broadcast_rx) = oneshot::channel();
+    let submissions = Arc::new(AtomicUsize::new(0));
+    let submitted_nonces = Arc::new(Mutex::new(Vec::new()));
+
+    let settlement_client = PendingFirstStateUpdateClient {
+        broadcast_tx: Mutex::new(Some(broadcast_tx)),
+        submissions: Arc::clone(&submissions),
+        submitted_nonces: Arc::clone(&submitted_nonces),
+        last_settled_block: 902785,
+        nonce,
+    };
+
+    let serialized_program_output = bincode::serialize(&vec![[0_u8; 32]]).unwrap();
+    let mut storage_client = MockStorageClient::new();
+    storage_client
+        .expect_get_data()
+        .with(eq(program_output_path.clone()))
+        .times(2)
+        .returning(move |_| Ok(Bytes::from(serialized_program_output.clone())));
+    storage_client
+        .expect_get_data()
+        .with(eq(da_segment_path.clone()))
+        .times(2)
+        .returning(|_| Ok(Bytes::from_static(br#"["0x1"]"#)));
+
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Actual)
+        .configure_storage_client(ConfigType::Mock(MockType::Storage(Box::new(storage_client))))
+        .configure_settlement_client(ConfigType::Mock(MockType::SettlementClient(Box::new(settlement_client))))
+        .build()
+        .await;
+    services
+        .config
+        .database()
+        .create_aggregator_batch(test_aggregator_batch(batch_index, 902786, 902875))
+        .await
+        .unwrap();
+
+    let metadata = JobMetadata {
+        common: CommonMetadata::default(),
+        specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
+            snos_output_path: None,
+            program_output_path: Some(program_output_path),
+            blob_data_path: None,
+            da_segment_path: Some(da_segment_path),
+            tx_hash: None,
+            tx_nonce: None,
+            inflight_tx_nonce: None,
+            tx_attempts: Vec::new(),
+            context: SettlementContext::Batch(SettlementContextData { to_settle: batch_index, last_failed: None }),
+            storage_artifacts_tagged_at: None,
+        }),
+    };
+    let job = StateUpdateJobHandler.create_job(batch_index, metadata).await.unwrap();
+    services.config.database().create_job(job.clone()).await.unwrap();
+
+    let handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(StateUpdateJobHandler));
+    let ctx = get_job_handler_context_safe();
+    ctx.expect().times(2).with(eq(JobType::StateTransition)).returning(move |_| Arc::clone(&handler));
+
+    let shutdown_token = CancellationToken::new();
+    let first_attempt = tokio::spawn(JobHandlerService::process_job_with_shutdown(
+        job.id,
+        services.config.clone(),
+        shutdown_token.clone(),
+    ));
+    broadcast_rx.await.expect("first state update transaction should be broadcast");
+    shutdown_token.cancel();
+
+    let (mut locked_job, original_status, original_metadata) = match first_attempt.await.unwrap() {
+        Err(JobError::ShutdownCleanupPending { id, job: locked_job, original_status, original_metadata }) => {
+            assert_eq!(id, job.id);
+            (*locked_job, original_status, *original_metadata)
+        }
+        other => panic!("expected shutdown cleanup, got {other:?}"),
+    };
+    let locked_metadata: StateUpdateMetadata = locked_job.metadata.specific.clone().try_into().unwrap();
+    assert_eq!(locked_metadata.inflight_tx_nonce, Some(nonce));
+    assert_matches!(
+        JobHandlerService::restore_job_after_shutdown(
+            &mut locked_job,
+            services.config.clone(),
+            original_status,
+            original_metadata,
+        )
+        .await,
+        JobError::ShutdownInterrupted { .. }
+    );
+    let restored_job = services.config.database().get_job_by_id(job.id).await.unwrap().unwrap();
+    assert_eq!(restored_job.status, JobStatus::Created);
+    let restored_metadata: StateUpdateMetadata = restored_job.metadata.specific.clone().try_into().unwrap();
+    assert_eq!(restored_metadata.inflight_tx_nonce, Some(nonce));
+
+    JobHandlerService::process_job(job.id, services.config.clone()).await.unwrap();
+
+    let retried_job = services.config.database().get_job_by_id(job.id).await.unwrap().unwrap();
+    let retried_metadata: StateUpdateMetadata = retried_job.metadata.specific.try_into().unwrap();
+    assert_eq!(retried_job.status, JobStatus::PendingVerification);
+    assert_eq!(retried_metadata.tx_hash.as_deref(), Some("0xreplacement"));
+    assert_eq!(retried_metadata.tx_nonce, Some(nonce));
+    assert_eq!(retried_metadata.inflight_tx_nonce, None);
+    assert_eq!(*submitted_nonces.lock().unwrap(), vec![nonce, nonce]);
+}
+
 // ==================== L2 DA Segment Tests ===========================
 
 /// Test L2 state update flow with encrypted DA segments from prover.
@@ -262,6 +498,12 @@ async fn test_process_job_l2_with_da_segment(
             StarknetVersion::V0_14_1,
         )])
     });
+    database_client.expect_update_job().times(1).returning(|job, updates| {
+        let mut updated = job.clone();
+        updated.metadata = updates.metadata.expect("nonce intent must be persisted before submission");
+        updated.version += 1;
+        Ok(updated)
+    });
 
     // Mock settlement client
     settlement_client.expect_get_last_settled_block().returning(move || Ok(Some(start_block - 1)));
@@ -309,6 +551,7 @@ async fn test_process_job_l2_with_da_segment(
             da_segment_path: Some(da_segment_key),
             tx_hash: None,
             tx_nonce: None,
+            inflight_tx_nonce: None,
             tx_attempts: Vec::new(),
             context: SettlementContext::Batch(SettlementContextData { to_settle: batch_index, last_failed: None }),
             storage_artifacts_tagged_at: None,
@@ -346,6 +589,7 @@ async fn state_transition_job_for_batch(batch_index: u64) -> crate::types::jobs:
             da_segment_path: Some(format!("batch/{batch_index}/da_blob.json")),
             tx_hash: Some("0x1234".to_string()),
             tx_nonce: None,
+            inflight_tx_nonce: None,
             tx_attempts: Vec::new(),
             context: SettlementContext::Batch(SettlementContextData { to_settle: batch_index, last_failed: None }),
             storage_artifacts_tagged_at: None,

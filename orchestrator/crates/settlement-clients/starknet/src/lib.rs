@@ -17,7 +17,7 @@ use lazy_static::lazy_static;
 use mockall::automock;
 use mockall::predicate::*;
 use orchestrator_settlement_client_interface::{SettlementClient, SettlementVerificationStatus, StateUpdateTxResult};
-use starknet::accounts::{ConnectedAccount, ExecutionEncoding, SingleOwnerAccount};
+use starknet::accounts::{Account, ConnectedAccount, ExecutionEncoding, SingleOwnerAccount};
 use starknet::core::types::{BlockId, BlockTag, Felt, FunctionCall, TransactionExecutionStatus};
 use starknet::core::utils::get_selector_from_name;
 use starknet::providers::jsonrpc::HttpTransport;
@@ -122,6 +122,7 @@ impl SettlementClient for StarknetSettlementClient {
         program_output: Vec<[u8; 32]>,
         _onchain_data_hash: [u8; 32],
         _onchain_data_size: [u8; 32],
+        nonce: u64,
     ) -> Result<String> {
         info!(
             log_type = "starting",
@@ -135,7 +136,7 @@ impl SettlementClient for StarknetSettlementClient {
         let core_contract: &CoreContract = self.starknet_core_contract_client.as_ref();
 
         let invoke_result = core_contract
-            .update_state(snos_output, layout_bridge_output)
+            .update_state(snos_output, layout_bridge_output, nonce)
             .await
             .map_err(|e| eyre!("Failed to update state with calldata: {:?}", e))?;
 
@@ -278,5 +279,10 @@ impl SettlementClient for StarknetSettlementClient {
         let nonce = self.account.get_nonce().await?;
         let converted_value = u64_from_felt(nonce).wrap_err("Failed to convert to u64")?;
         Ok(converted_value)
+    }
+
+    async fn get_confirmed_nonce(&self) -> Result<u64> {
+        let nonce = self.account.provider().get_nonce(BlockId::Tag(BlockTag::Latest), self.account.address()).await?;
+        u64_from_felt(nonce).wrap_err("Failed to convert confirmed nonce to u64")
     }
 }

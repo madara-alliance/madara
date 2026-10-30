@@ -68,6 +68,7 @@ pub trait SettlementClient: Send + Sync {
         program_output: Vec<[u8; 32]>,
         onchain_data_hash: [u8; 32],
         onchain_data_size: [u8; 32],
+        nonce: u64,
     ) -> Result<String>;
 
     /// Should be used to update state on contract and publish the blob on ethereum.
@@ -89,4 +90,7 @@ pub trait SettlementClient: Send + Sync {
 
     /// Should retrieve the latest transaction count to be used as nonce.
     async fn get_nonce(&self) -> Result<u64>;
+
+    /// Returns the nonce after transactions included on chain, excluding pending transactions.
+    async fn get_confirmed_nonce(&self) -> Result<u64>;
 }
