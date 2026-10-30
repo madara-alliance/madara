@@ -354,7 +354,13 @@ impl RunCmd {
 
 #[cfg(test)]
 mod tests {
-    use super::RunCmd;
+    use super::{
+        rpc::{
+            RPC_DEFAULT_EXECUTION_WAIT_TIMEOUT_SECS, RPC_DEFAULT_MAX_CONCURRENT_EXECUTIONS,
+            RPC_DEFAULT_MAX_PENDING_EXECUTIONS,
+        },
+        RunCmd,
+    };
     use clap::Parser;
     use figment::{
         providers::{Format, Json},
@@ -378,6 +384,39 @@ mod tests {
 
         assert_eq!(default.rpc_params.rpc_sync_threshold_blocks, 6);
         assert_eq!(configured.rpc_params.rpc_sync_threshold_blocks, 50);
+    }
+
+    #[test]
+    fn rpc_execution_limits_are_configurable() {
+        let default = RunCmd::parse_from(["madara", "--full", "--network", "sepolia"]);
+        let configured = RunCmd::parse_from([
+            "madara",
+            "--full",
+            "--network",
+            "sepolia",
+            "--rpc-max-concurrent-executions",
+            "8",
+            "--rpc-max-pending-executions",
+            "16",
+            "--rpc-execution-wait-timeout-secs",
+            "5",
+        ]);
+
+        assert_eq!(default.rpc_params.rpc_max_concurrent_executions, RPC_DEFAULT_MAX_CONCURRENT_EXECUTIONS);
+        assert_eq!(default.rpc_params.rpc_max_pending_executions, RPC_DEFAULT_MAX_PENDING_EXECUTIONS);
+        assert_eq!(default.rpc_params.rpc_execution_wait_timeout_secs, RPC_DEFAULT_EXECUTION_WAIT_TIMEOUT_SECS);
+        assert_eq!(configured.rpc_params.rpc_max_concurrent_executions, 8);
+        assert_eq!(configured.rpc_params.rpc_max_pending_executions, 16);
+        assert_eq!(configured.rpc_params.rpc_execution_wait_timeout_secs, 5);
+        assert!(RunCmd::try_parse_from([
+            "madara",
+            "--full",
+            "--network",
+            "sepolia",
+            "--rpc-max-concurrent-executions",
+            "0",
+        ])
+        .is_err());
     }
 
     #[test]
@@ -472,6 +511,22 @@ mod tests {
 
         assert!(!run_cmd.block_production_params.discard_preconfirmed_on_startup);
         assert!(!run_cmd.gateway_params.feeder_gateway_gzip_responses);
+        assert_eq!(run_cmd.rpc_params.rpc_max_concurrent_executions, RPC_DEFAULT_MAX_CONCURRENT_EXECUTIONS);
+        assert_eq!(run_cmd.rpc_params.rpc_max_pending_executions, RPC_DEFAULT_MAX_PENDING_EXECUTIONS);
+        assert_eq!(run_cmd.rpc_params.rpc_execution_wait_timeout_secs, RPC_DEFAULT_EXECUTION_WAIT_TIMEOUT_SECS);
+    }
+
+    #[test]
+    fn config_file_rejects_zero_rpc_max_concurrent_executions() {
+        let config_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../configs/args/config.json");
+        let mut config: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(config_path).expect("config fixture should be readable"))
+                .expect("config fixture should be valid JSON");
+        config["rpc_params"]["rpc_max_concurrent_executions"] = 0.into();
+
+        let result = Figment::new().merge(Json::string(&config.to_string())).extract::<RunCmd>();
+
+        assert!(result.is_err());
     }
 
     #[test]

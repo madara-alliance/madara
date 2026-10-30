@@ -8631,6 +8631,7 @@ dependencies = [
  "jemallocator",
  "jsonrpsee",
  "jsonrpsee-http-client",
+ "jsonrpsee-ws-client",
  "lazy_static",
  "librocksdb-sys",
  "m-proc-macros",
