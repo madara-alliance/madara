@@ -30,6 +30,8 @@ pub struct ServerConfig {
     pub rpc_version_default: mp_chain_config::RpcVersion,
     pub max_connections: u32,
     pub max_concurrent_executions: usize,
+    pub max_pending_executions: usize,
+    pub execution_wait_timeout_secs: u64,
     pub max_subs_per_conn: u32,
     pub ws_inactive_timeout_secs: u64,
     pub max_payload_in_mib: u32,
@@ -81,6 +83,8 @@ async fn serve(
         rpc_version_default,
         max_connections,
         max_concurrent_executions,
+        max_pending_executions,
+        execution_wait_timeout_secs,
         max_subs_per_conn,
         ws_inactive_timeout_secs,
         max_payload_in_mib,
@@ -120,25 +124,29 @@ async fn serve(
         metrics,
         service_builder: builder.to_service_builder(),
     };
-    let execution_semaphore = Arc::new(tokio::sync::Semaphore::new(max_concurrent_executions));
+    let execution_limiter = RpcExecutionLimiterLayer::new(
+        Arc::new(tokio::sync::Semaphore::new(max_concurrent_executions)),
+        Arc::new(tokio::sync::Semaphore::new(max_pending_executions)),
+        Duration::from_secs(execution_wait_timeout_secs),
+    );
     let ctx1 = ctx.clone();
 
     let make_service = hyper::service::make_service_fn(move |_| {
         let cfg = cfg.clone();
         let ctx1 = ctx1.clone();
         let starknet = Arc::clone(&starknet);
-        let execution_semaphore = Arc::clone(&execution_semaphore);
+        let execution_limiter = execution_limiter.clone();
 
         async move {
             let cfg = cfg.clone();
             let starknet = Arc::clone(&starknet);
-            let execution_semaphore = Arc::clone(&execution_semaphore);
+            let execution_limiter = execution_limiter.clone();
 
             Ok::<_, Infallible>(hyper::service::service_fn(move |req| {
                 let PerConnection { service_builder, metrics, stop_handle, methods } = cfg.clone();
                 let ctx1 = ctx1.clone();
                 let starknet = Arc::clone(&starknet);
-                let execution_semaphore = Arc::clone(&execution_semaphore);
+                let execution_limiter = execution_limiter.clone();
 
                 let is_websocket = jsonrpsee::server::ws::is_upgrade_request(&req);
                 let transport_label = if is_websocket { "ws" } else { "http" };
@@ -150,7 +158,7 @@ async fn serve(
                         RpcMiddlewareServiceVersion::new(service, path.clone(), rpc_version_default)
                     })
                     .layer(metrics_layer.clone())
-                    .layer(RpcExecutionLimiterLayer::new(execution_semaphore));
+                    .layer(execution_limiter);
 
                 let mut svc = service_builder.set_rpc_middleware(rpc_middleware).build(methods, stop_handle);
 
@@ -202,6 +210,9 @@ async fn serve(
         .with_context(|| format!("Creating hyper server at: {local_addr}"))?
         .serve(make_service);
 
+    tracing::info!(
+        "{name} execution admission: max_concurrent={max_concurrent_executions}, max_pending={max_pending_executions}, wait_timeout_secs={execution_wait_timeout_secs}"
+    );
     tracing::info!(
         "Running {name} HTTP server at http://{}/rpc/v{}/ (max_connections={}, max_request_size_mib={}, max_response_size_mib={}, allowed_origins={}, supported_versions={})",
         local_addr,
@@ -446,6 +457,8 @@ mod tests {
                 rpc_version_default: RpcVersion::RPC_VERSION_0_10_2,
                 max_connections: 4,
                 max_concurrent_executions: 1,
+                max_pending_executions: 1,
+                execution_wait_timeout_secs: 5,
                 max_subs_per_conn: 4,
                 ws_inactive_timeout_secs: 60,
                 max_payload_in_mib: 1,

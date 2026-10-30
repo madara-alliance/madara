@@ -4,19 +4,24 @@ use anyhow::Context;
 use futures::future::{BoxFuture, FutureExt};
 use jsonrpsee::server::middleware::rpc::RpcServiceT;
 use mp_chain_config::RpcVersion;
-use std::{sync::Arc, time::Instant};
-use tokio::sync::Semaphore;
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
+use tokio::sync::{Semaphore, TryAcquireError};
 
 pub use super::metrics::Metrics;
 
 #[derive(Debug, Clone)]
 pub struct RpcExecutionLimiterLayer {
     semaphore: Arc<Semaphore>,
+    pending_semaphore: Arc<Semaphore>,
+    wait_timeout: Duration,
 }
 
 impl RpcExecutionLimiterLayer {
-    pub fn new(semaphore: Arc<Semaphore>) -> Self {
-        Self { semaphore }
+    pub fn new(semaphore: Arc<Semaphore>, pending_semaphore: Arc<Semaphore>, wait_timeout: Duration) -> Self {
+        Self { semaphore, pending_semaphore, wait_timeout }
     }
 }
 
@@ -24,7 +29,12 @@ impl<S> tower::Layer<S> for RpcExecutionLimiterLayer {
     type Service = RpcExecutionLimiterService<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        RpcExecutionLimiterService { inner, semaphore: Arc::clone(&self.semaphore) }
+        RpcExecutionLimiterService {
+            inner,
+            semaphore: Arc::clone(&self.semaphore),
+            pending_semaphore: Arc::clone(&self.pending_semaphore),
+            wait_timeout: self.wait_timeout,
+        }
     }
 }
 
@@ -32,6 +42,19 @@ impl<S> tower::Layer<S> for RpcExecutionLimiterLayer {
 pub struct RpcExecutionLimiterService<S> {
     inner: S,
     semaphore: Arc<Semaphore>,
+    pending_semaphore: Arc<Semaphore>,
+    wait_timeout: Duration,
+}
+
+fn server_busy(req: &jsonrpsee::types::Request<'_>, reason: &'static str) -> jsonrpsee::MethodResponse {
+    jsonrpsee::MethodResponse::error(
+        req.id(),
+        jsonrpsee::types::ErrorObject::owned(
+            jsonrpsee::types::error::SERVER_IS_BUSY_CODE,
+            jsonrpsee::types::error::SERVER_IS_BUSY_MSG,
+            Some(reason),
+        ),
+    )
 }
 
 fn is_execution_method(method: &str) -> bool {
@@ -66,8 +89,27 @@ where
         }
 
         let semaphore = Arc::clone(&self.semaphore);
+        let pending_semaphore = Arc::clone(&self.pending_semaphore);
+        let wait_timeout = self.wait_timeout;
         async move {
-            let _permit = semaphore.acquire_owned().await.expect("RPC execution semaphore should remain open");
+            let _permit = match semaphore.clone().try_acquire_owned() {
+                Ok(permit) => permit,
+                Err(TryAcquireError::NoPermits) => {
+                    let pending_permit = match pending_semaphore.try_acquire_owned() {
+                        Ok(permit) => permit,
+                        Err(TryAcquireError::NoPermits) => return server_busy(&req, "execution queue is full"),
+                        Err(TryAcquireError::Closed) => unreachable!("RPC execution queue should remain open"),
+                    };
+                    let permit = match tokio::time::timeout(wait_timeout, semaphore.acquire_owned()).await {
+                        Ok(Ok(permit)) => permit,
+                        Ok(Err(_)) => unreachable!("RPC execution semaphore should remain open"),
+                        Err(_) => return server_busy(&req, "execution queue wait timed out"),
+                    };
+                    drop(pending_permit);
+                    permit
+                }
+                Err(TryAcquireError::Closed) => unreachable!("RPC execution semaphore should remain open"),
+            };
             inner.call(req).await
         }
         .boxed()
@@ -295,6 +337,8 @@ mod tests {
         let service = RpcExecutionLimiterService {
             inner: BlockingExecutionService { started: started_tx, release: Arc::clone(&release) },
             semaphore: Arc::new(Semaphore::new(1)),
+            pending_semaphore: Arc::new(Semaphore::new(1)),
+            wait_timeout: Duration::from_secs(1),
         };
 
         let first_execution = tokio::spawn(service.clone().call(request("starknet_call", 1)));
@@ -324,5 +368,42 @@ mod tests {
         release.add_permits(1);
         second_execution.await.expect("second task should complete");
         light_request.await.expect("light task should complete");
+    }
+
+    #[tokio::test]
+    async fn execution_limiter_bounds_and_times_out_the_queue() {
+        let (started_tx, mut started_rx) = mpsc::unbounded_channel();
+        let release = Arc::new(Semaphore::new(0));
+        let pending_semaphore = Arc::new(Semaphore::new(1));
+        let service = RpcExecutionLimiterService {
+            inner: BlockingExecutionService { started: started_tx, release: Arc::clone(&release) },
+            semaphore: Arc::new(Semaphore::new(1)),
+            pending_semaphore: Arc::clone(&pending_semaphore),
+            wait_timeout: Duration::from_millis(50),
+        };
+
+        let first_execution = tokio::spawn(service.clone().call(request("starknet_call", 1)));
+        assert_eq!(started_rx.recv().await.as_deref(), Some("starknet_call"));
+
+        let queued_execution = tokio::spawn(service.clone().call(request("starknet_estimateFee", 2)));
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while pending_semaphore.available_permits() != 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("second execution should claim the only queue slot");
+
+        let queue_full = service.call(request("starknet_simulateTransactions", 3)).await;
+        assert_eq!(queue_full.as_error_code(), Some(jsonrpsee::types::error::SERVER_IS_BUSY_CODE));
+        assert!(queue_full.as_result().contains("execution queue is full"));
+
+        let wait_timed_out = queued_execution.await.expect("queued task should complete with an error");
+        assert_eq!(wait_timed_out.as_error_code(), Some(jsonrpsee::types::error::SERVER_IS_BUSY_CODE));
+        assert!(wait_timed_out.as_result().contains("execution queue wait timed out"));
+        assert_eq!(pending_semaphore.available_permits(), 1);
+
+        release.add_permits(1);
+        first_execution.await.expect("first task should complete");
     }
 }

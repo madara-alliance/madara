@@ -354,7 +354,13 @@ impl RunCmd {
 
 #[cfg(test)]
 mod tests {
-    use super::{rpc::RPC_DEFAULT_MAX_CONCURRENT_EXECUTIONS, RunCmd};
+    use super::{
+        rpc::{
+            RPC_DEFAULT_EXECUTION_WAIT_TIMEOUT_SECS, RPC_DEFAULT_MAX_CONCURRENT_EXECUTIONS,
+            RPC_DEFAULT_MAX_PENDING_EXECUTIONS,
+        },
+        RunCmd,
+    };
     use clap::Parser;
     use figment::{
         providers::{Format, Json},
@@ -381,13 +387,27 @@ mod tests {
     }
 
     #[test]
-    fn rpc_max_concurrent_executions_is_positive_and_configurable() {
+    fn rpc_execution_limits_are_configurable() {
         let default = RunCmd::parse_from(["madara", "--full", "--network", "sepolia"]);
-        let configured =
-            RunCmd::parse_from(["madara", "--full", "--network", "sepolia", "--rpc-max-concurrent-executions", "8"]);
+        let configured = RunCmd::parse_from([
+            "madara",
+            "--full",
+            "--network",
+            "sepolia",
+            "--rpc-max-concurrent-executions",
+            "8",
+            "--rpc-max-pending-executions",
+            "16",
+            "--rpc-execution-wait-timeout-secs",
+            "5",
+        ]);
 
         assert_eq!(default.rpc_params.rpc_max_concurrent_executions, RPC_DEFAULT_MAX_CONCURRENT_EXECUTIONS);
+        assert_eq!(default.rpc_params.rpc_max_pending_executions, RPC_DEFAULT_MAX_PENDING_EXECUTIONS);
+        assert_eq!(default.rpc_params.rpc_execution_wait_timeout_secs, RPC_DEFAULT_EXECUTION_WAIT_TIMEOUT_SECS);
         assert_eq!(configured.rpc_params.rpc_max_concurrent_executions, 8);
+        assert_eq!(configured.rpc_params.rpc_max_pending_executions, 16);
+        assert_eq!(configured.rpc_params.rpc_execution_wait_timeout_secs, 5);
         assert!(RunCmd::try_parse_from([
             "madara",
             "--full",
@@ -492,6 +512,8 @@ mod tests {
         assert!(!run_cmd.block_production_params.discard_preconfirmed_on_startup);
         assert!(!run_cmd.gateway_params.feeder_gateway_gzip_responses);
         assert_eq!(run_cmd.rpc_params.rpc_max_concurrent_executions, RPC_DEFAULT_MAX_CONCURRENT_EXECUTIONS);
+        assert_eq!(run_cmd.rpc_params.rpc_max_pending_executions, RPC_DEFAULT_MAX_PENDING_EXECUTIONS);
+        assert_eq!(run_cmd.rpc_params.rpc_execution_wait_timeout_secs, RPC_DEFAULT_EXECUTION_WAIT_TIMEOUT_SECS);
     }
 
     #[test]
