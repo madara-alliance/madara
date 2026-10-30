@@ -143,6 +143,7 @@ impl JobHandlerTrait for SnosJobHandler {
 
         let snos_timing = snos_output.timing;
         let cairo_pie = snos_output.output.cairo_pie;
+        MetricsRecorder::record_snos_run_metrics(cairo_pie.execution_resources.n_steps, &snos_timing);
 
         // TODO: currently we are getting the Vec<Felt> but ideally we should get a struct, fix it once it available upstream
         //       maybe we can add our own struct meanwhile in the snos code? something to think about!!!

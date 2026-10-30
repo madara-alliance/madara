@@ -1,5 +1,6 @@
 use chrono::Utc;
 use dashmap::{mapref::entry::Entry, DashMap};
+use generate_pie::types::pie::PieGenerationTiming;
 use once_cell::sync::Lazy;
 use opentelemetry::metrics::{Meter, ObservableGauge};
 use opentelemetry::KeyValue;
@@ -465,6 +466,28 @@ impl MetricsRecorder {
     pub fn record_snos_job_processing_time(duration_seconds: f64) {
         let attributes = [KeyValue::new("operation_job_type", format!("{:?}", JobType::SnosRun))];
         ORCHESTRATOR_METRICS.snos_job_processing_time.record(duration_seconds, &attributes);
+    }
+
+    pub fn record_snos_run_metrics(n_steps: usize, timing: &PieGenerationTiming) {
+        let job_type = KeyValue::new("operation_job_type", format!("{:?}", JobType::SnosRun));
+        let milliseconds_to_seconds = |milliseconds| milliseconds as f64 / 1_000.0;
+
+        ORCHESTRATOR_METRICS
+            .snos_total_processing_time
+            .record(milliseconds_to_seconds(timing.total_processing_time_ms), std::slice::from_ref(&job_type));
+        ORCHESTRATOR_METRICS
+            .snos_rpc_wait_time
+            .record(milliseconds_to_seconds(timing.rpc_wait_time_ms), std::slice::from_ref(&job_type));
+        ORCHESTRATOR_METRICS
+            .snos_execution_time
+            .record(milliseconds_to_seconds(timing.execution_time_ms), std::slice::from_ref(&job_type));
+        ORCHESTRATOR_METRICS.snos_cairo_steps.record(n_steps as f64, std::slice::from_ref(&job_type));
+
+        for (rpc_method, calls) in &timing.rpc_calls_by_method {
+            ORCHESTRATOR_METRICS
+                .snos_rpc_calls_per_job
+                .record(*calls as f64, &[job_type.clone(), KeyValue::new("rpc_method", rpc_method.clone())]);
+        }
     }
 
     pub fn record_snos_batch_blocks(num_blocks: u64, starknet_version: StarknetVersion) {

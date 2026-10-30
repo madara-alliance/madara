@@ -443,6 +443,9 @@ pub(super) fn execute_reorg(storage: &RocksDBStorage, new_tip_block_hash: &Felt)
         context.current_tip_info.block_hash
     );
 
+    // Any staged handle was built against the pre-reorg state. Invalidate it
+    // before mutating the durable tries so stale work cannot be committed.
+    storage.reset_cached_contract_storage_trie();
     storage.revert_tries(&context)?;
     storage.verify_reorg_target_root(&context)?;
     storage.commit_reorg(&context, &l1_plan)?;

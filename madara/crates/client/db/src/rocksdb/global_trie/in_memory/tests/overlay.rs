@@ -35,6 +35,41 @@ fn historyless_in_memory_writes_skip_previous_values() {
 }
 
 #[test]
+fn in_memory_bonsai_multi_get_merges_snapshot_and_overlay_in_order() {
+    let backend = setup_snapshot_db();
+    write_snapshot_value(&backend.db, BONSAI_CONTRACT_FLAT_COLUMN, b"flat", b"flat-snapshot");
+    write_snapshot_value(&backend.db, BONSAI_CONTRACT_TRIE_COLUMN, b"trie", b"trie-snapshot");
+    write_snapshot_value(&backend.db, BONSAI_CONTRACT_LOG_COLUMN, b"log", b"log-snapshot");
+    let snapshot = fresh_snapshot(&backend.db);
+    let mut db = InMemoryBonsaiDb::test_with_mapping(snapshot, InMemoryColumnMapping::contract());
+
+    db.insert_untracked(&DatabaseKey::Flat(b"flat"), b"flat-overlay", None).unwrap();
+    db.remove_untracked(&DatabaseKey::Trie(b"trie"), None).unwrap();
+    db.insert_untracked(&DatabaseKey::TrieLog(b"overlay-log"), b"log-overlay", None).unwrap();
+
+    let values = db
+        .get_multi(&[
+            DatabaseKey::Trie(b"trie"),
+            DatabaseKey::Flat(b"flat"),
+            DatabaseKey::TrieLog(b"log"),
+            DatabaseKey::TrieLog(b"overlay-log"),
+            DatabaseKey::Flat(b"missing"),
+        ])
+        .unwrap();
+
+    assert_eq!(
+        values,
+        vec![
+            None,
+            Some(ByteVec::from(&b"flat-overlay"[..])),
+            Some(ByteVec::from(&b"log-snapshot"[..])),
+            Some(ByteVec::from(&b"log-overlay"[..])),
+            None,
+        ]
+    );
+}
+
+#[test]
 fn in_memory_bonsai_tombstone_hides_snapshot_value() {
     let backend = setup_snapshot_db();
     let key = b"tombstone-key";

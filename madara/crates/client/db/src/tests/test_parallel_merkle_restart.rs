@@ -635,3 +635,173 @@ fn same_tip_revert_discards_persisted_runahead_across_restart() {
     assert_eq!(reopened.latest_confirmed_block_n(), Some(0));
     assert!(!reopened.has_preconfirmed_block());
 }
+
+fn same_contract_storage_diff(entries: &[(u64, u64)], deploy: bool) -> StateDiff {
+    let address = Felt::from(777_u64);
+    StateDiff {
+        storage_diffs: vec![ContractStorageDiffItem {
+            address,
+            storage_entries: entries
+                .iter()
+                .map(|&(key, value)| StorageEntry { key: Felt::from(key), value: Felt::from(value) })
+                .collect(),
+        }],
+        deployed_contracts: if deploy {
+            vec![DeployedContractItem { address, class_hash: Felt::from(888_u64) }]
+        } else {
+            vec![]
+        },
+        ..Default::default()
+    }
+}
+
+fn import_serial_storage_block(backend: &Arc<MadaraBackend>, number: u64, diff: &StateDiff) -> Felt {
+    backend
+        .write_access()
+        .add_full_block_with_classes(&block_with_state_diff(number, diff.clone()), &[], false)
+        .expect("import serial block");
+    backend.db.get_state_root_hash().unwrap()
+}
+
+#[rstest::rstest]
+#[case::serial(false, 1)]
+#[case::parallel_checkpoint(true, 0)]
+#[case::parallel_floor_replay(true, 1)]
+fn cached_storage_revert_then_sparse_update_matches_reference(
+    #[case] parallel: bool,
+    #[case] target: u64,
+    #[values(false, true)] resume_parallel: bool,
+) {
+    let dir = tempfile::TempDir::new().unwrap();
+    let backend = open_backend(dir.path());
+    let reference = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+    let diffs = [
+        same_contract_storage_diff(&[(1, 10), (2, 20), (3, 30)], true),
+        same_contract_storage_diff(&[(2, 200)], false),
+        same_contract_storage_diff(&[(3, 300)], false),
+        same_contract_storage_diff(&[(2, 222)], false),
+    ];
+    import_serial_storage_block(&backend, 0, &diffs[0]);
+    if parallel {
+        backend.write_parallel_merkle_checkpoint(0).unwrap();
+        backend.db.on_new_confirmed_head(0).unwrap();
+    }
+    for number in 1..=3 {
+        if parallel {
+            let computed = write_parallel_block_parts(&backend, number, &diffs[1..=number as usize], number == 3);
+            if number == 3 {
+                assert_eq!(publish_boundary(&backend, number, Some(0), &computed), BoundaryFlushOutcome::Persisted);
+            }
+            confirm_parallel_block(&backend, number);
+        } else {
+            import_serial_storage_block(&backend, number, &diffs[number as usize]);
+        }
+    }
+    let target_info = backend.db.get_block_info(target).unwrap().unwrap();
+    backend.revert_to(&target_info.block_hash).expect("revert target");
+    assert_eq!(backend.db.get_state_root_hash().unwrap(), target_info.header.global_state_root);
+    for number in 0..=target {
+        import_serial_storage_block(&reference, number, &diffs[number as usize]);
+    }
+    let next = same_contract_storage_diff(&[(1, 100)], false);
+    let expected = import_serial_storage_block(&reference, target + 1, &next);
+    let actual = if resume_parallel {
+        // A serial reorg may not create checkpoint metadata itself.
+        backend.write_parallel_merkle_checkpoint(target).unwrap();
+        backend.db.on_new_confirmed_head(target).unwrap();
+        let computed = write_parallel_block_parts(&backend, target + 1, &[next], true);
+        assert_eq!(publish_boundary(&backend, target + 1, Some(target), &computed), BoundaryFlushOutcome::Persisted);
+        confirm_parallel_block(&backend, target + 1);
+        backend.db.get_state_root_hash().unwrap()
+    } else {
+        import_serial_storage_block(&backend, target + 1, &next)
+    };
+    assert_eq!(actual, expected, "post-revert sparse update must preserve sibling storage");
+}
+
+#[rstest::rstest]
+fn cached_storage_reconcile_rollback_then_sparse_update_matches_reference(#[values(false, true)] empty: bool) {
+    let dir = tempfile::TempDir::new().unwrap();
+    let backend = open_backend(dir.path());
+    let reference = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+    let base = same_contract_storage_diff(&[(1, 10), (2, 20)], true);
+    if !empty {
+        import_serial_storage_block(&backend, 0, &base);
+        import_serial_storage_block(&reference, 0, &base);
+        backend.write_parallel_merkle_checkpoint(0).unwrap();
+        backend.db.on_new_confirmed_head(0).unwrap();
+    }
+    let runahead = if empty { base } else { same_contract_storage_diff(&[(2, 200)], false) };
+    backend
+        .write_access()
+        .apply_to_global_trie(u64::from(!empty), [&runahead], backend.chain_config().latest_protocol_version)
+        .unwrap();
+    backend.reconcile_confirmed_parallel_merkle_state("test_cache_rollback").unwrap();
+    assert_eq!(backend.db.get_state_root_hash().unwrap(), reference.db.get_state_root_hash().unwrap());
+    let next = same_contract_storage_diff(&[(1, 100)], empty);
+    let expected = import_serial_storage_block(&reference, u64::from(!empty), &next);
+    let actual = import_serial_storage_block(&backend, u64::from(!empty), &next);
+    assert_eq!(actual, expected, "reconciliation must discard cached runahead storage before serial resume");
+}
+
+#[test]
+fn cached_storage_parallel_reconcile_then_serial_resume_matches_reference() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let backend = open_backend(dir.path());
+    let reference = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+    let base = same_contract_storage_diff(&[(1, 10), (2, 20), (3, 30)], true);
+    let confirmed = same_contract_storage_diff(&[(2, 200)], false);
+    let runahead = same_contract_storage_diff(&[(3, 300)], false);
+    import_serial_storage_block(&backend, 0, &base);
+    import_serial_storage_block(&reference, 0, &base);
+    let confirmed_root = import_serial_storage_block(&reference, 1, &confirmed);
+    backend.write_parallel_merkle_checkpoint(0).unwrap();
+    backend.db.on_new_confirmed_head(0).unwrap();
+    let block1 = write_parallel_block_parts(&backend, 1, std::slice::from_ref(&confirmed), false);
+    assert_eq!(block1.state_root, confirmed_root);
+    confirm_parallel_block(&backend, 1);
+    let block2 = write_parallel_block_parts(&backend, 2, &[confirmed, runahead], true);
+    assert_eq!(publish_boundary(&backend, 2, Some(0), &block2), BoundaryFlushOutcome::Persisted);
+    // The boundary reached disk before block 2 was confirmed. Reuse this live backend,
+    // as service shutdown/startup does, rather than masking the cache by reopening it.
+    backend.reconcile_confirmed_parallel_merkle_state("test_cache_parallel_runahead").unwrap();
+    assert_eq!(backend.db.get_state_root_hash().unwrap(), confirmed_root);
+    let next = same_contract_storage_diff(&[(1, 100)], false);
+    let expected = import_serial_storage_block(&reference, 2, &next);
+    let actual = import_serial_storage_block(&backend, 2, &next);
+    assert_eq!(actual, expected, "serial resume must use the reconciled parallel state");
+}
+
+#[test]
+fn cached_storage_parallel_floor_revert_then_boundary_then_serial_matches_reference() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let backend = open_backend(dir.path());
+    let reference = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+    let base = same_contract_storage_diff(&[(1, 10), (2, 20), (3, 30)], true);
+    let keep = same_contract_storage_diff(&[(2, 200)], false);
+    let discard = same_contract_storage_diff(&[(3, 300)], false);
+    import_serial_storage_block(&backend, 0, &base);
+    import_serial_storage_block(&reference, 0, &base);
+    let target_root = import_serial_storage_block(&reference, 1, &keep);
+    backend.write_parallel_merkle_checkpoint(0).unwrap();
+    backend.db.on_new_confirmed_head(0).unwrap();
+    write_parallel_block_parts(&backend, 1, std::slice::from_ref(&keep), false);
+    confirm_parallel_block(&backend, 1);
+    let boundary = write_parallel_block_parts(&backend, 2, &[keep, discard], true);
+    assert_eq!(publish_boundary(&backend, 2, Some(0), &boundary), BoundaryFlushOutcome::Persisted);
+    confirm_parallel_block(&backend, 2);
+    let target_hash = backend.db.get_block_info(1).unwrap().unwrap().block_hash;
+    backend.revert_to(&target_hash).unwrap();
+    assert_eq!(backend.db.get_state_root_hash().unwrap(), target_root);
+    // Floor replay used the serial writer, warming its cache at block 1.
+    let next_parallel = same_contract_storage_diff(&[(2, 222)], false);
+    let expected_parallel = import_serial_storage_block(&reference, 2, &next_parallel);
+    let boundary = write_parallel_block_parts(&backend, 2, &[next_parallel], true);
+    assert_eq!(boundary.state_root, expected_parallel);
+    assert_eq!(publish_boundary(&backend, 2, Some(1), &boundary), BoundaryFlushOutcome::Persisted);
+    confirm_parallel_block(&backend, 2);
+    let next_serial = same_contract_storage_diff(&[(1, 100)], false);
+    let expected = import_serial_storage_block(&reference, 3, &next_serial);
+    let actual = import_serial_storage_block(&backend, 3, &next_serial);
+    assert_eq!(actual, expected, "serial resume after reorg and parallel boundary must use the latest state");
+}

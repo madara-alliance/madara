@@ -61,7 +61,7 @@ rocksdb = "0.22"
 librocksdb-sys = "0.17.0"
 
 # Bonsai trie dependencies
-bonsai-trie = { default-features = false, git = "https://github.com/madara-alliance/bonsai-trie", tag = "v1.0.0", features = [
+bonsai-trie = { default-features = false, git = "https://github.com/madara-alliance/bonsai-trie", rev = "3bbb73104eaf8676d47a09f52a508d41f93ebe6a", features = [
   "std",
 ] }
 
@@ -121,10 +121,11 @@ starknet-types-core = { version = "0.2.4", default-features = false, features = 
   "serde",
 ] }
 
-blockifier = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLLO-0.14.2-RC.7-fix", features = [
+# Alliance dev is Madara's integration line; main mirrors upstream Sequencer.
+blockifier = { git = "https://github.com/madara-alliance/sequencer", branch = "dev", features = [
   "node_api",
 ] }
-starknet_api = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLLO-0.14.2-RC.7-fix" }
+starknet_api = { git = "https://github.com/madara-alliance/sequencer", branch = "dev" }
 cairo-lang-starknet-classes = "=2.17.0"
 cairo-lang-utils = "=2.17.0"
 casm-classes-v2 = { package = "cairo-lang-starknet-classes", version = "=2.17.0" }
@@ -169,8 +170,11 @@ tracing-opentelemetry = "0.31.0"
 # Networking
 jsonrpsee = { version = "0.22", default-features = false, features = [
   "server",
-  "client",
+  "client-core",
 ] }
+# These clients only connect to local HTTP/WS endpoints; no TLS backend is enabled.
+jsonrpsee-http-client = { version = "0.22.5", default-features = false }
+jsonrpsee-ws-client = { version = "0.22.5", default-features = false }
 tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.4", features = ["cors"] }
 governor = "0.6"
@@ -189,7 +193,7 @@ reqwest = { version = "0.12.7", features = [
   "stream",
 ] }
 url = { version = "2.4", features = ["serde"] }
-bson = "2"
+bson = { version = "2", features = ["chrono-0_4", "uuid-1"] }
 
 # Async
 tokio = { version = "1.47", features = ["signal", "rt", "macros"] }
@@ -300,21 +304,24 @@ chrono = { version = "0.4", features = ["serde"] }
 c-kzg = "2.1.5"
 dotenvy = "0.15.7"
 log = "0.4.21"
-mongodb = { version = "2.8.1", features = ["bson-chrono-0_4"] }
-omniqueue = { git = "https://github.com/itsparser/omniqueue-rs", branch = "branch-from-0.2.0" }
+mongodb = "3.5.2"
+omniqueue = { git = "https://github.com/itsparser/omniqueue-rs", branch = "branch-from-0.2.0", default-features = false, features = [
+  "sqs",
+] }
 tokio-stream = "0.1.15"
 uuid = { version = "1.20.0", features = ["v4", "serde"] }
 swiftness_proof_parser = "0.1.0"
 hex = "0.4"
 mockall_double = "0.3.1"
-testcontainers = "0.18.0"
+testcontainers = "0.21.1"
 env_logger = "0.11.5"
 strum_macros = "0.26.4"
 strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-generate-pie = { git = "https://github.com/keep-starknet-strange/snos.git", rev = "2ab3bfa2a63196a53a49c9d0a1d64fa23ff60f92" }
+# Alliance dev is Madara's integration line; main mirrors upstream SNOS.
+generate-pie = { git = "https://github.com/madara-alliance/snos.git", branch = "dev" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
@@ -324,8 +331,8 @@ orchestrator-ethereum-settlement-client = { path = "orchestrator/crates/settleme
 orchestrator-starknet-settlement-client = { path = "orchestrator/crates/settlement-clients/starknet" }
 orchestrator-utils = { path = "orchestrator/crates/utils" }
 orchestrator-aggregator-runner = { path = "orchestrator/crates/aggregator-runner" }
-apollo_starknet_os_program = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLLO-0.14.2-RC.7-fix" }
-starknet_os = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLLO-0.14.2-RC.7-fix" }
+apollo_starknet_os_program = { git = "https://github.com/madara-alliance/sequencer", branch = "dev" }
+starknet_os = { git = "https://github.com/madara-alliance/sequencer", branch = "dev" }
 orchestrator-prover-client-interface = { path = "orchestrator/crates/prover-clients/prover-client-interface" }
 orchestrator-gps-fact-checker = { path = "orchestrator/crates/prover-clients/gps-fact-checker" }
 orchestrator-sharp-service = { path = "orchestrator/crates/prover-clients/sharp-service" }
@@ -347,9 +354,9 @@ rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", rev = "75f1
 librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", rev = "75f13c78fdf970b0afd2f21f52caf3317341341c" }
 
 [patch."https://github.com/starkware-libs/sequencer"]
-apollo_infra_utils = { git = "https://github.com/karnotxyz/sequencer", rev = "4c5fd9e90f8fed9830849878bad427222b16d1f9" }
-apollo_proc_macros = { git = "https://github.com/karnotxyz/sequencer", rev = "4c5fd9e90f8fed9830849878bad427222b16d1f9" }
-apollo_sizeof = { git = "https://github.com/karnotxyz/sequencer", rev = "4c5fd9e90f8fed9830849878bad427222b16d1f9" }
-apollo_sizeof_macros = { git = "https://github.com/karnotxyz/sequencer", rev = "4c5fd9e90f8fed9830849878bad427222b16d1f9" }
-blockifier = { git = "https://github.com/karnotxyz/sequencer", rev = "4c5fd9e90f8fed9830849878bad427222b16d1f9" }
-starknet_api = { git = "https://github.com/karnotxyz/sequencer", rev = "4c5fd9e90f8fed9830849878bad427222b16d1f9" }
+apollo_infra_utils = { git = "https://github.com/madara-alliance/sequencer", branch = "dev" }
+apollo_proc_macros = { git = "https://github.com/madara-alliance/sequencer", branch = "dev" }
+apollo_sizeof = { git = "https://github.com/madara-alliance/sequencer", branch = "dev" }
+apollo_sizeof_macros = { git = "https://github.com/madara-alliance/sequencer", branch = "dev" }
+blockifier = { git = "https://github.com/madara-alliance/sequencer", branch = "dev" }
+starknet_api = { git = "https://github.com/madara-alliance/sequencer", branch = "dev" }

@@ -10,6 +10,7 @@ use crate::{
 use async_trait::async_trait;
 use aws_config::Region;
 use aws_config::SdkConfig;
+use aws_sdk_sqs::config::retry::RetryConfig;
 use aws_sdk_sqs::types::{MessageAttributeValue, QueueAttributeName};
 use aws_sdk_sqs::Client;
 use omniqueue::backends::{SqsBackend, SqsConfig, SqsConsumer, SqsProducer};
@@ -22,6 +23,10 @@ use tokio::sync::{OnceCell, RwLock};
 type QueueUrlCache = Arc<RwLock<HashMap<QueueType, Arc<OnceCell<String>>>>>;
 type SqsConsumerCache = Arc<RwLock<HashMap<QueueType, Arc<OnceCell<Arc<SqsConsumer>>>>>>;
 
+// The SDK's standard retry mode applies exponential backoff with jitter.
+// This count includes the initial request.
+const SQS_MAX_ATTEMPTS: u32 = 5;
+
 #[derive(Clone)]
 pub struct InnerSQS(Client);
 
@@ -33,7 +38,8 @@ impl InnerSQS {
     /// # Returns
     /// * `Self` - The new instance of InnerSQS.
     pub fn new(aws_config: &SdkConfig) -> Self {
-        let sqs_config_builder = aws_sdk_sqs::config::Builder::from(aws_config);
+        let sqs_config_builder = aws_sdk_sqs::config::Builder::from(aws_config)
+            .retry_config(RetryConfig::standard().with_max_attempts(SQS_MAX_ATTEMPTS));
         let client = Client::from_conf(sqs_config_builder.build());
         Self(client)
     }
