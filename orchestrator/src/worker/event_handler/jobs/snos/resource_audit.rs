@@ -25,7 +25,19 @@ use tracing::{error, info, warn};
 /// Telemetry must not hold up an otherwise successful PIE when the batch store is unavailable.
 const BATCH_LOOKUP_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Records one outcome per execution attempt, including explicit `unavailable` outcomes.
+#[derive(Debug, PartialEq)]
+struct GasComparison {
+    actual: u64,
+    reserved: u64,
+}
+
+#[derive(Debug)]
+struct ResourceAudit {
+    proving_gas: GasComparison,
+    sierra_gas: GasComparison,
+}
+
+/// Records one outcome per resource and execution attempt, including explicit `unavailable` outcomes.
 /// Neither a deficit nor a failed audit changes the job's success or settlement eligibility.
 pub(super) async fn record(
     database: &dyn DatabaseClient,
@@ -45,33 +57,45 @@ pub(super) async fn record(
         compare(&batches[0], metadata, resources, constants_override)
     })
     .await;
-    let outcome = match result {
-        Ok(Ok((actual, reserved))) => {
-            let shortfall = actual.saturating_sub(reserved);
-            info!(
-                batch_index = metadata.snos_batch_index,
-                start_block = metadata.start_block,
-                end_block = metadata.end_block,
-                cost_model = "blockifier_default_proving",
-                constants_override = constants_override.is_some(),
-                actual_proving_gas = actual,
-                reserved_proving_gas = reserved,
-                shortfall,
-                n_steps = resources.n_steps,
-                n_memory_holes = resources.n_memory_holes,
-                builtins = ?resources.builtin_instance_counter,
-                "SNOS proving resource audit"
-            );
-            if shortfall > 0 {
-                error!(
+    match result {
+        Ok(Ok(audit)) => {
+            let mut exceeded = false;
+            for (resource, comparison) in [("proving_gas", audit.proving_gas), ("sierra_gas", audit.sierra_gas)] {
+                let shortfall = comparison.actual.saturating_sub(comparison.reserved);
+                info!(
                     batch_index = metadata.snos_batch_index,
                     start_block = metadata.start_block,
                     end_block = metadata.end_block,
-                    actual_proving_gas = actual,
-                    reserved_proving_gas = reserved,
+                    resource,
+                    cost_model = "blockifier_default_proving_and_protocol_sierra",
+                    constants_override = constants_override.is_some(),
+                    actual_gas = comparison.actual,
+                    reserved_gas = comparison.reserved,
                     shortfall,
-                    "SNOS proving work exceeds Madara's batch reservation; possible undercharging"
+                    n_steps = resources.n_steps,
+                    n_memory_holes = resources.n_memory_holes,
+                    builtins = ?resources.builtin_instance_counter,
+                    "SNOS resource audit"
                 );
+                let outcome = if shortfall > 0 {
+                    exceeded = true;
+                    error!(
+                        batch_index = metadata.snos_batch_index,
+                        start_block = metadata.start_block,
+                        end_block = metadata.end_block,
+                        resource,
+                        actual_gas = comparison.actual,
+                        reserved_gas = comparison.reserved,
+                        shortfall,
+                        "SNOS work exceeds Madara's batch reservation; possible undercharging"
+                    );
+                    "exceeded"
+                } else {
+                    "within_reservation"
+                };
+                record_outcome(resource, outcome);
+            }
+            if exceeded {
                 "exceeded"
             } else {
                 "within_reservation"
@@ -79,12 +103,19 @@ pub(super) async fn record(
         }
         failure => {
             warn!(batch_index = metadata.snos_batch_index, error = ?failure, "SNOS resource audit unavailable");
+            for resource in ["proving_gas", "sierra_gas"] {
+                record_outcome(resource, "unavailable");
+            }
             "unavailable"
         }
-    };
-    // No batch IDs or block heights in metric labels. Retries count as separate attempts.
-    ORCHESTRATOR_METRICS.snos_resource_audit_total.add(1, &[KeyValue::new("outcome", outcome)]);
-    outcome
+    }
+}
+
+/// Keep labels bounded; retry attempts are observations, not distinct undercharged transactions.
+fn record_outcome(resource: &'static str, outcome: &'static str) {
+    ORCHESTRATOR_METRICS
+        .snos_resource_audit_total
+        .add(1, &[KeyValue::new("resource", resource), KeyValue::new("outcome", outcome)]);
 }
 
 /// Compare exactly the range executed by this job. The saved reservation already sums all
@@ -94,7 +125,7 @@ fn compare(
     metadata: &SnosMetadata,
     resources: &ExecutionResources,
     constants_override: Option<&VersionedConstants>,
-) -> Result<(u64, u64)> {
+) -> Result<ResourceAudit> {
     ensure!(
         batch.index == metadata.snos_batch_index
             && batch.start_block == metadata.start_block
@@ -106,15 +137,24 @@ fn compare(
     );
     let constants = match constants_override {
         Some(constants) => constants,
-        None => VersionedConstants::get(&batch.starknet_version.to_string().parse()?)?,
+        None => VersionedConstants::get(&batch.starknet_version.to_string().try_into()?)?,
     };
-    let actual = proving_gas(resources, &constants.os_constants.gas_costs.base, &BuiltinWeights::default().gas_costs)?;
-    Ok((actual, batch.builtin_weights.proving_gas.0))
+    let gas_costs = &constants.os_constants.gas_costs;
+    Ok(ResourceAudit {
+        proving_gas: GasComparison {
+            actual: resource_gas(resources, &gas_costs.base, &BuiltinWeights::default().gas_costs)?,
+            reserved: batch.builtin_weights.proving_gas.0,
+        },
+        sierra_gas: GasComparison {
+            actual: resource_gas(resources, &gas_costs.base, &gas_costs.builtins)?,
+            reserved: batch.builtin_weights.sierra_gas.0,
+        },
+    })
 }
 
 /// The same steps + memory holes + builtin pricing used by Blockifier, with checked arithmetic
 /// and fallible builtin lookup so telemetry cannot panic or silently undercount an unknown cost.
-fn proving_gas(resources: &ExecutionResources, base: &BaseGasCosts, builtins: &BuiltinGasCosts) -> Result<u64> {
+fn resource_gas(resources: &ExecutionResources, base: &BaseGasCosts, builtins: &BuiltinGasCosts) -> Result<u64> {
     let mut total = 0_u64;
     let mut add = |count: usize, price: u64| -> Result<()> {
         let cost = u64::try_from(count)?.checked_mul(price).ok_or_else(|| eyre!("Resource cost overflow"))?;

@@ -12,7 +12,11 @@ fn fixture(blocks: u64, reservation: u64) -> (SnosBatch, SnosMetadata) {
         end_block: 100 + blocks - 1,
         num_blocks: blocks,
         starknet_version: "0.14.2".parse().unwrap(),
-        builtin_weights: BouncerWeights { proving_gas: GasAmount(reservation), ..BouncerWeights::empty() },
+        builtin_weights: BouncerWeights {
+            proving_gas: GasAmount(reservation),
+            sierra_gas: GasAmount(reservation),
+            ..BouncerWeights::empty()
+        },
         ..Default::default()
     };
     let metadata = SnosMetadata {
@@ -35,9 +39,10 @@ fn prices_all_resources_with_proving_not_sierra_builtin_costs() {
         builtin_instance_counter: [(BuiltinName::poseidon, 2), (BuiltinName::output, 500)].into(),
     };
     let (batch, metadata) = fixture(1, 1_000);
-    let (actual, reserved) = compare(&batch, &metadata, &resources, None).unwrap();
-    assert_eq!(actual, 10 * 100 + 3 * 10 + 2 * 10_000);
-    assert!(actual > reserved);
+    let audit = compare(&batch, &metadata, &resources, None).unwrap();
+    assert_eq!(audit.proving_gas.actual, 10 * 100 + 3 * 10 + 2 * 10_000);
+    assert_eq!(audit.sierra_gas.actual, 10 * 100 + 3 * 10 + 2 * 491);
+    assert!(audit.proving_gas.actual > audit.proving_gas.reserved);
 }
 
 /// Reservations are already accumulated across blocks, including the empty-block allowance.
@@ -70,11 +75,20 @@ async fn records_batch_outcome_without_failing_job(
 #[test]
 fn uses_same_constants_override_as_snos() {
     let (batch, metadata) = fixture(1, 150);
-    let mut constants = VersionedConstants::get(&"0.14.2".parse().unwrap()).unwrap().clone();
-    Arc::make_mut(&mut constants.os_constants).gas_costs.base.step_gas_cost = 200;
+    let mut constants = VersionedConstants::get(&"0.14.2".try_into().unwrap()).unwrap().clone();
+    let mut os_constants = blockifier::blockifier_versioned_constants::OsConstants::default();
+    os_constants.gas_costs.base.step_gas_cost = 200;
+    os_constants.gas_costs.builtins = constants.os_constants.gas_costs.builtins;
+    constants.os_constants = Arc::new(os_constants);
     let resources = ExecutionResources { n_steps: 1, ..Default::default() };
-    assert_eq!(compare(&batch, &metadata, &resources, None).unwrap(), (100, 150));
-    assert_eq!(compare(&batch, &metadata, &resources, Some(&constants)).unwrap(), (200, 150));
+    assert_eq!(
+        compare(&batch, &metadata, &resources, None).unwrap().proving_gas,
+        GasComparison { actual: 100, reserved: 150 }
+    );
+    assert_eq!(
+        compare(&batch, &metadata, &resources, Some(&constants)).unwrap().proving_gas,
+        GasComparison { actual: 200, reserved: 150 }
+    );
 }
 
 #[rstest]
@@ -122,12 +136,12 @@ fn rejects_unpriced_builtin_and_arithmetic_overflow() {
     let base = BaseGasCosts { step_gas_cost: 100, memory_hole_gas_cost: 10, ..Default::default() };
     let resources =
         ExecutionResources { builtin_instance_counter: [(BuiltinName::segment_arena, 1)].into(), ..Default::default() };
-    assert!(proving_gas(&resources, &base, &costs).is_err());
+    assert!(resource_gas(&resources, &base, &costs).is_err());
     let resources = ExecutionResources { n_steps: usize::MAX, ..Default::default() };
-    assert!(proving_gas(&resources, &base, &costs).is_err());
+    assert!(resource_gas(&resources, &base, &costs).is_err());
     let resources = ExecutionResources { n_steps: 1, n_memory_holes: 1, ..Default::default() };
     let base = BaseGasCosts { step_gas_cost: u64::MAX, memory_hole_gas_cost: 1, ..Default::default() };
-    assert!(proving_gas(&resources, &base, &costs).is_err());
+    assert!(resource_gas(&resources, &base, &costs).is_err());
 }
 
 /// Resource counts from the real 2026-10-30 SNOS block-6 PIE, independently priced by
@@ -148,5 +162,28 @@ fn real_snos_pie_matches_independent_proving_cost() {
         .into(),
     };
     let (batch, metadata) = fixture(1, 387_338_402);
-    assert_eq!(compare(&batch, &metadata, &resources, None).unwrap(), (235_585_900, 387_338_402));
+    let audit = compare(&batch, &metadata, &resources, None).unwrap();
+    assert_eq!(audit.proving_gas, GasComparison { actual: 235_585_900, reserved: 387_338_402 });
+    assert_eq!(audit.sierra_gas.actual, 197_872_179);
+}
+
+/// Either estimate can be low independently: Sierra and proving use different builtin prices.
+#[rstest]
+#[case::sierra_only(BuiltinName::pedersen, 3_500, 3_000, 4_050)]
+#[case::proving_only(BuiltinName::poseidon, 5_000, 10_000, 491)]
+#[tokio::test]
+async fn detects_either_resource_shortfall(
+    #[case] builtin: BuiltinName,
+    #[case] reservation: u64,
+    #[case] expected_proving: u64,
+    #[case] expected_sierra: u64,
+) {
+    let (batch, metadata) = fixture(1, reservation);
+    let resources = ExecutionResources { builtin_instance_counter: [(builtin, 1)].into(), ..Default::default() };
+    let audit = compare(&batch, &metadata, &resources, None).unwrap();
+    assert_eq!(audit.proving_gas.actual, expected_proving);
+    assert_eq!(audit.sierra_gas.actual, expected_sierra);
+    let mut database = MockDatabaseClient::new();
+    database.expect_get_snos_batches().once().return_once(move |_| Ok(vec![batch]));
+    assert_eq!(record(&database, &metadata, &resources, None).await, "exceeded");
 }
