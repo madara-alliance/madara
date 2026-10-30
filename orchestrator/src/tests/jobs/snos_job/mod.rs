@@ -7,6 +7,7 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::core::client::alert::MockAlertClient;
+use crate::core::client::database::MockDatabaseClient;
 use crate::tests::common::default_job_item;
 use crate::tests::config::{MockType, TestConfigBuilder};
 use crate::tests::jobs::ConfigType;
@@ -143,7 +144,11 @@ async fn test_process_job() -> color_eyre::Result<()> {
         }
     };
 
+    // This live-PIE fixture has no persisted batch; the resource audit must remain observational.
+    let mut database = MockDatabaseClient::new();
+    database.expect_get_snos_batches().once().returning(|_| Ok(vec![]));
     let services = TestConfigBuilder::new()
+        .configure_database(database.into())
         .configure_rpc_url(ConfigType::Mock(MockType::RpcUrl(pathfinder_url)))
         .configure_storage_client(ConfigType::Actual)
         .build()
