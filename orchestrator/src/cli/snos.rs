@@ -53,6 +53,7 @@ pub struct SNOSCliArgs {
 
 impl SNOSCliArgs {
     /// Validate the committed-data execution path before constructing runtime services.
+    /// SHARP and Mock share local SNOS replay and aggregation; Mock substitutes proof submission.
     pub(crate) fn validate_committed_data(
         &self,
         prover: crate::types::params::prover::ProverKind,
@@ -67,8 +68,8 @@ impl SNOSCliArgs {
             return Ok(());
         }
         anyhow::ensure!(
-            prover == ProverKind::Sharp && *layer == Layer::L2,
-            "Committed-data reads currently require the SHARP L2 local-aggregator path"
+            matches!(prover, ProverKind::Sharp | ProverKind::Mock) && *layer == Layer::L2,
+            "Committed-data reads require the SHARP or Mock L2 local-aggregator path"
         );
         anyhow::ensure!(
             self.committed_data_rpc_url.is_some(),
@@ -154,7 +155,9 @@ mod tests {
                 for prover in [ProverKind::Sharp, ProverKind::Atlantic, ProverKind::Mock] {
                     for layer in [Layer::L2, Layer::L3] {
                         let expected = if enabled {
-                            args.committed_data_rpc_url.is_some() && prover == ProverKind::Sharp && layer == Layer::L2
+                            args.committed_data_rpc_url.is_some()
+                                && matches!(prover, ProverKind::Sharp | ProverKind::Mock)
+                                && layer == Layer::L2
                         } else {
                             args.committed_data_rpc_url.is_none()
                         };
