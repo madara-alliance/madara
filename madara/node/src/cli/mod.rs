@@ -360,6 +360,7 @@ mod tests {
         providers::{Format, Json},
         Figment,
     };
+    use mc_db::rocksdb::DEFAULT_MAX_RETAINED_FRONTIER_NODES_TOTAL;
 
     #[test]
     fn full_node_does_not_run_or_save_mempool() {
@@ -521,6 +522,47 @@ mod tests {
                 mc_class_exec::DEFAULT_PEDERSEN_CACHE_CAPACITY,
             ]
         );
+    }
+
+    #[test]
+    fn config_file_without_retained_frontier_budget_uses_default() {
+        let config_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../configs/args/config.json");
+        let mut config: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(config_path).expect("config fixture should be readable"))
+                .expect("config fixture should be valid JSON");
+        config["backend_params"]
+            .as_object_mut()
+            .expect("backend params should be an object")
+            .remove("db_max_retained_frontier_nodes_total");
+
+        let run_cmd: RunCmd = Figment::new()
+            .merge(Json::string(&config.to_string()))
+            .extract()
+            .expect("legacy config should deserialize");
+
+        assert_eq!(
+            run_cmd.backend_params.db_max_retained_frontier_nodes_total,
+            DEFAULT_MAX_RETAINED_FRONTIER_NODES_TOTAL
+        );
+        assert_eq!(
+            run_cmd.backend_params.rocksdb_config().max_retained_frontier_nodes_total,
+            DEFAULT_MAX_RETAINED_FRONTIER_NODES_TOTAL
+        );
+    }
+
+    #[test]
+    fn retained_frontier_budget_cli_override_reaches_rocksdb_config() {
+        let run_cmd = RunCmd::parse_from([
+            "madara",
+            "--full",
+            "--network",
+            "sepolia",
+            "--db-max-retained-frontier-nodes-total",
+            "1234",
+        ]);
+
+        assert_eq!(run_cmd.backend_params.db_max_retained_frontier_nodes_total, 1234);
+        assert_eq!(run_cmd.backend_params.rocksdb_config().max_retained_frontier_nodes_total, 1234);
     }
 }
 

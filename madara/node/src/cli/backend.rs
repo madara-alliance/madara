@@ -1,4 +1,7 @@
-use mc_db::rocksdb::{DbWriteMode, RocksDBConfig, DEFAULT_DELETE_OBSOLETE_FILES_PERIOD_MICROS, DEFAULT_MAX_OPEN_FILES};
+use mc_db::rocksdb::{
+    DbWriteMode, RocksDBConfig, DEFAULT_DELETE_OBSOLETE_FILES_PERIOD_MICROS, DEFAULT_MAX_OPEN_FILES,
+    DEFAULT_MAX_RETAINED_FRONTIER_NODES_TOTAL,
+};
 use mc_db::MadaraBackendConfig;
 use serde::{Deserialize, Serialize};
 use starknet_api::core::ContractAddress;
@@ -23,6 +26,10 @@ fn default_delete_obsolete_files_period_micros() -> u64 {
 /// Keeping this aligned with `RocksDBConfig` preserves existing configuration behavior.
 fn default_max_open_files() -> i32 {
     DEFAULT_MAX_OPEN_FILES
+}
+
+fn default_max_retained_frontier_nodes_total() -> usize {
+    DEFAULT_MAX_RETAINED_FRONTIER_NODES_TOTAL
 }
 
 /// Returns the Starknet Keccak cache capacity used when no CLI override is supplied.
@@ -119,6 +126,15 @@ pub struct BackendParams {
     /// the historical merkle trie state access is limited to 10000 blocks by default.
     #[clap(env = "MADARA_DB_MAX_SAVED_TRIE_LOGS", long, default_value = Some("10000"))]
     pub db_max_saved_trie_logs: Option<usize>,
+
+    /// Maximum total number of in-memory Bonsai frontier nodes retained across contract tries.
+    #[clap(
+        env = "MADARA_DB_MAX_RETAINED_FRONTIER_NODES_TOTAL",
+        long,
+        default_value_t = DEFAULT_MAX_RETAINED_FRONTIER_NODES_TOTAL
+    )]
+    #[serde(default = "default_max_retained_frontier_nodes_total")]
+    pub db_max_retained_frontier_nodes_total: usize,
 
     /// This affects the performance of the storage proof endpoint.
     /// How many databse snapshots are kept at a given time, older ones will be discarded.
@@ -416,6 +432,7 @@ impl BackendParams {
             memtable_other_budget_bytes: self.db_memtable_other_budget_mib * MiB,
             memtable_prefix_bloom_filter_ratio: self.db_memtable_prefix_bloom_filter_ratio,
             max_saved_trie_logs: self.db_max_saved_trie_logs,
+            max_retained_frontier_nodes_total: self.db_max_retained_frontier_nodes_total,
             max_kept_snapshots: self.db_max_kept_snapshots,
             snapshot_interval: self.db_snapshot_interval,
             backup_dir: self.backup_dir.clone(),
