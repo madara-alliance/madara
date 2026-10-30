@@ -1,3 +1,5 @@
+mod resource_audit;
+
 use crate::core::config::Config;
 use crate::core::StorageClient;
 use crate::error::job::fact::FactError;
@@ -151,6 +153,13 @@ impl JobHandlerTrait for SnosJobHandler {
         let snos_timing = snos_output.timing;
         let cairo_pie = snos_output.output.cairo_pie;
         MetricsRecorder::record_snos_run_metrics(cairo_pie.execution_resources.n_steps, &snos_timing);
+        resource_audit::record(
+            config.database(),
+            &snos_metadata,
+            &cairo_pie.execution_resources,
+            config.snos_config().versioned_constants.as_ref(),
+        )
+        .await;
 
         // TODO: currently we are getting the Vec<Felt> but ideally we should get a struct, fix it once it available upstream
         //       maybe we can add our own struct meanwhile in the snos code? something to think about!!!
